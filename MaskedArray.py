@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import numpy as np
+from numpy.core.arrayprint import array_repr_impl, array_str_impl, array2string_impl
 
 HANDLED_FUNCTIONS = {}
 
@@ -36,11 +37,14 @@ class MaskedArray:
         return HANDLED_FUNCTIONS[func](*args, **kwargs)
 
     def __getitem__(self, ind):
-        # We always return 0d arrays instead of scalars
-        return MaskedArray(self.data[ind], self.mask[ind])
+        data = self.data[ind]
+        mask = self.data[ind]
+        if ret.shape == ():
+            return MaskedScalar(data, mask)
+        return MaskedArray(data, mask)
 
     def __setitem__(self, ind, val):
-        if isinstance(val, MaskedArray):
+        if isinstance(val, [MaskedArray, MaskedScalar]):
             self.data[ind] = val.data
             self.mask[ind] = val.mask
         else:
@@ -51,7 +55,7 @@ class MaskedArray:
         return np.array2string(self, formatter=_format_provider)
 
     def __repr__(self):
-        return np.array_repr(self)
+        return np.array2string(self, formatter=_format_provider)
 
     def reshape(self, shape, order='C'):
         return MaskedArray(self.data.reshape(shape, order),
@@ -97,14 +101,27 @@ def implements(numpy_function):
         return func
     return decorator
 
-@implements(np.concatenate)
-def concatenate(arrays, axis=0, out=None):
-    ...  # implementation of concatenate for MyArray objects
+#@implements(np.concatenate)
+#def concatenate(arrays, axis=0, out=None):
+#    ...  # implementation of concatenate for MyArray objects
 
-@implements(np.broadcast_to)
-def broadcast_to(array, shape):
-    ...  # implementation of broadcast_to for MyArray objects
+#@implements(np.broadcast_to)
+#def broadcast_to(array, shape):
+#    ...  # implementation of broadcast_to for MyArray objects
 
+@implements(np.array_repr)
+def array_repr(arr, max_line_width=None, precision=None, suppress_small=None):
+    return array_repr_impl(arr, max_line_width, precision, suppress_small)
+
+@implements(np.array2string)
+def array2string(a, max_line_width=None, precision=None,
+                 suppress_small=None, separator=' ', prefix="",
+                 style=np._NoValue, formatter=None, threshold=None,
+                 edgeitems=None, sign=None, floatmode=None, suffix="",
+                 **kwarg):
+    return array2string_impl(a, max_line_width, precision, suppress_small, separator,
+                      prefix, style, formatter, threshold, edgeitems, sign,
+                      floatmode, suffix, **kwarg)
 
 def array(data, dtype=None, copy=False, order=None,
           mask=None, fill_value=None, keep_mask=True,
@@ -115,4 +132,5 @@ def array(data, dtype=None, copy=False, order=None,
 if __name__ == '__main__':
     A = MaskedArray(np.arange(10), np.arange(10)%2)
     print(hasattr(A, '__array_function__'))
+    print(A)
     print(A[2:4].data)

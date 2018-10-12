@@ -14,18 +14,29 @@
 # 
 # And the eval() function could optimize out all intermediate out arrays.
 
+class AST(object):
+    pass
+
+class BinOp(AST):
+    def __init__(self, left, op, right):
+        self.left = left
+        self.op = op
+        self.right = right
+
+class UniOp(AST):
+    def __init__(self, left, op, right):
+        if isinstance(left, LazyArray):
+            left = left.val
+        if isinstance(left, LazyArray):
+            right = right.val
+
+        self.left = left
+        self.op = op
+        self.right = right
 
 class LazyArray:
-    def __init__(self, data=None, mask=None, dtype=None, copy=False,
-                order=None, subok=True, ndmin=0, fill_value=None, **options):
-        self.data = np.array(data, dtype, copy, order, subok, ndmin)
-
-        if mask is None:
-            self.mask = np.zeros(data.shape, dtype='bool', order=data.order)
-        else:
-            self.mask = np.broadcast_to(self.data, mask)
-
-        self.fill_value = fill_value
+    def __init__(self, val):
+        self.val = val
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_FUNCTIONS:
@@ -36,17 +47,21 @@ class LazyArray:
             return NotImplemented
         return HANDLED_FUNCTIONS[func](*args, **kwargs)
 
-    def __getitem__(self, ind):
-        # note: we always return 0d arrays instead of scalars
-        return MaskedArray(self.data[ind], self.mask[ind])
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        # Cannot handle items that have __array_ufunc__ (other than our own).
+        outputs = kwargs.get('out', ())
+        for item in inputs + outputs:
+            if (hasattr(item, '__array_ufunc__') and
+                    type(item).__array_ufunc__ is not ndarray.__array_ufunc__):
+                return NotImplemented
 
-    def __setitem__(self, ind, val):
-        if isinstance(val, MaskedArray):
-            self.data[ind] = val.data
-            self.mask[ind] = val.mask
-        else:
-            self.data[ind] = val
+        if ufunc is np.add:
+            return LazyArray(BinOp(inputs[0], np.add, inputs[1]))
+        if ufunc is np.mul:
+            return LazyArray(BinOp(inputs[0], np.mul, inputs[1]))
 
-    def reshape(self, shape, order='C'):
-        return MaskedArray(self.data.reshape(shape, order),
-                           self.mask.reshape(shape, order))
+        return NotImplemented
+    
+    def eval(self):
+        
+
