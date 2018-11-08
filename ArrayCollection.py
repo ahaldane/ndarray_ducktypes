@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 import numpy as np
 import warnings
-from numpy.core.arrayprint import array_repr_impl, array_str_impl, array2string_impl
+from numpy.core.arrayprint import _array_repr_implementation, _array_str_implementation, array2string
+
+_array2string_implementation = array2string.__wrapped__
 
 HANDLED_FUNCTIONS = {}
 
@@ -142,10 +144,10 @@ class ArrayCollection:
                 self.arrays[n][ind] = val
 
     def __str__(self):
-        return np.array_str(self)
+        return _array_str_implementation(self, array2string=_array2string_implementation)
 
     def __repr__(self):
-        return np.array_repr(self)
+        return _array_repr_implementation(self, array2string=_array2string_implementation)
 
     def __len__(self):
         return len(self.arrays[self.names[0]])
