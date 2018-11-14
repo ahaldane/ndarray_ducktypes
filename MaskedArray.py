@@ -1,15 +1,46 @@
 #!/usr/bin/env python
 import numpy as np
-from numpy.core.arrayprint import array_repr_impl, array_str_impl, array2string_impl
+from duckprint2 import (repr_implementation, str_implementation,
+    default_duckprint_options, default_duckprint_formatters, FormatDispatcher)
+import builtins
+
+def as_masked_fmt(formattercls):
+    class MaskedFormatter(formattercls):
+        def get_format_func(self, elem, **options):
+            default_fmt = super().get_format_func(elem, **options)
+
+            if not elem.mask.any():
+                return lambda x: default_fmt(x.data)
+
+            masked_str = options['masked_str']
+
+            # pad the columns to align when including the masked string
+            def fmt(x):
+                res = default_fmt(x.data)
+                reslen = builtins.max(len(res), len(masked_str))
+                if x.mask:
+                    res = masked_str
+                return res.rjust(reslen)
+
+            return fmt
+
+    return MaskedFormatter
+
+MASK_STR = '_'  # make this more configurable later
+
+masked_formatters = [as_masked_fmt(f) for f in default_duckprint_formatters]
+default_options = default_duckprint_options.copy()
+default_options['masked_str'] = MASK_STR
+masked_dispatcher = FormatDispatcher(masked_formatters, default_options)
 
 HANDLED_FUNCTIONS = {}
 
 class MaskedArray:
     def __init__(self, data=None, mask=None, dtype=None, copy=False,
                 order=None, subok=True, ndmin=0, fill_value=None, **options):
-        self.data = np.array(data, dtype, copy=copy, order=order, subok=subok, 
+        self.data = np.array(data, dtype, copy=copy, order=order, subok=subok,
                              ndmin=ndmin)
-        
+
         # Note: We do not try to mask individual fields structured types.
         # Instead you get one mask alue per struct element. Use an
         # ArrayCollection of MaskedArrays if you want to mask individual
@@ -24,6 +55,7 @@ class MaskedArray:
         self.fill_value = fill_value
 
         self.shape = self.data.shape
+        self.ndim = self.data.ndim
         self.size = self.data.size
         self.dtype = self.data.dtype
 
@@ -38,8 +70,8 @@ class MaskedArray:
 
     def __getitem__(self, ind):
         data = self.data[ind]
-        mask = self.data[ind]
-        if ret.shape == ():
+        mask = self.mask[ind]
+        if data.shape == ():
             return MaskedScalar(data, mask)
         return MaskedArray(data, mask)
 
@@ -52,47 +84,38 @@ class MaskedArray:
             self.mask[ind] = False
 
     def __str__(self):
-        return np.array2string(self, formatter=_format_provider)
+        return str_implementation(self, dispatcher=masked_dispatcher)
 
     def __repr__(self):
-        return np.array2string(self, formatter=_format_provider)
+        return repr_implementation(self, dispatcher=masked_dispatcher)
 
     def reshape(self, shape, order='C'):
-        return MaskedArray(self.data.reshape(shape, order),
-                           self.mask.reshape(shape, order))
+        return MaskedArray(self.data.reshape(shape, order=order),
+                           self.mask.reshape(shape, order=order))
 
-# this format-provider code must be used with Eric-Wieser's
-# "single-formatter" branch:
-# https://github.com/eric-wieser/numpy/tree/single-formatter
-# a custom format provider for masked arrays, that inserts --
-def _format_provider(data, **options):
-    """
-    Custom format provider for masked arrays.
+class MaskedScalar(object):
+    def __init__(self, data, mask):
+        self.data = data
+        self.mask = mask
+        self.dtype = data.dtype
+        self.shape = ()
+        self.size = 1
+        self.ndim = 0
 
-    This is passed as the `formatter` argument to array2string.
+    def __str__(self):
+        if self.mask:
+            return MASK_STR
+        return str(self.data)
 
-    This is used to insert the masked_print_option into the repr,
-    without using the old trick of casting everything to object first.
-    """
-    # Here we pass only the raw data, to avoid warnings from
-    # `float(np.ma.masked)`
-    default = np.core.arrayprint.default_format_provider(data.data, **options)
-    any_masked = data.mask.any()
-    masked_str = str(masked_print_option)
+    def __repr__(self):
+        if self.mask:
+            return MASK_STR
+        return repr(self.data)
 
-    def formatter(x):
-        res = default(x.data)
-        # no need to adjust padding if this data isn't masked
-        if not any_masked:
-            return res
-
-        # pad the columns to align when including the masked string
-        col_width = builtins.max(len(res), len(masked_str))
-        if x.mask:
-            res = masked_str
-        return res.rjust(col_width)
-
-    return formatter
+    def __format__(self, format_spec):
+        if self.mask:
+            return MASK_STR
+        return format(self.data, format_spec)
 
 def implements(numpy_function):
     """Register an __array_function__ implementation for MaskedArray objects."""
@@ -109,28 +132,17 @@ def implements(numpy_function):
 #def broadcast_to(array, shape):
 #    ...  # implementation of broadcast_to for MyArray objects
 
-@implements(np.array_repr)
-def array_repr(arr, max_line_width=None, precision=None, suppress_small=None):
-    return array_repr_impl(arr, max_line_width, precision, suppress_small)
+@implements(np.max)
+def max(array):
+    return array.data[~array.mask].max()
 
-@implements(np.array2string)
-def array2string(a, max_line_width=None, precision=None,
-                 suppress_small=None, separator=' ', prefix="",
-                 style=np._NoValue, formatter=None, threshold=None,
-                 edgeitems=None, sign=None, floatmode=None, suffix="",
-                 **kwarg):
-    return array2string_impl(a, max_line_width, precision, suppress_small, separator,
-                      prefix, style, formatter, threshold, edgeitems, sign,
-                      floatmode, suffix, **kwarg)
-
-def array(data, dtype=None, copy=False, order=None,
-          mask=None, fill_value=None, keep_mask=True,
-          hard_mask=False, shrink=True, subok=True, ndmin=0):
-    return MaskedArray(data, mask=mask, dtype=dtype, copy=copy, order=order,
-                       subok=subok, ndmin=ndmin, fill_value=fill_value)
+@implements(np.min)
+def min(array):
+    return array.data[~array.mask].min()
 
 if __name__ == '__main__':
-    A = MaskedArray(np.arange(10), np.arange(10)%2)
+    A = MaskedArray(np.arange(12), np.arange(12)%2).reshape((4,3))
     print(hasattr(A, '__array_function__'))
     print(A)
-    print(A[2:4].data)
+    print(repr(A))
+    print(A[2:4])

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
 import warnings
-from duckprint import repr_implementation, str_implementation
+from duckprint2 import repr_implementation, str_implementation
 
 
 HANDLED_FUNCTIONS = {}
@@ -25,9 +25,9 @@ class ArrayCollection:
 
     Parameters
     ----------
-    data : tuple of (str, arraylike) pairs, structured ndarray, 
+    data : tuple of (str, arraylike) pairs, structured ndarray,
            or Arraycollection
-        Set of data to make a collection from. 
+        Set of data to make a collection from.
     """
     def __init__(self, data):
         # if data is a list of (name, arr) tuples:
@@ -54,7 +54,7 @@ class ArrayCollection:
         else:
             raise Exception("Expected either a list of (name, arr) pairs"
                             "or a structured array")
-        
+
         # check all arrays have the same shape
         shapes = [a.shape for a in arrays]
         if shapes.count(shapes[0]) != len(shapes):
@@ -62,7 +62,7 @@ class ArrayCollection:
                             'same shape')
 
         self.arrays = dict(zip(self.names, arrays))
-        
+
         # for now, hijack structured dtypes to represent our dtype
         self.dtype = np.dtype([(n, self.arrays[n].dtype) for n in self.names])
 
@@ -89,17 +89,17 @@ class ArrayCollection:
         if isinstance(ind, str):
             return self.arrays[ind]
 
-        # for a list of field names return an arraycollection 
+        # for a list of field names return an arraycollection
         if is_list_of_strings(ind):
             return ArrayCollection([(n, self.arrays[n]) for n in ind])
-        
+
         # single integers get converted to tuple
         if isinstance(ind, (int, np.integer)):
             ind = (ind,)
-        
+
         # fall through: Use ndarray indexing
         out = [(n, self.arrays[n][ind]) for n in self.names]
-        
+
         # scalars get returned as a CollectionScalar
         if out[0][1].shape == ():
             return CollectionScalar(tuple(a for n,a in out), self.dtype)
@@ -123,7 +123,7 @@ class ArrayCollection:
                 raise ValueError("wrong number of values")
             for n,v in zip(self.names, val):
                 self.arrays[n][ind] = v
-        
+
         # for a structured ndarray, fail
         elif isinstance(val, np.ndarray) and val.dtype.names is not None:
             raise Exception("Convert structured arrays to "
@@ -150,11 +150,11 @@ class ArrayCollection:
 
     def __len__(self):
         return len(self.arrays[self.names[0]])
-    
+
     def astype(self, dtype, order='K', casting='unsafe', subok=True, copy=True):
         kwds = {'order': order, 'casting': casting, 'subok': subok,
                 'copy': copy}
-        
+
         dtype = np.dtype(dtype)
         types = [(n, dtype.fields[n][0]) for n in dtype.names]
         if len(types) != len(self.names):
@@ -164,7 +164,7 @@ class ArrayCollection:
         if self.names != [n for n,dt in types]:
             copy = True
 
-        mapping = [(n, self.arrays[no], self.arrays[no].astype(dt, *kwds)) 
+        mapping = [(n, self.arrays[no], self.arrays[no].astype(dt, *kwds))
                    for no,(n,dt) in zip(self.names, types)]
 
         # only return self if no array needed a copy
@@ -187,7 +187,7 @@ class ArrayCollection:
         if len(newtypes) != len(self.names):
             raise Exception("Cannot change number of fields")
 
-        out = [(n, self.arrays[no].view(dt)) 
+        out = [(n, self.arrays[no].view(dt))
                for no,(n,dt) in zip(self.names, types)]
 
         return ArrayCollection(out)
@@ -209,7 +209,7 @@ class ArrayCollection:
     #def T
     #def take
     #def transpose
-    
+
     def argsort(self, axis=-1, order=None):
         if order is None:
             order = self.names
@@ -237,18 +237,19 @@ class CollectionScalar:
         self.dtype = np.dtype(dtype)
         self.shape = ()
         self.size = 1
+        self.ndim = 0
 
     def __getitem__(self, ind):
         # for a single field name, return the bare ndarray
         if isinstance(ind, str):
             return self.data[self.dtype.names.index(ind)]
 
-        # for a list of field names return an arraycollection 
+        # for a list of field names return an arraycollection
         if is_list_of_strings(ind):
             new_dtype = np.dtype([(n, self.dtype.fields[n][0]) for n in ind])
             new_data = tuple(self.data[self.dtype.names.index(n)] for n in inds)
             return CollectionScalar(new_data, new_dtype)
-        
+
         # integer index
         return self.data[ind]
 
@@ -323,8 +324,6 @@ def array2string(a, max_line_width=None, precision=None,
 
 @implements(np.concatenate)
 def concatenate(arrays, axis=0, out=None):
-    print("Here")
-    
     # validate the dtypes are similar enough (same field names)
     dtype = None
     for a in arrays:
@@ -339,7 +338,7 @@ def concatenate(arrays, axis=0, out=None):
 
         if a.dtype.names != dtype.names:
             raise Exception("mismatched field names")
-    
+
     if out is not None:
         if not isinstance(out, ArrayCollection):
             raise Exception("out must be an arraycollection")
@@ -362,7 +361,7 @@ def concatenate(arrays, axis=0, out=None):
 if __name__ == '__main__':
     # note: printing requires a modification of numpy to work:
     # In numpy/core/arrayprint.py, in _array2string(), replace the first line
-    # "data = asarray(a)" by 
+    # "data = asarray(a)" by
     #if issubclass(a, np.ndarray):
     #    data = asarray(a)
     #else:
@@ -373,7 +372,7 @@ if __name__ == '__main__':
     A = ArrayCollection([('a', a), ('b', b)])
 
     print(A[0])
-    print(repr(A)) 
+    print(repr(A))
 
     B = ArrayCollection(np.ones((2,3), dtype='u1,S3'))
     print(repr(B.reshape((3,2))))
@@ -382,3 +381,4 @@ if __name__ == '__main__':
     # does not work yet
     #print("Concatenate:")
     #print(np.concatenate([A, A]))
+    print(repr_implementation(np.arange(12).reshape((4,3))))
