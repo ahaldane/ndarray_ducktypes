@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
 import warnings
-from duckprint2 import repr_implementation, str_implementation
+from duckprint import repr_implementation, str_implementation
 
 
 HANDLED_FUNCTIONS = {}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import numpy as np
-from duckprint2 import (repr_implementation, str_implementation,
+from duckprint import (repr_implementation, str_implementation,
     default_duckprint_options, default_duckprint_formatters, FormatDispatcher)
 import builtins
 
