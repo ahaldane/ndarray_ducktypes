@@ -174,6 +174,16 @@ class _Masked_UFunc:
     def __str__(self):
         return "Masked version of {}".format(self.f)
 
+def getdata(a):
+    if isinstance(a, MaskedArray):
+        return a.data
+    return a
+
+def getmask(a):
+    if isinstance(a, MaskedArray):
+        return a.mask
+    return False
+
 class _Masked_UniOp(_Masked_UFunc):
     """
     Masked version of unary ufunc.
@@ -192,12 +202,12 @@ class _Masked_UniOp(_Masked_UFunc):
 
     def __call__(self, a, *args, **kwargs):
         with np.errstate(divide='ignore', invalid='ignore'):
-            result = self.f(a.data, *args, **kwargs)
+            result = self.f(getdata(a), *args, **kwargs)
 
         if self.domain is None:
-            m = a.mask
+            m = getmask(a)
         else:
-            m = self.domain(d) | a.mask
+            m = self.domain(d) | getmask(a)
 
         if np.isscalar(result):
             return MaskedScalar(result, m)
@@ -221,11 +231,11 @@ class _Masked_BinOp(_Masked_UFunc):
         self.domain = maskdomain
 
     def __call__(self, a, b, *args, **kwargs):
-        da, db = a.data, b.data
+        da, db = getdata(a), getdata(b)
         with np.errstate(divide='ignore', invalid='ignore'):
             result = self.f(da, db, *args, **kwargs)
 
-        m = a.mask | b.mask
+        m = getmask(a) | getmask(b)
         if self.domain is not None:
             m |= self.domain(da, db)
 
@@ -240,7 +250,7 @@ class _Masked_BinOp(_Masked_UFunc):
 
 def maskdom_divide(a, b):
     out_dtype = np.result_type(a, b)
-    
+
     # if floating, use finfo to determine domain
     if isinstance(out_dtype, np.inexact):
         tolerance = np.finfo(out_dtype).tiny
@@ -296,6 +306,8 @@ def setup_ufuncs():
                                                  maskdom_greater_equal(1.))
     masked_ufuncs[umath.arctanh] = _Masked_UniOp(umath.arctanh,
                                        make_maskdom_interval(-1+1e-15, 1+1e-15))
+                                       # XXX use finfo?
+    # XXX should these all be customized for the float size?
 
     # binary ufuncs
     for ufunc in [umath.add, umath.subtract, umath.multiply, umath.arctan2,
@@ -403,3 +415,4 @@ if __name__ == '__main__':
     print(C)
     print(np.max(C, axis=1))
     print(np.sin(C))
+    print(np.sin(C)*np.full(3, 100))
