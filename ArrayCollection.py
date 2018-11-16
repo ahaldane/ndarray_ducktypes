@@ -3,16 +3,13 @@ import numpy as np
 import warnings
 from duckprint import repr_implementation, str_implementation
 
-
-HANDLED_FUNCTIONS = {}
-
 class ArrayCollection:
     """
     NDarray-like type which stores a set of named arrays with a common shape
     but which may be different dtypes. Allows numpy-style indexing of them as a
     group. An ArrayCollection looks and behaves very similarly to a structured
-    ndarray, but will have better performance because it has better memory
-    layout.
+    ndarray, but will often have better performance because it has better
+    memory layout.
 
     Can be thought of as a "lite" version of pandas dataframe, or Xarray
     dataset.  Look to those projects if more features are desired, such
@@ -29,7 +26,7 @@ class ArrayCollection:
            or Arraycollection
         Set of data to make a collection from.
     """
-    def __init__(self, data):
+    def __init__(self, data, skip_validation=False):
         # if data is a list of (name, arr) tuples:
         if isinstance(data, list):
             self.names, arrays = zip(*data)
@@ -56,10 +53,11 @@ class ArrayCollection:
                             "or a structured array")
 
         # check all arrays have the same shape
-        shapes = [a.shape for a in arrays]
-        if shapes.count(shapes[0]) != len(shapes):
-            raise Exception('All arrays in a collection must have the '
-                            'same shape')
+        if not skip_validation:
+            shapes = [a.shape for a in arrays]
+            if shapes.count(shapes[0]) != len(shapes):
+                raise Exception('All arrays in a collection must have the '
+                                'same shape')
 
         self.arrays = dict(zip(self.names, arrays))
 
@@ -85,13 +83,14 @@ class ArrayCollection:
     #    # TODO: ArrayCollection supports only one ufunc: np.equal
 
     def __getitem__(self, ind):
-        # for a single field name, return the bare ndarray
+        # for a single field name, return the bare ndarray (view)
         if isinstance(ind, str):
             return self.arrays[ind]
 
-        # for a list of field names return an arraycollection
+        # for a list of field names return an arraycollection (view)
         if is_list_of_strings(ind):
-            return ArrayCollection([(n, self.arrays[n]) for n in ind])
+            return ArrayCollection([(n, self.arrays[n]) for n in ind],
+                                   skip_validation=True)
 
         # single integers get converted to tuple
         if isinstance(ind, (int, np.integer)):
@@ -111,11 +110,10 @@ class ArrayCollection:
         if isinstance(ind, str):
             self.arrays[ind][:] = val
 
-        # for a list of field names, assign to those arrays
+        # for a list of field names, assign to the ArrayCollection view
         elif is_list_of_strings(ind):
-            for name in ind:
-                self.arrays[name][:] = val
-                return
+            view = self[ind]
+            view[:] = val
 
         # for a tuple, assign values to each array in order
         elif isinstance(val, tuple):
@@ -257,7 +255,8 @@ class CollectionScalar:
         return str(self.data)
 
     def __repr__(self):
-        return "CollectionScalar({}, dtype={})".format(str(self.data), str(self.dtype))
+        return "CollectionScalar({}, dtype={})".format(str(self.data), 
+                                                       str(self.dtype))
 
 def is_list_of_strings(val):
     if not isinstance(val, list):
@@ -280,6 +279,8 @@ def empty_collection(shape, dtype, order='C'):
             arrays.append((n, np.empty(nshape, dt, order=order)))
 
     return ArrayCollection(arrays)
+
+HANDLED_FUNCTIONS = {}
 
 def implements(numpy_function):
     """Register an __array_function__ implementation for MaskedArray objects."""
@@ -318,9 +319,9 @@ def array2string(a, max_line_width=None, precision=None,
                  style=np._NoValue, formatter=None, threshold=None,
                  edgeitems=None, sign=None, floatmode=None, suffix="",
                  **kwarg):
-    return array2string_impl(a, max_line_width, precision, suppress_small, separator,
-                      prefix, style, formatter, threshold, edgeitems, sign,
-                      floatmode, suffix, **kwarg)
+    return array2string_impl(a, max_line_width, precision, suppress_small,
+                      separator, prefix, style, formatter, threshold, edgeitems,
+                      sign, floatmode, suffix, **kwarg)
 
 @implements(np.concatenate)
 def concatenate(arrays, axis=0, out=None):
@@ -359,14 +360,6 @@ def concatenate(arrays, axis=0, out=None):
 
 
 if __name__ == '__main__':
-    # note: printing requires a modification of numpy to work:
-    # In numpy/core/arrayprint.py, in _array2string(), replace the first line
-    # "data = asarray(a)" by
-    #if issubclass(a, np.ndarray):
-    #    data = asarray(a)
-    #else:
-    #    data = a
-
     a = np.arange(10, dtype='u2')
     b = np.arange(10, 20, dtype='f8')
     A = ArrayCollection([('a', a), ('b', b)])

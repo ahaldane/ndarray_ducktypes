@@ -14,15 +14,27 @@ else:
         from dummy_thread import get_ident
 
 import numpy as np
-from numpy import (concatenate, errstate, absolute, not_equal, isnan, isinf,
-                   isfinite, isnat, array, format_float_positional,
+from numpy import (concatenate, errstate, array, format_float_positional,
                    format_float_scientific, datetime_as_string, datetime_data,
                    ndarray, ravel, any, longlong, intc, int_, float_, complex_,
                    bool_, flexible)
+from numpy.core import umath
 import warnings
 import contextlib
 
+# WIP: Notes.
+#
+# The get/set_printoptions functionality is temporarily removed and being
+# reworked. That is the purpose of all the `check_options` methods defined
+# below, which are currently largely unused.
+#
+
 class FormatDispatcher(object):
+    """
+    Class used to determine which formatter to use to print an array's
+    elements. The main method is `get_format_func`, called on an array,
+    which will return the best formatter to use to print that array's elements.
+    """
     def __init__(self, formatter_cls, options=None):
         self.formatters = [f() for f in formatter_cls]
         self.options = options or {}
@@ -36,10 +48,10 @@ class FormatDispatcher(object):
         opt['dispatch'] = self
 
         for f in self.formatters:
-            if f.can_dispatch(elem):
+            if f.will_dispatch(elem):
                 return f.get_format_func(elem, **opt)
 
-        raise Exception("No dispatcher found for these elements")
+        raise Exception("No dispatcher found for this array")
 
     def check_options(self, **kwds):
         if not kwds:
@@ -59,7 +71,19 @@ class FormatDispatcher(object):
         self.options.update(kwds)
 
 class ElementFormatter(object):
-    def can_dispatch(self, elem):
+    """
+    Base class for the array element formatters.
+
+    These have three methods:
+      * `will_dispatch` is used by the dispatcher (above) to determine
+        whether to use this formatter for an array. It should be passed the set
+        of elements that will ultimately be printed.
+      * `get_format_func` returns a function taking a single argument, an array
+        element, which will format that element as a string.
+      * `check_options` for validating options. This will validate any relevant
+        options, and return a list of options it didn't handle.
+    """
+    def will_dispatch(self, elem):
         return False
 
     def get_format_func(self, elem, options=None):
@@ -70,7 +94,7 @@ class ElementFormatter(object):
 
 
 class BoolFormatter(ElementFormatter):
-    def can_dispatch(self, elem):
+    def will_dispatch(self, elem):
         return issubclass(elem.dtype.type, np.bool_)
 
     def get_format_func(self, elem, **options):
@@ -79,7 +103,7 @@ class BoolFormatter(ElementFormatter):
 
 
 class IntegerFormatter(ElementFormatter):
-    def can_dispatch(self, elem):
+    def will_dispatch(self, elem):
         return issubclass(elem.dtype.type, np.integer)
 
     def get_format_func(self, elem, **options):
@@ -92,7 +116,7 @@ class IntegerFormatter(ElementFormatter):
 
 
 class FloatingFormatter(ElementFormatter):
-    def can_dispatch(self, elem):
+    def will_dispatch(self, elem):
         return issubclass(elem.dtype.type, np.floating)
 
     def get_format_func(self, elem, **options):
@@ -110,12 +134,12 @@ class FloatingFormatter(ElementFormatter):
         pad_left, pad_right = 0, 0
 
         # only the finite values are used to compute the number of digits
-        finite = isfinite(elem)
+        finite = umath.isfinite(elem)
         finite_vals = elem[finite]
         nonfinite_vals = elem[~finite]
 
         # choose exponential mode based on the non-zero finite values:
-        abs_non_zero = absolute(finite_vals[finite_vals != 0])
+        abs_non_zero = umath.absolute(finite_vals[finite_vals != 0])
         if len(abs_non_zero) != 0:
             max_val = np.max(abs_non_zero)
             min_val = np.min(abs_non_zero)
@@ -176,17 +200,17 @@ class FloatingFormatter(ElementFormatter):
         # account for nan and inf in pad_left
         if len(nonfinite_vals) != 0:
             nanlen, inflen = 0, 0
-            if any(isinf(nonfinite_vals)):
+            if any(umath.isinf(nonfinite_vals)):
                 neginf = sign != '-' or any(isneginf(nonfinite_vals))
                 inflen = len(infstr) + neginf
-            if any(isnan(elem)):
+            if any(umath.isnan(elem)):
                 nanlen = len(nanstr)
             offset = pad_right + 1  # +1 for decimal pt
             pad_left = max(nanlen - offset, inflen - offset, pad_left)
 
         def print_nonfinite(x):
             with errstate(invalid='ignore'):
-                if np.isnan(x):
+                if umath.isnan(x):
                     ret = ('+' if sign == '+' else '') + nanstr
                 else:  # isinf
                     infsgn = '-' if x < 0 else '+' if sign == '+' else ''
@@ -205,7 +229,13 @@ class FloatingFormatter(ElementFormatter):
                            sign=sign == '+',
                            pad_left=pad_left, pad_right=pad_right)
 
-        return lambda x: print_finite(x) if isfinite(x) else print_nonfinite(x)
+        def fmt(x):
+            if umath.isfinite(x):
+                return print_finite(x)
+            else:
+                return print_nonfinite(x)
+
+        return fmt
 
     def check_options(self, **options):
         opt = set(['floatmode', 'precision', 'sign', 'infstr', 'nanstr',
@@ -232,7 +262,7 @@ class FloatingFormatter(ElementFormatter):
 
 
 class ComplexFloatingFormatter(FloatingFormatter):
-    def can_dispatch(self, elem):
+    def will_dispatch(self, elem):
         return issubclass(elem.dtype.type, np.complexfloating)
 
     def get_format_func(self, elem, **options):
@@ -254,7 +284,7 @@ class ComplexFloatingFormatter(FloatingFormatter):
 
 class _TimelikeFormatter(ElementFormatter):
     def _datetime_fmt(self, elem, fmt_non_nat):
-        non_nat = elem[~isnat(elem)]
+        non_nat = elem[~umath.isnat(elem)]
         if len(non_nat) > 0:
             # Max str length of non-NaT elements
             max_str_len = max(len(fmt_non_nat(np.max(non_nat))),
@@ -270,7 +300,7 @@ class _TimelikeFormatter(ElementFormatter):
         return lambda x: nats if isnat(x) else fmt % fmt_non_nat(x)
 
 class DatetimeFormatter(_TimelikeFormatter):
-    def can_dispatch(self, elem):
+    def will_dispatch(self, elem):
         return issubclass(elem.dtype.type, np.datetime64)
 
     def get_format_func(self, elem, **options):
@@ -303,7 +333,7 @@ class DatetimeFormatter(_TimelikeFormatter):
 
 
 class TimedeltaFormatter(_TimelikeFormatter):
-    def can_dispatch(self, elem):
+    def will_dispatch(self, elem):
         return issubclass(elem.dtype.type, np.timedelta64)
 
     def get_format_func(self, elem, **options):
@@ -311,7 +341,7 @@ class TimedeltaFormatter(_TimelikeFormatter):
 
 
 class SubArrayFormatter(ElementFormatter):
-    def can_dispatch(self, elem):
+    def will_dispatch(self, elem):
         return elem.dtype.shape is not ()
 
     def get_format_func(self, elem, **options):
@@ -326,7 +356,7 @@ class SubArrayFormatter(ElementFormatter):
         return fmt
 
 class StructuredFormatter(ElementFormatter):
-    def can_dispatch(self, elem):
+    def will_dispatch(self, elem):
         return elem.dtype.names is not None
 
     def get_format_func(self, elem, **options):
@@ -353,7 +383,7 @@ class StructuredFormatter(ElementFormatter):
         return fmt
 
 class ObjectFormatter(ElementFormatter):
-    def can_dispatch(self, elem):
+    def will_dispatch(self, elem):
         return issubclass(elem.dtyp.typee, np.object_)
 
     def get_format_func(self, elem, **options):
@@ -363,14 +393,14 @@ class ObjectFormatter(ElementFormatter):
         return fmt
 
 class StringFormatter(ElementFormatter):
-    def can_dispatch(self, elem):
+    def will_dispatch(self, elem):
         return issubclass(elem.dtype.type, (np.unicode_, np.string_))
 
     def get_format_func(self, elem, **options):
         return repr
 
 class VoidFormatter(ElementFormatter):
-    def can_dispatch(self, elem):
+    def will_dispatch(self, elem):
         return issubclass(elem.dtype.type, np.void)
 
     def get_format_func(self, elem, **options):
@@ -387,7 +417,7 @@ default_duckprint_options = {
     'sign': '-',
     }
 
-# Note: Order matters. Timedelta must go before Int because they have the
+# Note: Order matters. Timedelta must go before Integer because they have the
 # same underlying type.
 default_duckprint_formatters = [BoolFormatter, TimedeltaFormatter,
     IntegerFormatter, FloatingFormatter, ComplexFloatingFormatter,
