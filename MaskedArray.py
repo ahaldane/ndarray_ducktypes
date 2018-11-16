@@ -123,13 +123,15 @@ def as_masked_fmt(formattercls):
 
     class MaskedFormatter(formattercls):
         def get_format_func(self, elem, **options):
-            # only get fmt_func based on non-masked values
-            # (we take care of mask ourselves)
-            unmasked = elem.data[~elem.mask]
-            default_fmt = super().get_format_func(unmasked, **options)
 
             if not elem.mask.any():
+                default_fmt = super().get_format_func(elem.data, **options)
                 return lambda x: default_fmt(x.data)
+
+            # only get fmt_func based on non-masked values
+            # (we take care of masked elements ourselves)
+            unmasked = elem.data[~elem.mask]
+            default_fmt = super().get_format_func(unmasked, **options)
 
             # default_fmt should always give back same str length.
             # Figure out what this is with a test call.
@@ -173,42 +175,8 @@ class _Masked_UFunc:
         return "Masked version of {}".format(self.f)
 
 class _Masked_UniOp(_Masked_UFunc):
-    def __init__(self, ufunc):
-        super().__init__(ufunc)
-        self.ufunc = ufunc
-
-    def __call__(self, a, *args, **kwargs):
-        result = self.ufunc(a.data, *args, **kwargs)
-        if np.isscalar(result):
-            return MaskedScalar(result, m)
-
-        return MaskedArray(result, a.mask)
-
-class _Masked_BinOp(_Masked_UFunc):
-    def __init__(self, ufunc):
-        super().__init__(ufunc)
-        self.ufunc = ufunc
-
-    def __call__(self, a, b, *args, **kwargs):
-        da, db = a.data, b.data #XXX use getdata to account for plain ndarrays
-        with np.errstate(divide='ignore', invalid='ignore'):
-            result = self.f(da, db, *args, **kwargs)
-
-        mask = umath.logical_or(a.mask, b.mask)
-
-        if np.isscalar(result):
-            return MaskedScalar(result, mask)
-
-        return MaskedArray(result, mask)
-
-    #def reduce(self, target, axis=0, dtype=None):
-    #def outer(self, a, b):
-    #def accumulate(self, target, axis=0):
-
-class _Domainmask_UniOp(_Masked_UFunc):
     """
-    Defines masked version of unary operations, where invalid values are
-    pre-masked.
+    Masked version of unary ufunc.
 
     Parameters
     ----------
@@ -223,26 +191,22 @@ class _Domainmask_UniOp(_Masked_UFunc):
         self.domain = maskdomain
 
     def __call__(self, a, *args, **kwargs):
-        d = a.data
-
         with np.errstate(divide='ignore', invalid='ignore'):
-            result = self.f(d, *args, **kwargs)
+            result = self.f(a.data, *args, **kwargs)
 
-        if self.domain is not None:
-            m = self.domain(d) | a.mask
-        else:
+        if self.domain is None:
             m = a.mask
+        else:
+            m = self.domain(d) | a.mask
 
         if np.isscalar(result):
             return MaskedScalar(result, m)
 
         return MaskedArray(result, m)
 
-class _Domainmask_BinOp(_Masked_UFunc):
+class _Masked_BinOp(_Masked_UFunc):
     """
-    Define binary operations that have a domain, like divide.
-
-    They have no reduce, outer or accumulate.
+    Masked version of binary ufunc.
 
     Parameters
     ----------
@@ -252,14 +216,9 @@ class _Domainmask_BinOp(_Masked_UFunc):
         Function which returns true for inputs whose output should be masked.
     """
 
-    def __init__(self, ufunc, maskdomain, fillx=0, filly=0):
-        """abfunc(fillx, filly) must be defined.
-           abfunc(x, filly) = x for all x to enable reduce.
-        """
+    def __init__(self, ufunc, maskdomain=None):
         super().__init__(ufunc)
         self.domain = maskdomain
-        self.fillx = fillx
-        self.filly = filly
 
     def __call__(self, a, b, *args, **kwargs):
         da, db = a.data, b.data
@@ -275,16 +234,44 @@ class _Domainmask_BinOp(_Masked_UFunc):
 
         return MaskedArray(result, m)
 
+    #def reduce(self, target, axis=0, dtype=None):
+    #def outer(self, a, b):
+    #def accumulate(self, target, axis=0):
+
 def maskdom_divide(a, b):
     out_dtype = np.result_type(a, b)
-
+    
+    # if floating, use finfo to determine domain
     if isinstance(out_dtype, np.inexact):
         tolerance = np.finfo(out_dtype).tiny
         with np.errstate(invalid='ignore'):
             return umath.absolute(a) * tolerance >= umath.absolute(b)
 
-    # otherwise, assume integer type
+    # otherwise, for integer types, only 0 is a problem
     return b == 0
+
+def maskdom_greater_equal(x):
+    def maskdom_interval(a):
+        with np.errstate(invalid='ignore'):
+            return umath.less(a, x)
+    return maskdom_interval
+
+def maskdom_greater(x):
+    def maskdom_interval(a):
+        with np.errstate(invalid='ignore'):
+            return umath.less_equal(a, x)
+    return maskdom_interval
+
+def maskdom_tan(a):
+    with np.errstate(invalid='ignore'):
+        return umath.less(umath.absolute(umath.cos(x)), 1e-35) #XXX use finfo?
+
+def make_maskdom_interval(lo, hi):
+    def maskdom(a):
+        with np.errstate(invalid='ignore'):
+            return umath.logical_or(umath.greater(x, hi),
+                                    umath.less(x, lo))
+    return maskdom
 
 def setup_ufuncs():
     # unary funcs
@@ -296,10 +283,19 @@ def setup_ufuncs():
         masked_ufuncs[ufunc] = _Masked_UniOp(ufunc)
 
     # domained unary funcs
-    for ufunc in [umath.sqrt, umath.log, umath.log10, umath.tan, umath.arcsin,
-                  umath.arccos, umath.arccosh, umath.arctanh]:
-        masked_ufuncs[ufunc] = _Domainmask_UniOp(ufunc)
-        #XXX need to seup up all the unary domains
+    masked_ufuncs[umath.sqrt] = _Masked_UniOp(umath.sqrt,
+                                              maskdom_greater_equal(0.))
+    masked_ufuncs[umath.log] = _Masked_UniOp(umath.log, maskdom_greater(0.))
+    masked_ufuncs[umath.log2] = _Masked_UniOp(umath.log2, maskdom_greater(0.))
+    masked_ufuncs[umath.log10] = _Masked_UniOp(umath.log10, maskdom_greater(0.))
+    masked_ufuncs[umath.tan] = _Masked_UniOp(umath.tan, maskdom_tan)
+    maskdom_11 = make_maskdom_interval(-1., 1.)
+    masked_ufuncs[umath.arcsin] = _Masked_UniOp(umath.arcsin, maskdom_11)
+    masked_ufuncs[umath.arccos] = _Masked_UniOp(umath.arccos, maskdom_11)
+    masked_ufuncs[umath.arccosh] = _Masked_UniOp(umath.arccos,
+                                                 maskdom_greater_equal(1.))
+    masked_ufuncs[umath.arctanh] = _Masked_UniOp(umath.arctanh,
+                                       make_maskdom_interval(-1+1e-15, 1+1e-15))
 
     # binary ufuncs
     for ufunc in [umath.add, umath.subtract, umath.multiply, umath.arctan2,
@@ -313,7 +309,7 @@ def setup_ufuncs():
     # domained binary ufuncs
     for ufunc in [umath.true_divide, umath.floor_divide, umath.remainder,
                   umath.fmod, umath.mod]:
-        masked_ufuncs[ufunc] = _Domainmask_BinOp(ufunc, maskdom_divide, 0, 1)
+        masked_ufuncs[ufunc] = _Masked_BinOp(ufunc, maskdom_divide)
 
 setup_ufuncs()
 
@@ -406,3 +402,4 @@ if __name__ == '__main__':
     C = A/B
     print(C)
     print(np.max(C, axis=1))
+    print(np.sin(C))
