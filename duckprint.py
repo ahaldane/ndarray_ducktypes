@@ -360,12 +360,11 @@ class StructuredFormatter(ElementFormatter):
         return elem.dtype.names is not None
 
     def get_format_func(self, elem, **options):
-        dispatcher = options['dispatch']
-
         format_funcs = []
         for field_name in elem.dtype.names:
             farr = elem[field_name]
 
+            dispatcher = get_duckprint_dispatcher(farr)
             format_func = dispatcher.get_format_func(farr, **options)
             if elem.dtype[field_name].shape != ():
                 fmttr = SubArrayFormatter()
@@ -426,6 +425,12 @@ default_duckprint_formatters = [BoolFormatter, TimedeltaFormatter,
 
 default_duckprint_dispatcher = FormatDispatcher(default_duckprint_formatters,
                                                 default_duckprint_options)
+
+def get_duckprint_dispatcher(arr):
+    if hasattr(arr, '__duckprint_dispatcher__'):
+        return arr.__duckprint_dispatcher__()
+    else:
+        return default_duckprint_dispatcher
 
 def _leading_trailing(a, edgeitems, index=()):
     """
@@ -494,7 +499,6 @@ def _array2string(a, dispatcher, options, separator, prefix, suffix, linewidth,
     lst = _formatArray(a, format_function, linewidth, next_line_prefix,
                        separator, edgeitems, summary_insert)
     return lst
-
 
 def array2string(a, separator=' ', prefix="", suffix="", linewidth=75,
                  threshold=1000, edgeitems=3, dispatcher=None, **options):
@@ -569,7 +573,7 @@ def array2string(a, separator=' ', prefix="", suffix="", linewidth=75,
 
     """
     if dispatcher is None:
-        dispatcher = default_duckprint_dispatcher
+        dispatcher = get_duckprint_dispatcher(a)
 
     # treat as a null array if any of shape elements == 0
     if a.size == 0:
@@ -722,7 +726,7 @@ def dtype_short_repr(dtype):
     return typename
 
 
-def repr_implementation(arr, **options):
+def duck_repr(arr, **options):
     """
     Return the string representation of an array.
 
@@ -788,7 +792,7 @@ def repr_implementation(arr, **options):
     return arr_str + spacer + dtype_str
 
 
-def str_implementation(a, **options):
+def duck_str(a, **options):
     """
     Return a string representation of the data in an array.
 

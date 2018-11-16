@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
 import warnings
-from duckprint import repr_implementation, str_implementation
+from duckprint import duck_repr, duck_str
 
 class ArrayCollection:
     """
@@ -141,10 +141,10 @@ class ArrayCollection:
                 self.arrays[n][ind] = val
 
     def __str__(self):
-        return str_implementation(self)
+        return duck_str(self)
 
     def __repr__(self):
-        return repr_implementation(self)
+        return duck_repr(self)
 
     def __len__(self):
         return len(self.arrays[self.names[0]])

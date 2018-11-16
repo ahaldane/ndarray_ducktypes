@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
-from duckprint import (repr_implementation, str_implementation,
-    default_duckprint_options, default_duckprint_formatters, FormatDispatcher)
+from duckprint import (duck_str, duck_repr, default_duckprint_options,
+                       default_duckprint_formatters, FormatDispatcher)
 import builtins
 import numpy.core.umath as umath
 from numpy.lib.mixins import NDArrayOperatorsMixin
@@ -46,6 +46,20 @@ class MaskedArray(NDArrayOperatorsMixin):
 
         return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
 
+    @classmethod
+    def __duckprint_dispatcher__(cls):
+        return masked_dispatcher
+
+    def __str__(self):
+        return duck_str(self)
+
+    def __repr__(self):
+        return duck_repr(self)
+
+    def reshape(self, shape, order='C'):
+        return MaskedArray(self.data.reshape(shape, order=order),
+                           self.mask.reshape(shape, order=order))
+
     def __getitem__(self, ind):
         data = self.data[ind]
         mask = self.mask[ind]
@@ -61,15 +75,6 @@ class MaskedArray(NDArrayOperatorsMixin):
             self.data[ind] = val
             self.mask[ind] = False
 
-    def __str__(self):
-        return str_implementation(self, dispatcher=masked_dispatcher)
-
-    def __repr__(self):
-        return repr_implementation(self, dispatcher=masked_dispatcher)
-
-    def reshape(self, shape, order='C'):
-        return MaskedArray(self.data.reshape(shape, order=order),
-                           self.mask.reshape(shape, order=order))
 
     def filled(self, fill_value=None):
         if not np.any(self.mask):
