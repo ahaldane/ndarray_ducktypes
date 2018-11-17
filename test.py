@@ -5,4 +5,9 @@ import numpy as np
 
 a = MaskedArray(np.arange(10), np.arange(10)%3)
 b = MaskedArray(np.arange(10.) + 13, np.arange(10)%2)
-print(repr(ArrayCollection([('age', a), ('weight', b)])))
+
+c = ArrayCollection([('age', a), ('weight', b)])
+print(repr(c))
+c['age'] += 100
+print(repr(c))
+

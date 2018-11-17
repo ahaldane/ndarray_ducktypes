@@ -255,7 +255,7 @@ class CollectionScalar:
         return str(self.data)
 
     def __repr__(self):
-        return "CollectionScalar({}, dtype={})".format(str(self.data), 
+        return "CollectionScalar({}, dtype={})".format(str(self.data),
                                                        str(self.dtype))
 
 def is_list_of_strings(val):

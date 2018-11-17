@@ -21,8 +21,8 @@ class MaskedArray(NDArrayOperatorsMixin):
         if mask is None:
             self.mask = np.zeros(data.shape, dtype='bool', order=order)
         else:
-            mask = mask.astype('bool', copy=True)
-            self.mask = np.broadcast_to(mask, self.data.shape)
+            self.mask = np.empty(data.shape, dtype='bool')
+            self.mask[:] = np.broadcast_to(mask, self.data.shape)
 
         self.fill_value = fill_value
 
@@ -68,7 +68,7 @@ class MaskedArray(NDArrayOperatorsMixin):
         return MaskedArray(data, mask)
 
     def __setitem__(self, ind, val):
-        if isinstance(val, [MaskedArray, MaskedScalar]):
+        if isinstance(val, (MaskedArray, MaskedScalar)):
             self.data[ind] = val.data
             self.mask[ind] = val.mask
         else:
@@ -191,7 +191,7 @@ def getmask(a):
 
 class _Masked_UniOp(_Masked_UFunc):
     """
-    Masked version of unary ufunc.
+    Masked version of unary ufunc. Assumes 1 output.
 
     Parameters
     ----------
@@ -206,6 +206,10 @@ class _Masked_UniOp(_Masked_UFunc):
         self.domain = maskdomain
 
     def __call__(self, a, *args, **kwargs):
+        out = kwargs.get('out', ())
+        if out and isinstance(out[0], MaskedArray):
+            kwargs['out'] = (out[0].data,)
+
         with np.errstate(divide='ignore', invalid='ignore'):
             result = self.f(getdata(a), *args, **kwargs)
 
@@ -214,6 +218,10 @@ class _Masked_UniOp(_Masked_UFunc):
         else:
             m = self.domain(d) | getmask(a)
 
+        if out is not None:
+            out[0].mask[:] = m
+            return out[0]
+
         if np.isscalar(result):
             return MaskedScalar(result, m)
 
@@ -221,7 +229,7 @@ class _Masked_UniOp(_Masked_UFunc):
 
 class _Masked_BinOp(_Masked_UFunc):
     """
-    Masked version of binary ufunc.
+    Masked version of binary ufunc. Assumes 1 output.
 
     Parameters
     ----------
@@ -235,14 +243,23 @@ class _Masked_BinOp(_Masked_UFunc):
         super().__init__(ufunc)
         self.domain = maskdomain
 
-    def __call__(self, a, b, *args, **kwargs):
+    def __call__(self, a, b, **kwargs):
         da, db = getdata(a), getdata(b)
+
+        out = kwargs.get('out', ())
+        if out and isinstance(out[0], MaskedArray):
+            kwargs['out'] = (out[0].data,)
+
         with np.errstate(divide='ignore', invalid='ignore'):
-            result = self.f(da, db, *args, **kwargs)
+            result = self.f(da, db, **kwargs)
 
         m = getmask(a) | getmask(b)
         if self.domain is not None:
             m |= self.domain(da, db)
+
+        if out is not None:
+            out[0].mask[:] = m
+            return out[0]
 
         if np.isscalar(result):
             return MaskedScalar(result, m)
