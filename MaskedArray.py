@@ -9,7 +9,7 @@ import numpy.core.numerictypes as ntypes
 
 class MaskedArray(NDArrayOperatorsMixin):
     def __init__(self, data=None, mask=None, dtype=None, copy=False,
-                order=None, subok=True, ndmin=0, fill_value=None, **options):
+                order=None, subok=True, ndmin=0, **options):
         self.data = np.array(data, dtype, copy=copy, order=order, subok=subok,
                              ndmin=ndmin)
 
@@ -18,13 +18,18 @@ class MaskedArray(NDArrayOperatorsMixin):
         # ArrayCollection of MaskedArrays if you want to mask individual
         # fields.
 
-        if mask is None:
+        if isinstance(data, MaskedArray):
+            self.data = data.data
+            self.mask = data.mask
+            if mask is not None:
+                raise Exception("don't use mask if passing a maskedarray")
+                #XXX should this override the mask?
+
+        elif mask is None:
             self.mask = np.zeros(data.shape, dtype='bool', order=order)
         else:
             self.mask = np.empty(data.shape, dtype='bool')
             self.mask[:] = np.broadcast_to(mask, self.data.shape)
-
-        self.fill_value = fill_value
 
         self.shape = self.data.shape
         self.ndim = self.data.ndim
@@ -47,7 +52,7 @@ class MaskedArray(NDArrayOperatorsMixin):
         return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
 
     @classmethod
-    def __duckprint_dispatcher__(cls):
+    def __nd_duckprint_dispatcher__(cls):
         return masked_dispatcher
 
     def __str__(self):
@@ -76,19 +81,33 @@ class MaskedArray(NDArrayOperatorsMixin):
             self.mask[ind] = False
 
 
-    def filled(self, fill_value=None):
-        if not np.any(self.mask):
-            return self.data
-
-        if fill_value is None:
-            fill_value = self.fill_value
-        else:
-            fill_value = self.dtype.type(fill_value)
-
+    def filled(self, fill_value=0):
         result = self.data.copy()
+        fill_value = self.dtype.type(fill_value)
         np.copyto(result, fill_value, where=self.mask)
         return result
 
+# Ndarrays return scalars when "fully indexed" (integer at each axis). Ducktype
+# implementors need to mimic this. However, they often want the scalars to
+# behave specially - eg be masked for MaskedArray. I see a few different
+# scalar strategies:
+# 1. Make a MaskedScalar class which wraps all scalars. This is implemented
+#    below. Problem: It fails code which uses "isisntance(np.int32)". But maybe
+#    that is good to force people to use `filled` before using this way.
+# 2. Subclass each numpy scalar type individually to keep parent methods and
+#    use super(), but modify the repr, add a "filled" method and fillvalue.
+#    Problem: 1. currently subclassing numpy scalars does not work properly. 2.
+#    Other code is not aware of the mask and ignores it.
+# 3. return normal numpy scalars for unmasked values, and return separate masked
+#    values when masked. How to implement the masked values? As in #2?
+# 4. Like #3 but return a "masked" singleton for masked values like in the old
+#    MaskedArray. Problem: it has a fixed dtype of float64 causing lots of
+#    casting bugs, and unintentionally modifying the singleton (not too hard to
+#    do) leads to bugs. Also fails the isinstance checks, and more.
+#
+# Question: What should happen when you fancy-index using a masked integer
+# array? Probably it should fail - you should use filled first.
+#
 class MaskedScalar:
     def __init__(self, data, mask):
         self.data = data
@@ -113,9 +132,9 @@ class MaskedScalar:
             return MASK_STR
         return format(self.data, format_spec)
 
-    def filled(self):
+    def filled(self, fill_value=0):
         if self.mask:
-            return self.fill_value
+            return self.data.dtype.type(fill_value)
         return self.data
 
 ################################################################################
@@ -139,7 +158,7 @@ def as_masked_fmt(formattercls):
             default_fmt = super().get_format_func(unmasked, **options)
 
             # default_fmt should always give back same str length.
-            # Figure out what this is with a test call.
+            # Figure out what this is with a test call. XXX flatten before index
             example_str = default_fmt(unmasked[0]) if len(unmasked) > 0 else ''
             masked_str = options['masked_str']
             reslen = builtins.max(len(example_str), len(masked_str))
@@ -218,7 +237,7 @@ class _Masked_UniOp(_Masked_UFunc):
         else:
             m = self.domain(d) | getmask(a)
 
-        if out is not None:
+        if out is not ():
             out[0].mask[:] = m
             return out[0]
 
@@ -257,7 +276,7 @@ class _Masked_BinOp(_Masked_UFunc):
         if self.domain is not None:
             m |= self.domain(da, db)
 
-        if out is not None:
+        if out is not ():
             out[0].mask[:] = m
             return out[0]
 

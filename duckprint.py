@@ -427,8 +427,8 @@ default_duckprint_dispatcher = FormatDispatcher(default_duckprint_formatters,
                                                 default_duckprint_options)
 
 def get_duckprint_dispatcher(arr):
-    if hasattr(arr, '__duckprint_dispatcher__'):
-        return arr.__duckprint_dispatcher__()
+    if hasattr(arr, '__nd_duckprint_dispatcher__'):
+        return arr.__nd_duckprint_dispatcher__()
     else:
         return default_duckprint_dispatcher
 
