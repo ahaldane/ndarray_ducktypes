@@ -10,6 +10,12 @@ import numpy.core.numerictypes as ntypes
 class MaskedArray(NDArrayOperatorsMixin):
     def __init__(self, data=None, mask=None, dtype=None, copy=False,
                 order=None, subok=True, ndmin=0, **options):
+
+        if mask is None:
+            # if mask is None, user may have put masked values in the data
+            data, mask = replace_masked(data)
+        # otherwise, we will get some kind of failure in the next line
+
         self.data = np.array(data, dtype, copy=copy, order=order, subok=subok,
                              ndmin=ndmin)
 
@@ -26,9 +32,9 @@ class MaskedArray(NDArrayOperatorsMixin):
                 #XXX should this override the mask?
 
         elif mask is None:
-            self.mask = np.zeros(data.shape, dtype='bool', order=order)
+            self.mask = np.zeros(self.data.shape, dtype='bool', order=order)
         else:
-            self.mask = np.empty(data.shape, dtype='bool')
+            self.mask = np.empty(self.data.shape, dtype='bool')
             self.mask[:] = np.broadcast_to(mask, self.data.shape)
 
         self.shape = self.data.shape
@@ -73,7 +79,9 @@ class MaskedArray(NDArrayOperatorsMixin):
         return MaskedArray(data, mask)
 
     def __setitem__(self, ind, val):
-        if isinstance(val, (MaskedArray, MaskedScalar)):
+        if isinstance(val, Masked):
+            self.mask[ind] = True
+        elif isinstance(val, (MaskedArray, MaskedScalar)):
             self.data[ind] = val.data
             self.mask[ind] = val.mask
         else:
@@ -124,18 +132,70 @@ class MaskedScalar:
 
     def __repr__(self):
         if self.mask:
-            return MASK_STR  # or "masked" ?
+            return 'masked_{}'.format(self.dtype.name)
         return repr(self.data)
 
     def __format__(self, format_spec):
         if self.mask:
-            return MASK_STR
+            return 'masked_{}'.format(self.dtype.name)
         return format(self.data, format_spec)
 
     def filled(self, fill_value=0):
         if self.mask:
             return self.data.dtype.type(fill_value)
         return self.data
+
+# create a special dummy object which signifies "masked", which users can put
+# in lists to pass to MaskedArray constructur, or can assign to elements of
+# a MaskedArray, to set the mask.
+class Masked:
+    def __repr__(self):
+        return 'masked'
+    def __str__(self):
+        return 'masked'
+masked = X = Masked()
+
+# takes array input, replaces masked value by another element in the array
+# This is more-or-less a reimplementation of PyArray_DTypeFromObject to
+# account for masked values
+def replace_masked(data, fill=None):
+
+    # we do two passes: First we figure out the output dtype, then we replace
+    # all masked values by the filler "type(0)".
+
+    def get_dtype(data, cur_dtype=None):
+        if isinstance(data, list):
+            out_dtype = np.result_type(*(get_dtype(d) for d in data))
+
+            if cur_dtype is None:
+                return out_dtype
+            else:
+                return np.promote_types(out_dtype, cur_dtype)
+
+        if hasattr(data, '__array_function__'):
+            return data.dtype
+
+        # otherwise try to coerce it to an ndarray (accounts for __array__,
+        # __array_interface__ implementors)
+        return np.array(data).dtype
+
+
+    dt = get_dtype(data)
+    fill = dt.type(0)
+
+    def replace(data):
+        if data is masked:
+            return fill, True
+        if isinstance(data, (MaskedScalar, MaskedArray)):
+            return data.data, data.mask
+        if isinstance(data, list):
+            return tuple(zip(*(replace_masked(d) for d in data)))
+        if hasattr(data, '__array_function__'):
+            return data, np.zeros(data.shape, dtype='bool')
+        # otherwise assume it is some kind of scalar
+        return data, False
+
+    return replace(data)
 
 ################################################################################
 #                               Printing setup
@@ -175,7 +235,7 @@ def as_masked_fmt(formattercls):
 
     return MaskedFormatter
 
-MASK_STR = '_'  # make this more configurable later
+MASK_STR = 'X'  # make this more configurable later
 
 masked_formatters = [as_masked_fmt(f) for f in default_duckprint_formatters]
 default_options = default_duckprint_options.copy()

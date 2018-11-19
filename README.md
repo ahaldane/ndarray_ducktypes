@@ -22,7 +22,7 @@ This repository also implements a helper module, `duckprint`, which provides rea
 
  * No support for masking individual fields of structured dtypes. Use an `ArrayCollection` of `MaskedArray`s instead, or use the `MaskedArrayCollection` implemented in `test.py`.
  * No more `nomask`: the mask is always stored as a full ndarray.
- * No more `masked` singleton: Instead scalar values are returned as MaskedScalar instances. See comments in MaskedArray.py for discussion.
+ * No more returned `masked` singleton: Instead scalar values are returned as MaskedScalar instances. See comments in MaskedArray.py for discussion. A special masked singleton with no dtype exists for array construction purposes only.
  * No more `fill_value` stored with instances: You must always supply the desired fill as an argument to `filled()`
  * No more attempt to preserve the hidden data behind masked values. MaskedArray is free to modify these elements arbitrarily.
  * Features preserved from numpy's maskedarray: 1. The mask is not "sticky", it behaves as the "ignore" or "skipna" style described in the MaskedArray NEP. "na" style will not be supported. 2. Ufuncs replace out-of-domain inputs with mask.
