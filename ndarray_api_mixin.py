@@ -1,5 +1,6 @@
 import operator
 from functools import reduce
+import numpy as np
 
 #XXX how to take care of docstrings?
 

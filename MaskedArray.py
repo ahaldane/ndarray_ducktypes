@@ -12,40 +12,44 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
     def __init__(self, data=None, mask=None, dtype=None, copy=False,
                 order=None, subok=True, ndmin=0, **options):
 
-        if mask is None:
-            # if mask is None, user may have put masked values in the data
-            data, mask = replace_masked(data)
-        # otherwise, we will get some kind of failure in the next line
-
-        self._data = np.array(data, dtype, copy=copy, order=order, subok=subok,
-                             ndmin=ndmin)
-
-        # Note: We do not try to mask individual fields structured types.
-        # Instead you get one mask value per struct element. Use an
-        # ArrayCollection of MaskedArrays if you want to mask individual
-        # fields.
-
+        self._base = None
         if isinstance(data, MaskedArray):
-            self._data = data._data
-            self._mask = data._mask
+            self._data = np.array(data._data, copy=copy, order=order,
+                                              sobok=subok, ndmin=ndmin)
+            self._mask = np.array(data._mask, copy=copy, order=order,
+                                              sobok=subok, ndmin=ndmin)
+
             if mask is not None:
-                raise Exception("don't use mask if passing a maskedarray")
-                #XXX should this override the mask?
+                #XXX should this override the mask? Or be OR'd in?
+                raise ValueError("don't use mask if passing a maskedarray")
 
-        elif mask is None:
-            self._mask = np.zeros(self._data.shape, dtype='bool', order=order)
+            self._base = data if data._base is None else data._base
         else:
-            self._mask = np.empty(self._data.shape, dtype='bool')
-            self._mask[:] = np.broadcast_to(mask, self._data.shape)
+            if mask is None:
+                # if mask is None, user can put masked values in the data.
+                # Otherwise, we will get some kind of failure in the line after.
+                data, mask = replace_X(data)
 
+            self._data = np.array(data, dtype, copy=copy, order=order,
+                                  subok=subok, ndmin=ndmin)
+            if mask is None:
+                self._mask = np.zeros(self._data.shape, dtype='bool',
+                                      order=order)
+            elif (is_ndducktype(mask) and mask.shape == self._data.shape and
+                    isinstance(mask.dtype.type, np.bool_)):
+                self._mask = np.array(mask, dtype, copy=copy, order=order,
+                                      subok=subok, ndmin=ndmin)
+            else:
+                self._mask = np.empty(self._data.shape, dtype='bool')
+                self._mask[:] = np.broadcast_to(mask, self._data.shape)
+
+        #XXX make into property
         self.shape = self._data.shape
         self.dtype = self._data.dtype
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_FUNCTIONS:
             return NotImplemented
-        # Note: this allows subclasses that don't override
-        # __array_function__ to handle MaskedArray objects
         if not all(issubclass(t, MaskedArray) for t in types):
             return NotImplemented
         return HANDLED_FUNCTIONS[func](*args, **kwargs)
@@ -66,10 +70,6 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
     def __repr__(self):
         return duck_repr(self)
 
-    def reshape(self, shape, order='C'):
-        return MaskedArray(self._data.reshape(shape, order=order),
-                           self._mask.reshape(shape, order=order))
-
     def __getitem__(self, ind):
         data = self._data[ind]
         mask = self._mask[ind]
@@ -86,6 +86,14 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         else:
             self._data[ind] = val
             self._mask[ind] = False
+
+    @property
+    def base(self):
+        return self._base
+
+    def _set_base(self, base):
+        # private method allowing base to be set by code in this module
+        self.base = base
 
 
     def filled(self, fill_value=0):
@@ -214,7 +222,7 @@ masked = X = Masked()
 # takes array input, replaces masked value by another element in the array
 # This is more-or-less a reimplementation of PyArray_DTypeFromObject to
 # account for masked values
-def replace_masked(data, fill=None):
+def replace_X(data, fill=None):
 
     # we do two passes: First we figure out the output dtype, then we replace
     # all masked values by the filler "type(0)".
@@ -244,9 +252,9 @@ def replace_masked(data, fill=None):
         if isinstance(data, (MaskedScalar, MaskedArray)):
             return data._data, data._mask
         if isinstance(data, list):
-            return tuple(zip(*(replace_masked(d) for d in data)))
+            return tuple(zip(*(replace_X(d) for d in data)))
         if is_ndducktype(data):
-            return data, np.zeros(data.shape, dtype='bool')
+            return data, np.broadcast_to(False, data.shape)
         # otherwise assume it is some kind of scalar
         return data, False
 
@@ -503,7 +511,9 @@ def implements(numpy_function):
 def is_ndducktype(val):
     return hasattr(val, '__array_function__')
 
-def maskedarray_or_scalar(data, mask):
+def maskedarray_or_scalar(data, mask, out=None):
+    if out is not None:
+        return out
     if np.isscalar(data):
         return MaskedScalar(data, mask)
     return MaskedArray(data, mask)
@@ -515,25 +525,29 @@ def get_maskedout(out):
         raise Exception("out must be a masked array")
     return None, None
 
+def _copy_mask(mask, outmask=None):
+    if outmask is not None:
+        result_mask = out_mask
+        result_mask[:] = mask
+    else:
+        result_mask = mask.copy()
+    return result_mask
+
 def setup_ducktype():
 
     @implements(np.all)
     def all(a, axis=None, out=None, keepdims=np._NoValue):
         outdata, outmask = get_maskedout(out)
-        result = np.all(a.filled(1), axis, outdata, keepdims)
+        result_data = np.all(a.filled(1), axis, outdata, keepdims)
         result_mask = np.all(a._mask, axis, outmask, keepdims)
-        if out is not None:
-            return out
-        return maskedarray_or_scalar(result, result_mask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.any)
     def any(a, axis=None, out=None, keepdims=np._NoValue):
         outdata, outmask = get_maskedout(out)
-        result = np.any(a.filled(0), axis, outdata, keepdims)
+        result_data = np.any(a.filled(0), axis, outdata, keepdims)
         result_mask = np.all(a._mask, axis, outmask, keepdims)
-        if out is not None:
-            return out
-        return maskedarray_or_scalar(result, result_mask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
     max_filler = ntypes._minvals
     max_filler.update([(k, -np.inf) for k in [np.float32, np.float64]])
@@ -547,49 +561,72 @@ def setup_ducktype():
     def max(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue):
         outdata, outmask = get_maskedout(out)
         filled = a.filled(max_filler[a.dtype])
-        result = np.max(filled, axis, outdata, keepdims, initial)
+        result_data = np.max(filled, axis, outdata, keepdims, initial)
         result_mask = np.all(a._mask, axis, outmask, keepdims)
-        if out is not None:
-            return out
-        return maskedarray_or_scalar(result, result_mask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.argmax)
     def argmax(a, axis=None, out=None):
         outdata, outmask = get_maskedout(out)
         filled = a.filled(max_filler[a.dtype])
-        result = np.argmax(filled, axis, outdata)
+        result_data = np.argmax(filled, axis, outdata)
         result_mask = np.all(a._mask, axis, outmask)
-        if out is not None:
-            return out
-        return maskedarray_or_scalar(result, result_mask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.min)
     def min(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue):
         outdata, outmask = get_maskedout(out)
         filled = a.filled(min_filler[a.dtype])
-        result = np.min(filled, axis, outdata, keepdims, initial)
+        result_data = np.min(filled, axis, outdata, keepdims, initial)
         result_mask = np.all(a._mask, axis, outmask, keepdims)
-        if out is not None:
-            return out
-        return maskedarray_or_scalar(result, result_mask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.argmin)
     def argmin(a, axis=None, out=None):
         outdata, outmask = get_maskedout(out)
         filled = a.filled(min_filler[a.dtype])
-        result = np.argmin(filled, axis, outdata)
+        result_data = np.argmin(filled, axis, outdata)
         result_mask = np.all(a._mask, axis, outmask)
-        if out is not None:
-            return out
-        return maskedarray_or_scalar(result, result_mask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.argsort)
     def argsort(a, axis=-1, kind='quicksort', order=None):
         # masked values get masked indices, and are sorted to min
         filled = a.filled(min_filler[a.dtype])
-        result = np.argsort(filled, axis, kind, order)
+        # XXX where does the min_filler get put when in v?
+        # Probably need to extract on the unmasked values, do argsort,
+        # then reconstruct indice with masked elements present.
+        result_data = np.argsort(filled, axis, kind, order)
         result_mask = a._mask[result]
-        return maskedarray_or_scalar(result, result_mask)
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    @implements(np.argpartition)
+    def argpartition(a, kth, axis=-1, kind='introselect', order=None):
+        filled = a.filled(min_filler[a.dtype])
+        result_data = np.argpartition(filled, kth, axis, kind, order)
+        result_mask = a._mask[result]
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    @implements(np.searchsorted)
+    def searchsorted(a, v, side='left', sorter=None):
+        # XXX account for mask in v?
+        # XXX return a MaskedArray?
+        # XXX where does the min_filler get put when in v?
+        # Probably the "correct" way to do this is do searchsorted
+        # only on the unmasked values,
+        filled = a.filled(min_filler[a.dtype])
+        return np.searchsorted(filled, v, side, sorter)
+
+    @implements(np.sort)
+    def sort(a, axis=-1, kind='quicksort', order=None):
+        # XXX where does the min_filler get put when in v?
+        # masked values get masked indices, and are sorted to min
+        filled = a.filled(min_filler[a.dtype])
+        inds = np.argsort(filled, axis, kind, order)
+        result_data = a._data[inds]
+        result_mask = a._mask[inds]
+        return maskedarray_or_scalar(result_data, result_mask)
+
 
     @implements(np.mean)
     def mean(a, axis=None, dtype=None, out=None, keepdims=np._NoValue):
@@ -652,9 +689,7 @@ def setup_ducktype():
             else:
                 ret = ret / rcount
 
-        if out is not None:
-            return out
-        return maskedarray_or_scalar(ret, retmask)
+        return maskedarray_or_scalar(ret, retmask, out)
 
     @implements(np.var)
     def var(a, axis=None, dtype=None, out=None, ddof=0,
@@ -721,110 +756,212 @@ def setup_ducktype():
             else:
                 ret = ret / rcount
 
-        retmask = rcount == 0
+        return maskedarray_or_scalar(ret, rcount == 0, out)
 
-        if out is not None:
-            return out
-        return maskedarray_or_scalar(ret, retmask)
+    @implements(np.std)
+    def std(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
+        ret = np.var(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
+                     keepdims=keepdims)
 
-    def argpartition(self, kth, axis=-1, kind='introselect', order=None):
-        return np.argpartition(self, kth, axis, kind, order)
+        if is_ndducktype(ret):
+            ret = np.sqrt(ret, out=ret)
+        elif hasattr(ret, 'dtype'):
+            ret = ret.dtype.type(np.sqrt(ret))
+        else:
+            ret = np.sqrt(ret)
+        return ret
 
-    def choose(self, choices, out=None, mode='raise'):
-        return np.choose(self, choices, out, mode)
+    @implements(np.choose)
+    def choose(a, choices, out=None, mode='raise'):
+        outdata, outmask = get_maskedout(out)
+        result_data = np.choose(a._data, choices, outdata, mode)
+        result_mask = np.choose(a._mask, choices, outmask, mode)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
-    def clip(self, a_min, a_max, out=None):
-        return np.clip(self, a_min, a_max, out)
+    @implements(np.clip)
+    def clip(a, a_min, a_max, out=None):
+        outdata, outmask = get_maskedout(out)
+        result_data = np.clip(a._data, a_min, a_max, outdata)
+        result_mask = _copy_mask(a._mask, outmask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
-    def compress(condition, axis=None, out=None):
-        return np.compress(condition, self, axis, out)
+    @implements(np.compress)
+    def compress(condition, a, axis=None, out=None):
+        outdata, outmask = get_maskedout(out)
+        result_data = np.compress(condition, a._data, axis, outdata)
+        result_mask = np.compress(condition, a._data, axis, outmask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
-    def copy(self, order='K'):
-        return np.copy(self, order='K')
+    @implements(np.copy)
+    def copy(a, order='K'):
+        result_data = np.copy(a._data, order=order)
+        result_mask = np.copy(a._mask, order=order)
+        return maskedarray_or_scalar(result_data, result_mask)
 
-    def cumprod(self, axis=None, dtype=None, out=None):
-        return np.cumprod(self, axis, dtype, out)
+    @implements(np.prod)
+    def prod(a, axis=None, dtype=None, out=None, keepdims=False):
+        outdata, outmask = get_maskedout(out)
+        result_data = np.prod(a.filled(1), axis=axis, dtype=dtype, out=outdata,
+                                           keepdims=keepdims)
+        result_mask = np.all(a._mask, axis=axis, out=outmask, keepdims=keepdims)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
+    @implements(np.cumprod)
+    def cumprod(a, axis=None, dtype=None, out=None):
+        outdata, outmask = get_maskedout(out)
+        result_data = np.cumprod(a.filled(1), axis, dtype=dtype, out=outdata)
+        result_mask = np.all(a._mask, axis, out=outmask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
+
+    @implements(np.sum)
+    def sum(a, axis=None, dtype=None, out=None, keepdims=False):
+        outdata, outmask = get_maskedout(out)
+        result_data = np.sum(a.filled(0), axis, dtype=dtype, out=outdata)
+        result_mask = np.all(a._mask, axis, out=outmask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
+
+    @implements(np.cumsum)
     def cumsum(self, axis=None, dtype=None, out=None):
-        return np.cumsum(self, axis, dtype, out)
+        outdata, outmask = get_maskedout(out)
+        result_data = np.cumsum(a.filled(0), axis, dtype=dtype, out=outdata)
+        result_mask = np.all(a._mask, axis, out=outmask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
-    def diagonal(self, offset=0, axis1=0, axis2=1):
-        return np.diagonal(self, offset, axis1, axis2)
+    @implements(np.diagonal)
+    def diagonal(a, offset=0, axis1=0, axis2=1):
+        result = np.diagonal(a._data, offset=offset, axis1=axis1, axis2=axis2)
+        rmask = np.diagonal(a._mask, offset=offset, axis1=axis1, axis2=axis2)
+        return maskedarray_or_scalar(result, rmask)
 
-    def dot(self, b, out=None):
-        return np.dot(self, b, out=None)
+    @implements(np.trace)
+    def trace(a, offset=0, axis1=0, axis2=1, dtype=None, out=None):
+        outdata, outmask = get_maskedout(out)
+        result = np.trace(a.filled(0), offset=offset, axis1=axis1, axis2=axis2,
+                                       dtype=dtype, out=outdata)
+        mask_trace = np.trace(~a._mask, offset=offset, axis1=axis1, axis2=axis2,
+                                        dtype=dtype, out=outdata)
+        result_mask = mask_trace == 0
+        return maskedarray_or_scalar(result, result_mask)
 
-    def imag(self):
-        return np.imag(self)
+    @implements(np.dot)
+    def dot(a, b, out=None):
+        outdata, outmask = get_maskedout(out)
+        a, b = MaskedArray(a), MaskedArray(b)
+        result_data = np.dot(a.filled(0), b.filled(0), out=outdata)
+        result_mask = np.logical_not(np.dot(~a._mask, ~b._mask), out=outmask)
+        return maskedarray_or_scalar(result_data, rmask, out)
 
-
-    def nonzero(self):
-        return np.nonzero(self)
-
-    def partition(self, kth, axis=-1, kind='introselect', order=None):
-        return np.partition(array, kth, axis, kind, order)
-
-    def prod(self, axis=None, dtype=None, out=None, keepdims=False):
-        return np.prod(axis, dtype, out, keepdims)
-
-    def ptp(self, axis=None, out=None, keepdims=False):
-        return np.ptp(self, axis, out, keepdims)
-
-    def put(self, indices, values, mode='raise'):
-        return np.put(self, indices, values, mode)
-
-    def ravel(self, order='C'):
-        return np.ravel(self, order)
-
+    @implements(np.real)
     def real(self):
-        return np.real(self)
+        # returns a view of the data only. mask is a copy.
+        result_data = np.real(a._data)
+        result_mask = a._mask.copy()
+        return maskedarray_or_scalar(result_data, rmask)
+        # XXX not clear if mask should be copied or viewed: If we unmask
+        # the imag part, should be real part be unmasked too?
 
-    def repeat(self, repeats, axis=None):
-        return np.repeat(self, repeats, axis)
+    @implements(np.imag)
+    def imag(a):
+        # returns a view of the data only. mask is a copy.
+        result_data = np.imag(a._data)
+        result_mask = a._mask.copy()
+        return maskedarray_or_scalar(result_data, rmask)
+        # XXX not clear if mask should be copied or viewed: If we unmask
+        # the imag part, should be real part be unmasked too?
 
-    def reshape(self, shape, order='C'):
-        return np.reshape(self, shape, order)
+    @implements(np.nonzero)
+    def nonzero(a):
+        #XXX should this return a MaskedArray?
+        return np.nonzero(a.filled(0))
 
-    def resize(new_shape, refcheck=True): #XXX what is this refcheck?
-        return np.resize(self, new_shape)
+    @implements(np.partition)
+    def partition(a, kth, axis=-1, kind='introselect', order=None):
+        # We use argparition to construt a fancy index.
+        # For fancy index: np.arange at all axes except the selected axis
+        # (Note: This is the Xth time I have wanted a function to do this kind
+        # of thing for me in numpy)
+        ndim = a.ndim
+        fancy_ind = []
+        for ax in range(ndim):
+            if ax == axis:
+                filled = a.filled(min_filler[a.dtype])
+                inds = np.argpartition(filled, kth, axis, kind, order)
+                fancy_ind.append(inds)
+            else:
+                newdim = (None,)*(ax-1) + (slice(None),) + (None,)*(ndim-ax)
+                fancy_ind.append(np.arange(a.shape[ax])[newdim])
 
-    def round(self, decimals=0, out=None):
-        return np.round(self, decimals, out)
+        return a[tuple(fancy_ind)]
 
-    def searchsorted(self, v, side='left', sorter=None):
-        return np.searchsorted(self, v, side, sorter)
+    @implements(np.ptp)
+    def ptp(a, axis=None, out=None, keepdims=False):
+        # Original numpy function is fine.
+        return np.ptp.__wrapped__(self, axis, out, keepdims)
 
-    def sort(self, axis=-1, kind='quicksort', order=None):
-        return np.sort(self, axis, kind, order)
-
-    def squeeze(self, axis=None):
-        return np.squeeze(self, axis)
-
-    def std(self, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
-        return np.std(self, axis, dtype, out, ddof, keepdims)
-
-    def sum(self, axis=None, dtype=None, out=None, keepdims=False):
-        return np.sum(self, axis, dtype, out, keepdims)
-
-    def swapaxes(self, axis1, axis2):
-        return np.swapaxes(self, axis1, axis2)
-
+    @implements(np.take)
     def take(self, indices, axis=None, out=None, mode='raise'):
-        return np.take(self, indices, axis, out, mode)
+        outdata, outmask = get_maskedout(out)
+        result_data = np.take(a._data, indices, axis, outdata, mode)
+        result_mask = np.take(a._mask, indices, axis, outmask, mode)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
-    def trace(self, offset=0, axis1=0, axis2=1, dtype=None, out=None):
-        return np.trace(self, offset, axis1, axis2, dtype, out)
+    @implements(np.put)
+    def put(a, indices, values, mode='raise'):
+        data, mask = replace_X(data)
+        np.put(a._data, indices, data, mode)
+        np.put(a._mask, indices, mask, mode)
+        return None
 
-    def transpose(self, *axes):
-        return np.transpose(self, *axes)
+    @implements(np.ravel)
+    def ravel(a, order='C'):
+        return MaskedArray(a._data.ravel(order=order),
+                           a._mask.ravel(order=order))
 
-    def var(self, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
-        return var(self, axis, dtype, out, ddof, keepdims)
+    @implements(np.repeat)
+    def repeat(a, repeats, axis=None):
+        return MaskedArray(a._data.repeat(repeats, axis),
+                           a._mask.repeat(repeats, axis))
+
+    @implements(np.reshape)
+    def reshape(a, shape, order='C'):
+        # XXX set base
+        return MaskedArray(a._data.reshape(shape, order=order),
+                           a._mask.reshape(shape, order=order))
 
 
-    #@implements(np.concatenate)
-    #def concatenate(arrays, axis=0, out=None):
-    #    ...  # implementation of concatenate for MyArray objects
+    @implements(np.resize)
+    def resize(a, new_shape, refcheck=True): #XXX what is this refcheck?
+        return MaskedArray(a._data.resize(new_shape, refcheck),
+                           a._mask.resize(new_shape, refcheck))
+
+    @implements(np.round)
+    def round(a, decimals=0, out=None):
+        outdata, outmask = get_maskedout(out)
+        result_data = np.round(a._data, decimals, outdata)
+        result_mask = _copy_mask(a._mask, outmask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
+
+    @implements(np.squeeze)
+    def squeeze(a, axis=None):
+        return MaskedArray(a._data.squeeze(new_shape, refcheck),
+                           a._mask.squeeze(new_shape, refcheck))
+    @implements(np.swapaxes)
+    def swapaxes(a, axis1, axis2):
+        return MaskedArray(a._data.swapaxes(axis1, axis2),
+                           a._mask.swapaxes(axis1, axis2))
+
+    @implements(np.transpose)
+    def transpose(a, *axes):
+        return MaskedArray(a._data.transpose(*axes),
+                           a._mask.transpose(*axes))
+
+    @implements(np.concatenate)
+    def concatenate(arrays, axis=0, out=None):
+        outdata, outmask = get_maskedout(out)
+        arrays = [MaskedArray(a) for a in arrays]
+        result_data = np.concatenate([a._data for a in arrays], axis, outdata)
+        result_mask = np.concatenate([a._mask for a in arrays], axis, outmask)
+        return maskedarray_or_scalar(result_data, result_mask)
 
     #@implements(np.broadcast_to)
     #def broadcast_to(array, shape):
@@ -864,6 +1001,9 @@ if __name__ == '__main__':
     print(B)
     C = A/B
     print(C)
+    print(C.T)
     print(np.max(C, axis=1))
     print(np.sin(C))
     print(np.sin(C)*np.full(3, 100))
+    print(repr(MaskedArray([[X, X, 3], [1, X, 1]])))
+    print(repr(MaskedArray([[X, X, X], [X, X, X]])))
