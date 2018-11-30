@@ -28,6 +28,7 @@ This repository also implements a helper module, `duckprint`, which provides rea
  * Features preserved from numpy's maskedarray: 1. The mask is not "sticky", it behaves as the "ignore" or "skipna" style described in the MaskedArray NEP. "na" style will not be supported. 2. Ufuncs replace out-of-domain inputs with mask.
  * out arguments to ufuncs/methods must be MaskedArrays too
  * more careful preservation of dtype (old MA would often cast to float64)
+ * np.sort now doesn't mix maxval and masked vals up.
 
 ### For duckprint
 

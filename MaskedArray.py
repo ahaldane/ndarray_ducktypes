@@ -50,9 +50,14 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_FUNCTIONS:
             return NotImplemented
+        impl, checked_args = HANDLED_FUNCTIONS[func]
+
+        if checked_args is not None:
+            types = (t for n,t in enumerate(types) if n in checked_args)
         if not all(issubclass(t, MaskedArray) for t in types):
             return NotImplemented
-        return HANDLED_FUNCTIONS[func](*args, **kwargs)
+
+        return impl(*args, **kwargs)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if ufunc not in masked_ufuncs:
@@ -169,6 +174,13 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
 
         """
         return (~self._mask).sum(axis=axis, dtype=np.intp, keepdims=keepdims)
+
+    def sort(self, axis=-1, kind='quicksort', order=None):
+        # Note: See comment in np.sort impl below for trick used here.
+        # This is the inplace version
+        self._data[self._mask] = _min_filler[self.dtype]
+        self._data.sort(axis, kind, order)
+        self._mask.sort(axis, kind)
 
 # Ndarrays return scalars when "fully indexed" (integer at each axis). Ducktype
 # implementors need to mimic this. However, they often want the scalars to
@@ -531,10 +543,10 @@ setup_ufuncs()
 
 HANDLED_FUNCTIONS = {}
 
-def implements(numpy_function):
+def implements(numpy_function, checked_args=None):
     """Register an __array_function__ implementation for MaskedArray objects."""
     def decorator(func):
-        HANDLED_FUNCTIONS[numpy_function] = func
+        HANDLED_FUNCTIONS[numpy_function] = (func, checked_args)
         return func
     return decorator
 
@@ -613,20 +625,27 @@ def setup_ducktype():
 
     @implements(np.argsort)
     def argsort(a, axis=-1, kind='quicksort', order=None):
-        # masked values get masked indices, and are sorted to min
-        filled = a.filled(minmax='min')
-        # XXX where does the min_filler get put when in v?
-        # Probably need to extract on the unmasked values, do argsort,
-        # then reconstruct indice with masked elements present.
-        result_data = np.argsort(filled, axis, kind, order)
-        result_mask = a._mask[result]
-        return maskedarray_or_scalar(result_data, result_mask)
+        # See trick in np.sort below. Can this be made faster?
+        # Uses two argsorts plus a temp array currently.
+        inds = np.argsort(a.filled(minmax='min'), axis, kind, order)
+        # next two lines "reverse" the argsort (same as double-argsort)
+        rev_inds = np.empty(inds.shape, dtype=inds.dtype)
+        np.put_along_axis(rev_inds, inds, np.arange(a.shape[axis]), axis)
+        # prepare to resort but put masked elem at end
+        rev_inds[a._mask] = _min_filler[rev_inds.dtype]
+        return np.argsort(rev_inds, axis, kind)
+
+        # test on:
+        # a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]], dtype='u4')
+        # np.take_along_axis(a, np.argsort(a, axis=1), axis=1)
+        # np.sort(a)
 
     @implements(np.argpartition)
     def argpartition(a, kth, axis=-1, kind='introselect', order=None):
+        #XXX needs fix for min_value vs mask
         filled = a.filled(minmax='min')
         result_data = np.argpartition(filled, kth, axis, kind, order)
-        result_mask = a._mask[result]
+        result_mask = a._mask[result_data]
         return maskedarray_or_scalar(result_data, result_mask)
 
     @implements(np.searchsorted)
@@ -638,15 +657,19 @@ def setup_ducktype():
         # only on the unmasked values,
         filled = a.filled(minmax='min')
         return np.searchsorted(filled, v, side, sorter)
+        # XXX this should be fixed in the case side is 'right', to put the
+        # new element before the masked elements (in case both mask and min_val
+        # elements are present)
 
     @implements(np.sort)
     def sort(a, axis=-1, kind='quicksort', order=None):
-        # XXX where does the min_filler get put when in v?
-        # masked values get masked indices, and are sorted to min
-        filled = a.filled(minmax='min')
-        inds = np.argsort(filled, axis, kind, order)
-        result_data = a._data[inds]
-        result_mask = a._mask[inds]
+        # Note: This is trickier than it looks. The first line sorts the mask
+        # together with any min_vals which may be present, so there appears to
+        # be a problem ordering masked elements vs min_val elements.
+        # But, since we know all the masked elements have to end up at the
+        # end of the axis, we can sort the mask too and everything works out.
+        result_data = np.sort(a.filled(minmax='min'), axis, kind, order)
+        result_mask = np.sort(a._mask, axis, kind)  #or partition for speed?
         return maskedarray_or_scalar(result_data, result_mask)
 
     @implements(np.lexsort)
@@ -656,7 +679,7 @@ def setup_ducktype():
         else:
             keys = keys.filled(minmax='min')
         return np.lexsort(keys)
-        # XXX return MaskedArray?
+        #XXX needs to account for mask
 
     @implements(np.mean)
     def mean(a, axis=None, dtype=None, out=None, keepdims=np._NoValue):
@@ -930,7 +953,7 @@ def setup_ducktype():
         # returns a view of the data only. mask is a copy.
         result_data = np.real(a._data)
         result_mask = a._mask.copy()
-        return maskedarray_or_scalar(result_data, rmask)
+        return maskedarray_or_scalar(result_data, result_mask)
         # XXX not clear if mask should be copied or viewed: If we unmask
         # the imag part, should be real part be unmasked too?
 
@@ -939,34 +962,21 @@ def setup_ducktype():
         # returns a view of the data only. mask is a copy.
         result_data = np.imag(a._data)
         result_mask = a._mask.copy()
-        return maskedarray_or_scalar(result_data, rmask)
+        return maskedarray_or_scalar(result_data, result_mask)
         # XXX not clear if mask should be copied or viewed: If we unmask
         # the imag part, should be real part be unmasked too?
 
     @implements(np.partition)
     def partition(a, kth, axis=-1, kind='introselect', order=None):
-        # We use argparition to construt a fancy index.
-        # For fancy index: np.arange at all axes except the selected axis
-        # (Note: This is the Xth time I have wanted a function to do this kind
-        # of thing for me in numpy)
-        ndim = a.ndim
-        fancy_ind = []
-        for ax in range(ndim):
-            if ax == axis:
-                filled = a.filled(minmax='min')
-                inds = np.argpartition(filled, kth, axis, kind, order)
-                fancy_ind.append(inds)
-            else:
-                newdim = (None,)*(ax-1) + (slice(None),) + (None,)*(ndim-ax)
-                fancy_ind.append(np.arange(a.shape[ax])[newdim])
-
-        return a[tuple(fancy_ind)]
+        inds = np.argpartition(filled, kth, axis, kind, order)
+        return np.take_along_axis(a, inds, axis=axis)
 
     @implements(np.ptp)
     def ptp(a, axis=None, out=None, keepdims=False):
         # Original numpy function is fine.
         return np.ptp.__wrapped__(self, axis, out, keepdims)
 
+    #XXX in the functions below, indices can be a plain ndarray
     @implements(np.take)
     def take(self, indices, axis=None, out=None, mode='raise'):
         outdata, outmask = get_maskedout(out)
@@ -980,6 +990,16 @@ def setup_ducktype():
         np.put(a._data, indices, data, mode)
         np.put(a._mask, indices, mask, mode)
         return None
+
+    @implements(np.take_along_axis, (0,))
+    def take_along_axis(arr, indices, axis):
+        result_data = np.take_along_axis(arr._data, indices, axis)
+        result_mask = np.take_along_axis(arr._mask, indices, axis)
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    #@implements(np.put_along_axis)
+    #@implements(np.apply_along_axis)
+    #@implements(np.apply_over_axes)
 
     @implements(np.ravel)
     def ravel(a, order='C'):
@@ -1232,11 +1252,6 @@ def setup_ducktype():
     #@implements(np.fill_diagonal)
     #@implements(np.diag_indices_from)
 
-    #@implements(np.take_along_axis)
-    #@implements(np.put_along_axis)
-    #@implements(np.apply_along_axis)
-    #@implements(np.apply_over_axes)
-
 
     #@implements(np.lib.scimath.sqrt)
     #@implements(np.lib.scimath.log)
@@ -1356,20 +1371,24 @@ api = ['np.empty_like', 'np.concatenate', 'np.inner', 'np.where', 'np.lexsort',
 'np.fft.ifft2', 'np.fft.rfftn', 'np.fft.rfft2', 'np.fft.irfftn',
 'np.fft.irfft2']
 
-for a in api:
-    if a.startswith('np.char.'):
-        continue
-    if a.startswith('np.fft.'):
-        continue
+#for a in api:
+#    if a.startswith('np.char.'):
+#        continue
+#    if a.startswith('np.fft.'):
+#        continue
 
-    parts = a.split('.')[1:]
-    f = np
-    while parts and f:
-        f = getattr(f, parts.pop(0), None)
-    if f is None:
-        print("Missing", a)
-    if f not in HANDLED_FUNCTIONS:
-        print(a)
+#    parts = a.split('.')[1:]
+#    f = np
+#    while parts and f:
+#        f = getattr(f, parts.pop(0), None)
+#    if f is None:
+#        print("Missing", a)
+#        continue
+#    if f not in HANDLED_FUNCTIONS:
+#        print(a)
+#        pass
+#    #else:
+#    #    print("Have", a)
 
 
 ################################################################################
