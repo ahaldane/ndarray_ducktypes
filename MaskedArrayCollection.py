@@ -36,6 +36,6 @@ class MaskedArrayCollection(ArrayCollection):
 
 if __name__ == '__main__':
     a = MaskedArray([[1,X,3], [X,X,X], [0,1,X]])
-    b = MaskedArray([[X, 4, 5], [3, X, 2], [X, X, X]])
+    b = MaskedArray([[X,4,5], [3,X,2], [X,X,X]])
     c = MaskedArrayCollection([('age', a), ('weight', b)])
     print(repr(c))

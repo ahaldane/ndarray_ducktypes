@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
-from duckprint import (duck_str, duck_repr, default_duckprint_options,
-                       default_duckprint_formatters, FormatDispatcher)
+from duckprint import (duck_str, duck_repr, duck_array2string,
+    default_duckprint_options, default_duckprint_formatters, FormatDispatcher)
 import builtins
 import numpy.core.umath as umath
 from numpy.lib.mixins import NDArrayOperatorsMixin
@@ -96,7 +96,18 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         self.base = base
 
 
-    def filled(self, fill_value=0):
+    def filled(self, fill_value=0, minmax=None):
+
+        if minmax is not None:
+            if fill_value != 0:
+                raise Exception("Do not give fill_value if providing minmax")
+            if minmax == 'max':
+                fill_value = _max_filler[self.dtype]
+            elif minmax == 'min':
+                fill_value = _min_filler[self.dtype]
+            else:
+                raise ValueError("minmax should be 'min' or 'max'")
+
         result = self._data.copy()
         fill_value = self.dtype.type(fill_value)
         np.copyto(result, fill_value, where=self._mask)
@@ -204,7 +215,17 @@ class MaskedScalar:
             return 'masked_{}'.format(self.dtype.name)
         return format(self._data, format_spec)
 
-    def filled(self, fill_value=0):
+    def filled(self, fill_value=0, minmax=None):
+        if minmax is not None:
+            if fill_value != 0:
+                raise Exception("Do not give fill_value if providing minmax")
+            if minmax == 'max':
+                fill_value = _max_filler[self.dtype]
+            elif minmax == 'min':
+                fill_value = _min_filler[self.dtype]
+            else:
+                raise ValueError("minmax should be 'min' or 'max'")
+
         if self._mask:
             return self._data.dtype.type(fill_value)
         return self._data
@@ -259,6 +280,15 @@ def replace_X(data, fill=None):
         return data, False
 
     return replace(data)
+
+
+_max_filler = ntypes._minvals
+_max_filler.update([(k, -np.inf) for k in [np.float32, np.float64]])
+_min_filler = ntypes._maxvals
+_min_filler.update([(k, +np.inf) for k in [np.float32, np.float64]])
+if 'float128' in ntypes.typeDict:
+    _max_filler.update([(np.float128, -np.inf)])
+    _min_filler.update([(np.float128, +np.inf)])
 
 ################################################################################
 #                               Printing setup
@@ -549,18 +579,10 @@ def setup_ducktype():
         result_mask = np.all(a._mask, axis, outmask, keepdims)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
-    max_filler = ntypes._minvals
-    max_filler.update([(k, -np.inf) for k in [np.float32, np.float64]])
-    min_filler = ntypes._maxvals
-    min_filler.update([(k, +np.inf) for k in [np.float32, np.float64]])
-    if 'float128' in ntypes.typeDict:
-        max_filler.update([(np.float128, -np.inf)])
-        min_filler.update([(np.float128, +np.inf)])
-
     @implements(np.max)
     def max(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue):
         outdata, outmask = get_maskedout(out)
-        filled = a.filled(max_filler[a.dtype])
+        filled = a.filled(minmax='max')
         result_data = np.max(filled, axis, outdata, keepdims, initial)
         result_mask = np.all(a._mask, axis, outmask, keepdims)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -568,7 +590,7 @@ def setup_ducktype():
     @implements(np.argmax)
     def argmax(a, axis=None, out=None):
         outdata, outmask = get_maskedout(out)
-        filled = a.filled(max_filler[a.dtype])
+        filled = a.filled(minmax='max')
         result_data = np.argmax(filled, axis, outdata)
         result_mask = np.all(a._mask, axis, outmask)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -576,7 +598,7 @@ def setup_ducktype():
     @implements(np.min)
     def min(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue):
         outdata, outmask = get_maskedout(out)
-        filled = a.filled(min_filler[a.dtype])
+        filled = a.filled(minmax='min')
         result_data = np.min(filled, axis, outdata, keepdims, initial)
         result_mask = np.all(a._mask, axis, outmask, keepdims)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -584,7 +606,7 @@ def setup_ducktype():
     @implements(np.argmin)
     def argmin(a, axis=None, out=None):
         outdata, outmask = get_maskedout(out)
-        filled = a.filled(min_filler[a.dtype])
+        filled = a.filled(minmax='min')
         result_data = np.argmin(filled, axis, outdata)
         result_mask = np.all(a._mask, axis, outmask)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -592,7 +614,7 @@ def setup_ducktype():
     @implements(np.argsort)
     def argsort(a, axis=-1, kind='quicksort', order=None):
         # masked values get masked indices, and are sorted to min
-        filled = a.filled(min_filler[a.dtype])
+        filled = a.filled(minmax='min')
         # XXX where does the min_filler get put when in v?
         # Probably need to extract on the unmasked values, do argsort,
         # then reconstruct indice with masked elements present.
@@ -602,7 +624,7 @@ def setup_ducktype():
 
     @implements(np.argpartition)
     def argpartition(a, kth, axis=-1, kind='introselect', order=None):
-        filled = a.filled(min_filler[a.dtype])
+        filled = a.filled(minmax='min')
         result_data = np.argpartition(filled, kth, axis, kind, order)
         result_mask = a._mask[result]
         return maskedarray_or_scalar(result_data, result_mask)
@@ -614,19 +636,27 @@ def setup_ducktype():
         # XXX where does the min_filler get put when in v?
         # Probably the "correct" way to do this is do searchsorted
         # only on the unmasked values,
-        filled = a.filled(min_filler[a.dtype])
+        filled = a.filled(minmax='min')
         return np.searchsorted(filled, v, side, sorter)
 
     @implements(np.sort)
     def sort(a, axis=-1, kind='quicksort', order=None):
         # XXX where does the min_filler get put when in v?
         # masked values get masked indices, and are sorted to min
-        filled = a.filled(min_filler[a.dtype])
+        filled = a.filled(minmax='min')
         inds = np.argsort(filled, axis, kind, order)
         result_data = a._data[inds]
         result_mask = a._mask[inds]
         return maskedarray_or_scalar(result_data, result_mask)
 
+    @implements(np.lexsort)
+    def lexsort(keys, axis=-1):
+        if isintance(keys, tuple):
+            keys = tuple(x.filled(minmax='min'))
+        else:
+            keys = keys.filled(minmax='min')
+        return np.lexsort(keys)
+        # XXX return MaskedArray?
 
     @implements(np.mean)
     def mean(a, axis=None, dtype=None, out=None, keepdims=np._NoValue):
@@ -771,12 +801,12 @@ def setup_ducktype():
             ret = np.sqrt(ret)
         return ret
 
-    @implements(np.choose)
-    def choose(a, choices, out=None, mode='raise'):
-        outdata, outmask = get_maskedout(out)
-        result_data = np.choose(a._data, choices, outdata, mode)
-        result_mask = np.choose(a._mask, choices, outmask, mode)
-        return maskedarray_or_scalar(result_data, result_mask, out)
+    #@implements(np.average)
+    #@implements(np.median)
+    #@implements(np.percentile)
+    #@implements(np.quantile)
+    #@implements(np.cov)
+    #@implements(np.corrcoef)
 
     @implements(np.clip)
     def clip(a, a_min, a_max, out=None):
@@ -806,12 +836,20 @@ def setup_ducktype():
         result_mask = np.all(a._mask, axis=axis, out=outmask, keepdims=keepdims)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
+    @implements(np.product)
+    def product(*args, **kwargs):
+        return prod(*args, **kwargs)
+
     @implements(np.cumprod)
     def cumprod(a, axis=None, dtype=None, out=None):
         outdata, outmask = get_maskedout(out)
         result_data = np.cumprod(a.filled(1), axis, dtype=dtype, out=outdata)
         result_mask = np.all(a._mask, axis, out=outmask)
         return maskedarray_or_scalar(result_data, result_mask, out)
+
+    @implements(np.cumproduct)
+    def cumproduct(*args, **kwargs):
+        return cumprod(*args, **kwargs)
 
     @implements(np.sum)
     def sum(a, axis=None, dtype=None, out=None, keepdims=False):
@@ -833,6 +871,11 @@ def setup_ducktype():
         rmask = np.diagonal(a._mask, offset=offset, axis1=axis1, axis2=axis2)
         return maskedarray_or_scalar(result, rmask)
 
+    #@implements(np.diag)
+    #@implements(np.diagflat)
+    #@implements(np.tril)
+    #@implements(np.triu)
+
     @implements(np.trace)
     def trace(a, offset=0, axis1=0, axis2=1, dtype=None, out=None):
         outdata, outmask = get_maskedout(out)
@@ -849,7 +892,38 @@ def setup_ducktype():
         a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.dot(a.filled(0), b.filled(0), out=outdata)
         result_mask = np.logical_not(np.dot(~a._mask, ~b._mask), out=outmask)
-        return maskedarray_or_scalar(result_data, rmask, out)
+        return maskedarray_or_scalar(result_data, result_mask, out)
+
+    @implements(np.vdot)
+    def vdot(a, b):
+        a, b = MaskedArray(a), MaskedArray(b)
+        result_data = np.vdot(a.filled(0), b.filled(0))
+        result_mask = np.logical_not(np.dot(~a._mask, ~b._mask))
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    @implements(np.cross)
+    def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
+        a, b = MaskedArray(a), MaskedArray(b)
+        result_data = np.cross(a.filled(0), b.filled(0), axisa, axisb, axisc,
+                               axis)
+        result_mask = np.logical_not(np.cross(~a._mask, ~b._mask), axisa,
+                                     axisb, axisc, axis)
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    @implements(np.inner)
+    def inner(a, b):
+        a, b = MaskedArray(a), MaskedArray(b)
+        result_data = np.inner(a.filled(0), b.filled(0))
+        result_mask = np.logical_not(np.inner(~a._mask, ~b._mask))
+        return maskedarray_or_scalar(result_data, result_mask, out)
+
+    @implements(np.outer)
+    def outer(a, b, out=None):
+        outdata, outmask = get_maskedout(out)
+        a, b = MaskedArray(a), MaskedArray(b)
+        result_data = np.outer(a.filled(0), b.filled(0), out=outdata)
+        result_mask = np.logical_not(np.outer(~a._mask, ~b._mask), out=outmask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.real)
     def real(self):
@@ -869,11 +943,6 @@ def setup_ducktype():
         # XXX not clear if mask should be copied or viewed: If we unmask
         # the imag part, should be real part be unmasked too?
 
-    @implements(np.nonzero)
-    def nonzero(a):
-        #XXX should this return a MaskedArray?
-        return np.nonzero(a.filled(0))
-
     @implements(np.partition)
     def partition(a, kth, axis=-1, kind='introselect', order=None):
         # We use argparition to construt a fancy index.
@@ -884,7 +953,7 @@ def setup_ducktype():
         fancy_ind = []
         for ax in range(ndim):
             if ax == axis:
-                filled = a.filled(min_filler[a.dtype])
+                filled = a.filled(minmax='min')
                 inds = np.argpartition(filled, kth, axis, kind, order)
                 fancy_ind.append(inds)
             else:
@@ -941,6 +1010,8 @@ def setup_ducktype():
         result_mask = _copy_mask(a._mask, outmask)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
+    #@implements(np.around)
+
     @implements(np.squeeze)
     def squeeze(a, axis=None):
         return MaskedArray(a._data.squeeze(new_shape, refcheck),
@@ -955,6 +1026,14 @@ def setup_ducktype():
         return MaskedArray(a._data.transpose(*axes),
                            a._mask.transpose(*axes))
 
+    #@implements(np.ravel_multi_index)
+    #@implements(np.unravel_index)
+    #@implements(np.roll)
+    #@implements(np.rollaxis)
+    #@implements(np.moveaxis)
+    #@implements(np.flip)
+    #@implements(np.expand_dims)
+
     @implements(np.concatenate)
     def concatenate(arrays, axis=0, out=None):
         outdata, outmask = get_maskedout(out)
@@ -963,11 +1042,335 @@ def setup_ducktype():
         result_mask = np.concatenate([a._mask for a in arrays], axis, outmask)
         return maskedarray_or_scalar(result_data, result_mask)
 
-    #@implements(np.broadcast_to)
-    #def broadcast_to(array, shape):
-    #    ...  # implementation of broadcast_to for MyArray objects
+    #@implements(np.column_stack)
+    #@implements(np.dstack)
+    #@implements(np.array_split)
+    #@implements(np.split)
+    #@implements(np.hsplit)
+    #@implements(np.vsplit)
+    #@implements(np.dsplit)
+    #@implements(np.kron)
+    #@implements(np.tile)
+    #@implements(np.atleast_1d)
+    #@implements(np.atleast_2d)
+    #@implements(np.atleast_3d)
+    #@implements(np.vstack)
+    #@implements(np.hstack)
+    #@implements(np.stack)
+    #@implements(np.block)
+
+    @implements(np.broadcast_to)
+    def broadcast_to(array, shape):
+        return MaskedArray(np.broadcast_to(a._data, shape),
+                           np.broadcast_to(a._mask, shape))
+
+    @implements(np.empty_like)
+    def empty_like(prototype, dtype=None, order='K', subok=True):
+        return MaskedArray(np.empty_like(prototype._data, dtype, order, subok))
+
+    @implements(np.ones_like)
+    def ones_like(prototype, dtype=None, order='K', subok=True):
+        return MaskedArray(np.ones_like(prototype._data, dtype, order, subok))
+
+    @implements(np.zeros_like)
+    def zeros_like(prototype, dtype=None, order='K', subok=True):
+        return MaskedArray(np.zeros_like(prototype._data, dtype, order, subok))
+
+    @implements(np.full_like)
+    def full_like(a, fill_value, dtype=None, order='K', subok=True):
+        return MaskedArray(np.full_like(a._data, fill_value, dtype, order,
+                           subok))
+
+    @implements(np.where)
+    def where(condition, x=np._NoValue, y=np._NoValue):
+        if x is np._NoValue and y is np._NoValue:
+            return np.nonzero(condition)
+
+        # condition should not be masked?
+        data_args = tuple(a._data for a in (x, y) if a is not np._NoValue)
+        result_data = np.where(condition, *data_args)
+
+        mask_args = tuple(a._mask for a in (x, y) if a is not np._NoValue)
+        result_mask = np.where(condition, *mask_args)
+
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    @implements(np.argwhere)
+    def argwhere(a):
+        return np.transpose(np.nonzero(a))
+
+    @implements(np.choose)
+    def choose(a, choices, out=None, mode='raise'):
+        outdata, outmask = get_maskedout(out)
+        result_data = np.choose(a._data, choices, outdata, mode)
+        result_mask = np.choose(a._mask, choices, outmask, mode)
+        return maskedarray_or_scalar(result_data, result_mask, out)
+
+    #@implements(np.select)
+    #@implements(np.unique)
+
+    #@implements(np.can_cast)
+    #@implements(np.min_scalar_type)
+    #@implements(np.result_type)
+    #@implements(np.common_type)
+
+    @implements(np.bincount)
+    def bincount(x, weights=None, minlength=0):
+        return np.bincount(x._data[~x._mask], weights, minlength)
+
+    #@implements(np.count_nonzero)
+
+    @implements(np.nonzero)
+    def nonzero(a):
+        #XXX should this return a MaskedArray?
+        return np.nonzero(a.filled(0))
+
+    @implements(np.array2string)
+    def array2string(a, max_line_width=None, precision=None,
+            suppress_small=None, separator=' ', prefix='', style=np._NoValue,
+            formatter=None, threshold=None, edgeitems=None, sign=None,
+            floatmode=None, suffix='', **kwarg):
+        return duck_array2string(a, max_line_width, precision, suppress_small,
+            separator, prefix, style, formatter, threshold, edgeitems, sign,
+            floatmode, suffix, **kwarg)
+
+    @implements(np.array_repr)
+    def array_repr(arr, max_line_width=None, precision=None,
+                   suppress_small=None):
+        return duck_repr(arr, max_line_width=None, precision=None,
+                         suppress_small=None)
+
+    @implements(np.array_str)
+    def array_str(a, max_line_width=None, precision=None, suppress_small=None):
+        return duck_str(a, max_line_width, precision, suppress_small)
+
+    #@implements(np.copyto)
+    #@implements(np.putmask)
+    #@implements(np.packbits)
+    #@implements(np.unpackbits)
+    #@implements(np.shares_memory)
+    #@implements(np.may_share_memory)
+
+    #@implements(np.is_busday)
+    #@implements(np.busday_offset)
+    #@implements(np.busday_count)
+    #@implements(np.datetime_as_string)
+
+    #@implements(np.flatnonzero)
+    #@implements(np.correlate)
+    #@implements(np.convolve)
+
+    #@implements(np.tensordot)
+
+    #@implements(np.allclose)
+    #@implements(np.isclose)
+    #@implements(np.array_equal)
+    #@implements(np.array_equiv)
+
+    #@implements(np.shape)
+    #@implements(np.alen)
+    #@implements(np.ndim)
+    #@implements(np.size)
+    #@implements(np.rank)
+
+    #@implements(np.sometrue)
+    #@implements(np.alltrue)
+
+    #@implements(np.einsum_path)
+    #@implements(np.einsum)
+    #@implements(np.fix)
+
+    #@implements(np.isposinf)
+    #@implements(np.isneginf)
+    #@implements(np.iscomplex)
+    #@implements(np.isreal)
+    #@implements(np.iscomplexobj)
+    #@implements(np.isrealobj)
+    #@implements(np.nan_to_num)
+    #@implements(np.real_if_close)
+
+    #@implements(np.angle)
+    #@implements(np.sinc)
+    #@implements(np.rot90)
+
+
+    #@implements(np.asscalar)
+    #@implements(np.asfarray)
+    #@implements(np.fliplr)
+    #@implements(np.flipud)
+    #@implements(np.vander)
+    #@implements(np.histogram2d)
+    #@implements(np.tril_indices_from)
+    #@implements(np.triu_indices_from)
+
+    #@implements(np.histogram_bin_edges)
+    #@implements(np.histogram)
+    #@implements(np.histogramdd)
+    #@implements(np.piecewise)
+    #@implements(np.gradient)
+    #@implements(np.diff)
+    #@implements(np.interp)
+    #@implements(np.ediff1d)
+    #@implements(np.unwrap)
+    #@implements(np.sort_complex)
+    #@implements(np.trim_zeros)
+    #@implements(np.extract)
+    #@implements(np.place)
+    #@implements(np.i0)
+    #@implements(np.msort)
+    #@implements(np.trapz)
+    #@implements(np.meshgrid)
+
+    #@implements(np.delete)
+    #@implements(np.insert)
+    #@implements(np.append)
+    #@implements(np.pad)
+
+    #@implements(np.digitize)
+    #@implements(np.broadcast_arrays)
+    #@implements(np.ix_)
+    #@implements(np.fill_diagonal)
+    #@implements(np.diag_indices_from)
+
+    #@implements(np.take_along_axis)
+    #@implements(np.put_along_axis)
+    #@implements(np.apply_along_axis)
+    #@implements(np.apply_over_axes)
+
+
+    #@implements(np.lib.scimath.sqrt)
+    #@implements(np.lib.scimath.log)
+    #@implements(np.lib.scimath.log10)
+    #@implements(np.lib.scimath.logn)
+    #@implements(np.lib.scimath.log2)
+    #@implements(np.lib.scimath.power)
+    #@implements(np.lib.scimath.arccos)
+    #@implements(np.lib.scimath.arcsin)
+    #@implements(np.lib.scimath.arctanh)
+
+    #@implements(np.poly)
+    #@implements(np.roots)
+    #@implements(np.polyint)
+    #@implements(np.polyder)
+    #@implements(np.polyfit)
+    #@implements(np.polyval)
+    #@implements(np.polyadd)
+    #@implements(np.polysub)
+    #@implements(np.polymul)
+    #@implements(np.polydiv)
+    #@implements(np.intersect1d)
+    #@implements(np.setxor1d)
+    #@implements(np.in1d)
+    #@implements(np.isin)
+    #@implements(np.union1d)
+    #@implements(np.setdiff1d)
+    #@implements(np.fv)
+    #@implements(np.pmt)
+    #@implements(np.nper)
+    #@implements(np.ipmt)
+    #@implements(np.ppmt)
+    #@implements(np.pv)
+    #@implements(np.rate)
+    #@implements(np.irr)
+    #@implements(np.npv)
+    #@implements(np.mirr)
+
+    #@implements(np.save)
+    #@implements(np.savez)
+    #@implements(np.savez_compressed)
+    #@implements(np.savetxt)
+
+
 
 setup_ducktype()
+
+
+# temporary code to figure out our api coverage
+api = ['np.empty_like', 'np.concatenate', 'np.inner', 'np.where', 'np.lexsort',
+'np.can_cast', 'np.min_scalar_type', 'np.result_type', 'np.dot', 'np.vdot',
+'np.bincount', 'np.ravel_multi_index', 'np.unravel_index', 'np.copyto',
+'np.putmask', 'np.packbits', 'np.unpackbits', 'np.shares_memory',
+'np.may_share_memory', 'np.is_busday', 'np.busday_offset', 'np.busday_count',
+'np.datetime_as_string', 'np.zeros_like', 'np.ones_like', 'np.full_like',
+'np.count_nonzero', 'np.argwhere', 'np.flatnonzero', 'np.correlate',
+'np.convolve', 'np.outer', 'np.tensordot', 'np.roll', 'np.rollaxis',
+'np.moveaxis', 'np.cross', 'np.allclose', 'np.isclose', 'np.array_equal',
+'np.array_equiv', 'np.take', 'np.reshape', 'np.choose', 'np.repeat', 'np.put',
+'np.swapaxes', 'np.transpose', 'np.partition', 'np.argpartition', 'np.sort',
+'np.argsort', 'np.argmax', 'np.argmin', 'np.searchsorted', 'np.resize',
+'np.squeeze', 'np.diagonal', 'np.trace', 'np.ravel', 'np.nonzero', 'np.shape',
+'np.compress', 'np.clip', 'np.sum', 'np.any', 'np.all', 'np.cumsum', 'np.ptp',
+'np.amax', 'np.amin', 'np.alen', 'np.prod', 'np.cumprod', 'np.ndim', 'np.size',
+'np.around', 'np.mean', 'np.std', 'np.var', 'np.round_', 'np.product',
+'np.cumproduct', 'np.sometrue', 'np.alltrue', 'np.rank', 'np.array2string',
+'np.array_repr', 'np.array_str', 'np.char.equal', 'np.char.not_equal',
+'np.char.greater_equal', 'np.char.less_equal', 'np.char.greater',
+'np.char.less', 'np.char.str_len', 'np.char.add', 'np.char.multiply',
+'np.char.mod', 'np.char.capitalize', 'np.char.center', 'np.char.count',
+'np.char.decode', 'np.char.encode', 'np.char.endswith', 'np.char.expandtabs',
+'np.char.find', 'np.char.index', 'np.char.isalnum', 'np.char.isalpha',
+'np.char.isdigit', 'np.char.islower', 'np.char.isspace', 'np.char.istitle',
+'np.char.isupper', 'np.char.join', 'np.char.ljust', 'np.char.lower',
+'np.char.lstrip', 'np.char.partition', 'np.char.replace', 'np.char.rfind',
+'np.char.rindex', 'np.char.rjust', 'np.char.rpartition', 'np.char.rsplit',
+'np.char.rstrip', 'np.char.split', 'np.char.splitlines', 'np.char.startswith',
+'np.char.strip', 'np.char.swapcase', 'np.char.title', 'np.char.translate',
+'np.char.upper', 'np.char.zfill', 'np.char.isnumeric', 'np.char.isdecimal',
+'np.atleast_1d', 'np.atleast_2d', 'np.atleast_3d', 'np.vstack', 'np.hstack',
+'np.stack', 'np.block', 'np.einsum_path', 'np.einsum', 'np.fix', 'np.isposinf',
+'np.isneginf', 'np.asfarray', 'np.real', 'np.imag', 'np.iscomplex',
+'np.isreal', 'np.iscomplexobj', 'np.isrealobj', 'np.nan_to_num',
+'np.real_if_close', 'np.asscalar', 'np.common_type', 'np.fliplr', 'np.flipud',
+'np.diag', 'np.diagflat', 'np.tril', 'np.triu', 'np.vander', 'np.histogram2d',
+'np.tril_indices_from', 'np.triu_indices_from', 'np.linalg.tensorsolve',
+'np.linalg.solve', 'np.linalg.tensorinv', 'np.linalg.inv',
+'np.linalg.matrix_power', 'np.linalg.cholesky', 'np.linalg.qr',
+'np.linalg.eigvals', 'np.linalg.eigvalsh', 'np.linalg.eig', 'np.linalg.eigh',
+'np.linalg.svd', 'np.linalg.cond', 'np.linalg.matrix_rank', 'np.linalg.pinv',
+'np.linalg.slogdet', 'np.linalg.det', 'np.linalg.lstsq', 'np.linalg.norm',
+'np.linalg.multi_dot', 'np.histogram_bin_edges', 'np.histogram',
+'np.histogramdd', 'np.rot90', 'np.flip', 'np.average', 'np.piecewise',
+'np.select', 'np.copy', 'np.gradient', 'np.diff', 'np.interp', 'np.angle',
+'np.unwrap', 'np.sort_complex', 'np.trim_zeros', 'np.extract', 'np.place',
+'np.cov', 'np.corrcoef', 'np.i0', 'np.sinc', 'np.msort', 'np.median',
+'np.percentile', 'np.quantile', 'np.trapz', 'np.meshgrid', 'np.delete',
+'np.insert', 'np.append', 'np.digitize', 'np.broadcast_to',
+'np.broadcast_arrays', 'np.ix_', 'np.fill_diagonal', 'np.diag_indices_from',
+'np.nanmin', 'np.nanmax', 'np.nanargmin', 'np.nanargmax', 'np.nansum',
+'np.nanprod', 'np.nancumsum', 'np.nancumprod', 'np.nanmean', 'np.nanmedian',
+'np.nanpercentile', 'np.nanquantile', 'np.nanvar', 'np.nanstd',
+'np.take_along_axis', 'np.put_along_axis', 'np.apply_along_axis',
+'np.apply_over_axes', 'np.expand_dims', 'np.column_stack', 'np.dstack',
+'np.array_split', 'np.split', 'np.hsplit', 'np.vsplit', 'np.dsplit', 'np.kron',
+'np.tile', 'np.lib.scimath.sqrt', 'np.lib.scimath.log', 'np.lib.scimath.log10',
+'np.lib.scimath.logn', 'np.lib.scimath.log2', 'np.lib.scimath.power',
+'np.lib.scimath.arccos', 'np.lib.scimath.arcsin', 'np.lib.scimath.arctanh',
+'np.poly', 'np.roots', 'np.polyint', 'np.polyder', 'np.polyfit', 'np.polyval',
+'np.polyadd', 'np.polysub', 'np.polymul', 'np.polydiv', 'np.ediff1d',
+'np.unique', 'np.intersect1d', 'np.setxor1d', 'np.in1d', 'np.isin',
+'np.union1d', 'np.setdiff1d', 'np.save', 'np.savez', 'np.savez_compressed',
+'np.savetxt', 'np.fv', 'np.pmt', 'np.nper', 'np.ipmt', 'np.ppmt', 'np.pv',
+'np.rate', 'np.irr', 'np.npv', 'np.mirr', 'np.pad', 'np.fft.fftshift',
+'np.fft.ifftshift', 'np.fft.fft', 'np.fft.ifft', 'np.fft.rfft', 'np.fft.irfft',
+'np.fft.hfft', 'np.fft.ihfft', 'np.fft.fftn', 'np.fft.ifftn', 'np.fft.fft2',
+'np.fft.ifft2', 'np.fft.rfftn', 'np.fft.rfft2', 'np.fft.irfftn',
+'np.fft.irfft2']
+
+for a in api:
+    if a.startswith('np.char.'):
+        continue
+    if a.startswith('np.fft.'):
+        continue
+
+    parts = a.split('.')[1:]
+    f = np
+    while parts and f:
+        f = getattr(f, parts.pop(0), None)
+    if f is None:
+        print("Missing", a)
+    if f not in HANDLED_FUNCTIONS:
+        print(a)
+
 
 ################################################################################
 #                               testing code

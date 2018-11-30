@@ -500,8 +500,8 @@ def _array2string(a, dispatcher, options, separator, prefix, suffix, linewidth,
                        separator, edgeitems, summary_insert)
     return lst
 
-def array2string(a, separator=' ', prefix="", suffix="", linewidth=75,
-                 threshold=1000, edgeitems=3, dispatcher=None, **options):
+def duck_array2string(a, separator=' ', prefix="", suffix="", linewidth=75,
+                      threshold=1000, edgeitems=3, dispatcher=None, **options):
     """
     Return a string representation of an array.
 
@@ -725,7 +725,6 @@ def dtype_short_repr(dtype):
 
     return typename
 
-
 def duck_repr(arr, **options):
     """
     Return the string representation of an array.
@@ -769,8 +768,8 @@ def duck_repr(arr, **options):
     suffix = ")" if skipdtype else ","
 
     if arr.size > 0 or arr.shape == (0,):
-        lst = array2string(arr, separator=', ',
-                           prefix=prefix, suffix=suffix, **options)
+        lst = duck_array2string(arr, separator=', ', prefix=prefix,
+                                suffix=suffix, **options)
     else:  # show zero-length shape unless it is (0,)
         lst = "[], shape=%s" % (repr(arr.shape),)
 
@@ -811,5 +810,5 @@ def duck_str(a, **options):
     '[0 1 2]'
 
     """
-    return array2string(a, separator=' ', prefix="", **options)
+    return duck_array2string(a, separator=' ', prefix="", **options)
 
