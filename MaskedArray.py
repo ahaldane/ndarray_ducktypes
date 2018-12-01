@@ -293,7 +293,8 @@ def replace_X(data, fill=None):
 
     return replace(data)
 
-
+# carried over from numpy's MaskedArray, but naming is somewhat confusing
+# as the max_filler is actually the minimum value. Change?
 _max_filler = ntypes._minvals
 _max_filler.update([(k, -np.inf) for k in [np.float32, np.float64]])
 _min_filler = ntypes._maxvals
@@ -576,6 +577,15 @@ def _copy_mask(mask, outmask=None):
     return result_mask
 
 def setup_ducktype():
+    # Some design principles (subject to revision):
+    #
+    # * out arguments must be maskedarrays. This forces users to use safe code
+    #   which doesn't lose the mask or risk using uninitialized data under mask.
+    # * methods which return `int` arrays meant for indexing (eg, argsort,
+    #   nonzero) will return plain ndarrays. Otherwise return maskedarrays.
+    # * mask behaves as "skipna" style (see NEP)
+    # * masks sort as greater than all other values
+    #
 
     @implements(np.all)
     def all(a, axis=None, out=None, keepdims=np._NoValue):
@@ -623,63 +633,74 @@ def setup_ducktype():
         result_mask = np.all(a._mask, axis, outmask)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
-    @implements(np.argsort)
-    def argsort(a, axis=-1, kind='quicksort', order=None):
-        # See trick in np.sort below. Can this be made faster?
-        # Uses two argsorts plus a temp array currently.
-        inds = np.argsort(a.filled(minmax='min'), axis, kind, order)
-        # next two lines "reverse" the argsort (same as double-argsort)
-        rev_inds = np.empty(inds.shape, dtype=inds.dtype)
-        np.put_along_axis(rev_inds, inds, np.arange(a.shape[axis]), axis)
-        # prepare to resort but put masked elem at end
-        rev_inds[a._mask] = _min_filler[rev_inds.dtype]
-        return np.argsort(rev_inds, axis, kind)
-
-        # test on:
-        # a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]], dtype='u4')
-        # np.take_along_axis(a, np.argsort(a, axis=1), axis=1)
-        # np.sort(a)
-
-    @implements(np.argpartition)
-    def argpartition(a, kth, axis=-1, kind='introselect', order=None):
-        #XXX needs fix for min_value vs mask
-        filled = a.filled(minmax='min')
-        result_data = np.argpartition(filled, kth, axis, kind, order)
-        result_mask = a._mask[result_data]
-        return maskedarray_or_scalar(result_data, result_mask)
-
-    @implements(np.searchsorted)
-    def searchsorted(a, v, side='left', sorter=None):
-        # XXX account for mask in v?
-        # XXX return a MaskedArray?
-        # XXX where does the min_filler get put when in v?
-        # Probably the "correct" way to do this is do searchsorted
-        # only on the unmasked values,
-        filled = a.filled(minmax='min')
-        return np.searchsorted(filled, v, side, sorter)
-        # XXX this should be fixed in the case side is 'right', to put the
-        # new element before the masked elements (in case both mask and min_val
-        # elements are present)
-
     @implements(np.sort)
     def sort(a, axis=-1, kind='quicksort', order=None):
         # Note: This is trickier than it looks. The first line sorts the mask
         # together with any min_vals which may be present, so there appears to
-        # be a problem ordering masked elements vs min_val elements.
-        # But, since we know all the masked elements have to end up at the
-        # end of the axis, we can sort the mask too and everything works out.
+        # be a problem ordering mask vs min_val elements.
+        # But, since we know all the masked elements have to end up at the end
+        # of the axis, we can sort the mask too and everything works out. The
+        # mask-sort only swaps the mask between min_val and masked positions
+        # which have the same underlying data.
         result_data = np.sort(a.filled(minmax='min'), axis, kind, order)
         result_mask = np.sort(a._mask, axis, kind)  #or partition for speed?
         return maskedarray_or_scalar(result_data, result_mask)
+        # Note: lexsort may be faster, but doesn't provide kind or order kwd
+
+    @implements(np.argsort)
+    def argsort(a, axis=-1, kind='quicksort', order=None):
+        # Similar to mask-sort trick in sort above, here after sorting data we
+        # re-sort based on mask. Use the property that if you argsort the index
+        # array produced by argsort you get the element rank, which can be
+        # argsorted again to get back the sort indices. However, here we
+        # modify the rank based on the mask before inverting back to indices.
+        # Uses two argsorts plus a temp array. Further speedups?
+        inds = np.argsort(a.filled(minmax='min'), axis, kind, order)
+        # next two lines "reverse" the argsort (same as double-argsort)
+        ranks = np.empty(inds.shape, dtype=inds.dtype)
+        np.put_along_axis(ranks, inds, np.arange(a.shape[axis]), axis)
+        # prepare to resort but make masked elem highest rank
+        ranks[a._mask] = _min_filler[ranks.dtype]
+        return np.argsort(ranks, axis, kind)
+
+    @implements(np.argpartition)
+    def argpartition(a, kth, axis=-1, kind='introselect', order=None):
+        # see argsort for explanation
+        filled = a.filled(minmax='min')
+        inds = np.argpartition(filled, kth, axis, kind, order)
+        ranks = np.empty(inds.shape, dtype=inds.dtype)
+        np.put_along_axis(ranks, inds, np.arange(a.shape[axis]), axis)
+        ranks[a._mask] = _min_filler[ranks.dtype]
+        return np.argpartition(ranks, kth, axis, kind)
+
+    @implements(np.searchsorted)
+    def searchsorted(a, v, side='left', sorter=None):
+        inds = np.searchsorted(a.filled(minmax='min'), v.filled(minmax='min'),
+                               side, sorter)
+
+        # Line above treats mask and minval as the same, we need to fix it up
+        maskleft = len(a) - np.sum(a._mask)
+        if side == 'left':
+            # masked vals in v need to be moved right to the left end of the
+            # masked vals in a (which have to be to the right end of a).
+            inds[v._mask] = maskleft
+        else:
+            # minvals in v meed to be moved left to the left end of the
+            # masked vals in a.
+            minval = _min_filler[v.dtype]
+            inds[(v._data == minval) & ~v._mask] = maskleft
+
+        return inds
 
     @implements(np.lexsort)
     def lexsort(keys, axis=-1):
-        if isintance(keys, tuple):
-            keys = tuple(x.filled(minmax='min'))
-        else:
-            keys = keys.filled(minmax='min')
-        return np.lexsort(keys)
-        #XXX needs to account for mask
+        if not isinstance(keys, tuple):
+            keys = tuple(keys)
+        
+        # strategy: for each key, split into a mask and data key.
+        # So, we end up sorting twice as many keys. Mask is primary key (last).
+        keys = tuple(x for k in keys for x in (k._data, k._mask))
+        return np.lexsort(keys, axis)
 
     @implements(np.mean)
     def mean(a, axis=None, dtype=None, out=None, keepdims=np._NoValue):
@@ -1429,3 +1450,12 @@ if __name__ == '__main__':
     print(np.sin(C)*np.full(3, 100))
     print(repr(MaskedArray([[X, X, 3], [1, X, 1]])))
     print(repr(MaskedArray([[X, X, X], [X, X, X]])))
+    a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]], dtype='u4')
+    print(repr(a))
+    b = np.take_along_axis(a, np.argsort(a, axis=1), axis=1)
+    print(repr(b))
+    c = a.copy()
+    c.sort(axis=1)
+    print(repr(c))
+    print(np.lexsort((a,), axis=1))
+    print(np.argsort(a, axis=1))
