@@ -28,7 +28,7 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
             if mask is None:
                 # if mask is None, user can put masked values in the data.
                 # Otherwise, we will get some kind of failure in the line after.
-                data, mask = replace_X(data)
+                data, mask = replace_X(data, dtype=dtype)
 
             self._data = np.array(data, dtype, copy=copy, order=order,
                                   subok=subok, ndmin=ndmin)
@@ -252,10 +252,10 @@ class Masked:
         return 'masked'
 masked = X = Masked()
 
-# takes array input, replaces masked value by another element in the array
+# takes array input, replaces masked value by 0 and return filled data & mask.
 # This is more-or-less a reimplementation of PyArray_DTypeFromObject to
 # account for masked values
-def replace_X(data, fill=None):
+def replace_X(data, dtype=None):
 
     # we do two passes: First we figure out the output dtype, then we replace
     # all masked values by the filler "type(0)".
@@ -276,8 +276,14 @@ def replace_X(data, fill=None):
         # __array_interface__ implementors)
         return np.array(data).dtype
 
-    dt = get_dtype(data)
-    fill = dt.type(0)
+    if dtype is None:
+        dtype = get_dtype(data)
+        if dtype is None:
+            raise ValueError("must supply dtype if all elements are masked")
+    else:
+        dtype = np.dtype(dtype)
+
+    fill = dtype.type(0)
 
     def replace(data):
         if data is masked:
@@ -285,7 +291,7 @@ def replace_X(data, fill=None):
         if isinstance(data, (MaskedScalar, MaskedArray)):
             return data._data, data._mask
         if isinstance(data, list):
-            return tuple(zip(*(replace_X(d) for d in data)))
+            return tuple(zip(*(replace(d) for d in data)))
         if is_ndducktype(data):
             return data, np.broadcast_to(False, data.shape)
         # otherwise assume it is some kind of scalar
@@ -696,7 +702,7 @@ def setup_ducktype():
     def lexsort(keys, axis=-1):
         if not isinstance(keys, tuple):
             keys = tuple(keys)
-        
+
         # strategy: for each key, split into a mask and data key.
         # So, we end up sorting twice as many keys. Mask is primary key (last).
         keys = tuple(x for k in keys for x in (k._data, k._mask))
@@ -1007,7 +1013,7 @@ def setup_ducktype():
 
     @implements(np.put)
     def put(a, indices, values, mode='raise'):
-        data, mask = replace_X(data)
+        data, mask = replace_X(values, dtype=a.dtype)
         np.put(a._data, indices, data, mode)
         np.put(a._mask, indices, mask, mode)
         return None
