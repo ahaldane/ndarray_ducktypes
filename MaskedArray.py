@@ -6,7 +6,9 @@ import builtins
 import numpy.core.umath as umath
 from numpy.lib.mixins import NDArrayOperatorsMixin
 import numpy.core.numerictypes as ntypes
+from numpy.core.multiarray import normalize_axis_index
 from ndarray_api_mixin import NDArrayAPIMixin
+from numpy.lib.stride_tricks import _broadcast_shape
 
 class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
     def __init__(self, data=None, mask=None, dtype=None, copy=False,
@@ -202,15 +204,12 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
 #
 # Question: What should happen when you fancy-index using a masked integer
 # array? Probably it should fail - you should use filled first.
-#
-class MaskedScalar:
+class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
     def __init__(self, data, mask):
         self._data = data
         self._mask = mask
         self.dtype = data.dtype
         self.shape = ()
-        self.size = 1
-        self.ndim = 0
 
     def __str__(self):
         if self._mask:
@@ -247,9 +246,9 @@ class MaskedScalar:
 # a MaskedArray, to set the mask.
 class Masked:
     def __repr__(self):
-        return 'masked'
+        return 'input_mask'
     def __str__(self):
-        return 'masked'
+        return 'input_mask'
 masked = X = Masked()
 
 # takes array input, replaces masked value by 0 and return filled data & mask.
@@ -260,14 +259,21 @@ def replace_X(data, dtype=None):
     # we do two passes: First we figure out the output dtype, then we replace
     # all masked values by the filler "type(0)".
 
-    def get_dtype(data, cur_dtype=None):
+    def get_dtype(data, cur_dtype=X):
         if isinstance(data, list):
-            out_dtype = np.result_type(*(get_dtype(d) for d in data))
+            dtypes = (get_dtype(d, cur_dtype) for d in data)
+            dtypes = [dt for dt in dtypes  if dt is not X]
+            if not dtypes:
+                return cur_dtype
 
-            if cur_dtype is None:
+            out_dtype = np.result_type(*dtypes)
+            if cur_dtype is X:
                 return out_dtype
             else:
                 return np.promote_types(out_dtype, cur_dtype)
+
+        if data is X:
+            return X
 
         if is_ndducktype(data):
             return data.dtype
@@ -278,7 +284,7 @@ def replace_X(data, dtype=None):
 
     if dtype is None:
         dtype = get_dtype(data)
-        if dtype is None:
+        if dtype is X:
             raise ValueError("must supply dtype if all elements are masked")
     else:
         dtype = np.dtype(dtype)
@@ -291,7 +297,7 @@ def replace_X(data, dtype=None):
         if isinstance(data, (MaskedScalar, MaskedArray)):
             return data._data, data._mask
         if isinstance(data, list):
-            return tuple(zip(*(replace(d) for d in data)))
+            return (list(x) for x in zip(*(replace(d) for d in data)))
         if is_ndducktype(data):
             return data, np.broadcast_to(False, data.shape)
         # otherwise assume it is some kind of scalar
@@ -341,6 +347,7 @@ def as_masked_fmt(formattercls):
                 frac = example_str.partition('.')
                 nfrac = len(frac[1]) + len(frac[2])
                 masked_str = (masked_str + ' '*nfrac).rjust(reslen)
+                # XXX safer/better: simply center the X?
             else:
                 masked_str = masked_str.rjust(reslen)
 
@@ -698,6 +705,27 @@ def setup_ducktype():
 
         return inds
 
+    @implements(np.digitize)
+    def digitize(x, bins, right=False):
+        # here for compatibility, searchsorted below is happy to take this
+        # XXX comment above copied from orig. What does it mean?
+        if np.issubdtype(x.dtype, _nx.complexfloating):
+            raise TypeError("x may not be complex")
+
+        #XXX implement this part
+        #mono = _monotonicity(bins)
+        #if mono == 0:
+        #    raise ValueError("bins must be monotonically "
+        #                     "increasing or decreasing")
+
+        # this is backwards because the arguments below are swapped
+        side = 'left' if right else 'right'
+        if mono == -1:
+            # reverse the bins, and invert the results
+            return len(bins) - np.searchsorted(bins[::-1], x, side=side)
+        else:
+            return np.searchsorted(bins, x, side=side)
+
     @implements(np.lexsort)
     def lexsort(keys, axis=-1):
         if not isinstance(keys, tuple):
@@ -851,8 +879,64 @@ def setup_ducktype():
             ret = np.sqrt(ret)
         return ret
 
-    #@implements(np.average)
+    @implements(np.average, checked_args=(0,))
+    def average(a, axis=None, weights=None, returned=False):
+        if weights is None:
+            avg = a.mean(axis)
+            if returned:
+                return avg, avg.dtype.dtype(a.count(axis)/avg.count(axis))
+            return avg
+
+        if issubclass(a.dtype.type, (np.integer, np.bool_)):
+            result_dtype = np.result_type(a.dtype, wgt.dtype, 'f8')
+        else:
+            result_dtype = np.result_type(a.dtype, wgt.dtype)
+            # Note: No float16 special case, since ndarray.average skips it
+
+        wgt = weights
+
+        # Sanity checks
+        if a.shape != wgt.shape:
+            if axis is None:
+                raise TypeError(
+                    "Axis must be specified when shapes of a and weights "
+                    "differ.")
+            if wgt.ndim != 1:
+                raise TypeError(
+                    "1D weights expected when shapes of a and weights differ.")
+            if wgt.shape[0] != a.shape[axis]:
+                raise ValueError(
+                    "Length of weights not compatible with specified axis.")
+
+            # setup wgt to broadcast along axis
+            wgt = np.broadcast_to(wgt, (a.ndim-1)*(1,) + wgt.shape)
+            wgt = wgt.swapaxes(-1, axis)
+
+        if isinstance(wgt, MaskedArray):
+            mask = a._mask | wgt._mask
+            wgt = MaskedArray(wgt._data, mask)
+            a = MaskedArray(a._data, mask)
+        else:
+            wgt = MaskedArray(wgt, a._mask)
+
+
+        scl = wgt.sum(axis=axis, dtype=result_dtype)
+        if np.any(scl == 0.0):
+            raise ZeroDivisionError(
+                "Weights sum to zero, can't be normalized")
+
+        avg = np.multiply(a, wgt, dtype=result_dtype).sum(axis)/scl
+
+        if returned:
+            return avg, scl
+        return avg
+
     #@implements(np.median)
+    #def median(a, axis=None, out=None, overwrite_input=False, keepdims=False):
+    #    return np.percentile(a, q=50., axis=axis, out=out,
+    #                      overwrite_input=overwrite_input,
+    #                      interpolation="linear", keepdims=keepdims)
+
     #@implements(np.percentile)
     #@implements(np.quantile)
     #@implements(np.cov)
@@ -921,10 +1005,36 @@ def setup_ducktype():
         rmask = np.diagonal(a._mask, offset=offset, axis1=axis1, axis2=axis2)
         return maskedarray_or_scalar(result, rmask)
 
-    #@implements(np.diag)
-    #@implements(np.diagflat)
-    #@implements(np.tril)
-    #@implements(np.triu)
+    @implements(np.diag)
+    def diag(v, k=0):
+        s = v.shape
+        if len(s) == 1:
+            n = s[0]+abs(k)
+            res = MaskedArray(np.zeros((n, n), v.dtype))
+            if k >= 0:
+                i = k
+            else:
+                i = (-k) * n
+            res[:n-k].flat[i::n+1] = v
+            return res
+        elif len(s) == 2:
+            return np.diagonal(v, k)
+        else:
+            raise ValueError("Input must be 1- or 2-d.")
+
+    @implements(np.diagflat)
+    def diagflat(v, k=0):
+        return np.diag(v.ravel(), k)
+
+    @implements(np.tril)
+    def tril(m, k=0):
+        mask = np.tri(*m.shape[-2:], k=k, dtype=bool)
+        return np.where(mask, m, zeros(1, m.dtype))
+
+    @implements(np.triu)
+    def triu(m, k=0):
+        mask = np.tri(*m.shape[-2:], k=k-1, dtype=bool)
+        return np.where(mask, zeros(1, m.dtype), m)
 
     @implements(np.trace)
     def trace(a, offset=0, axis1=0, axis2=1, dtype=None, out=None):
@@ -941,14 +1051,16 @@ def setup_ducktype():
         outdata, outmask = get_maskedout(out)
         a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.dot(a.filled(0), b.filled(0), out=outdata)
-        result_mask = np.logical_not(np.dot(~a._mask, ~b._mask), out=outmask)
+        result_mask = np.dot(~a._mask, ~b._mask, out=outmask)
+        result_mask = np.logical_not(result_mask, out=result_mask)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.vdot)
     def vdot(a, b):
         a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.vdot(a.filled(0), b.filled(0))
-        result_mask = np.logical_not(np.dot(~a._mask, ~b._mask))
+        result_mask = np.vdot(~a._mask, ~b._mask)
+        result_mask = np.logical_not(result_mask, out=result_mask)
         return maskedarray_or_scalar(result_data, result_mask)
 
     @implements(np.cross)
@@ -956,15 +1068,16 @@ def setup_ducktype():
         a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.cross(a.filled(0), b.filled(0), axisa, axisb, axisc,
                                axis)
-        result_mask = np.logical_not(np.cross(~a._mask, ~b._mask), axisa,
-                                     axisb, axisc, axis)
+        result_mask = np.cross(~a._mask, ~b._mask, axisa, axisb, axisc, axis)
+        result_mask = np.logical_not(result_mask, out=result_mask)
         return maskedarray_or_scalar(result_data, result_mask)
 
     @implements(np.inner)
     def inner(a, b):
         a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.inner(a.filled(0), b.filled(0))
-        result_mask = np.logical_not(np.inner(~a._mask, ~b._mask))
+        result_mask = np.inner(~a._mask, ~b._mask)
+        result_mask = np.logical_not(result_mask, out=result_mask)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.outer)
@@ -972,8 +1085,116 @@ def setup_ducktype():
         outdata, outmask = get_maskedout(out)
         a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.outer(a.filled(0), b.filled(0), out=outdata)
-        result_mask = np.logical_not(np.outer(~a._mask, ~b._mask), out=outmask)
+        result_mask = np.outer(~a._mask, ~b._mask, out=outmask)
+        result_mask = np.logical_not(result_mask, out=result_mask)
         return maskedarray_or_scalar(result_data, result_mask, out)
+
+    @implements(np.kron)
+    def kron(a, b):
+        a = MaskedArray(a, copy=False, subok=True, ndmin=b.ndim)
+        if (a.ndim == 0 or b.ndim == 0):
+            return np.multiply(a, b)
+        a_shape = a.shape
+        b_shape = b.shape
+        nd = ndb
+        if b.ndim > a.ndim:
+            a_shape = (1,)*(ndb-nda) + a_shape
+        elif b.ndim < a.ndim:
+            b_shape = (1,)*(nda-ndb) + b_shape
+            nd = nda
+
+        result = np.outer(a, b).reshape(a_shape + b_shape)
+        axis = nd-1
+        for _ in range(nd):
+            result = np.concatenate(result, axis=axis)
+        return result
+
+    @implements(np.tensordot)
+    def tensordot(a, b, axes=2):
+        try:
+            iter(axes)
+        except Exception:
+            axes_a = list(range(-axes, 0))
+            axes_b = list(range(0, axes))
+        else:
+            axes_a, axes_b = axes
+
+        def nax(ax):
+            try:
+                return len(ax), list(ax)
+            except TypeError:
+                return 1, [ax]
+
+        na, axes_a = nax(axes_a)
+        nb, axes_b = nax(axes_b)
+
+        ashape, bshape = a.shape, b.shape
+        nda, ndb = a.ndim, b.ndim
+        equal = True
+        if na != nb:
+            equal = False
+        else:
+            for k in range(na):
+                if ashape[axes_a[k]] != bshape[axes_b[k]]:
+                    equal = False
+                    break
+                if axes_a[k] < 0:
+                    axes_a[k] += nda
+                if axes_b[k] < 0:
+                    axes_b[k] += ndb
+        if not equal:
+            raise ValueError("shape-mismatch for sum")
+
+        # Move the axes to sum over to the end of "a"
+        # and to the front of "b"
+        notin = [k for k in range(nda) if k not in axes_a]
+        newaxes_a = notin + axes_a
+        N2 = 1
+        for axis in axes_a:
+            N2 *= ashape[axis]
+        newshape_a = (int(multiply.reduce([ashape[ax] for ax in notin])), N2)
+        olda = [ashape[axis] for axis in notin]
+
+        notin = [k for k in range(ndb) if k not in axes_b]
+        newaxes_b = axes_b + notin
+        N2 = 1
+        for axis in axes_b:
+            N2 *= bshape[axis]
+        newshape_b = (N2, int(np.multiply.reduce([bshape[ax] for ax in notin])))
+        oldb = [bshape[axis] for axis in notin]
+
+        at = a.transpose(newaxes_a).reshape(newshape_a)
+        bt = b.transpose(newaxes_b).reshape(newshape_b)
+        res = np.dot(at, bt)
+        return res.reshape(olda + oldb)
+
+    @implements(np.einsum)
+    def einsum(*operands, **kwargs):
+        out = None
+        if 'out' in kwargs:
+            out = kwargs.pop('out')
+            outdata, outmask = get_maskedout(out)
+
+        data, nmask = zip(*((x._data, ~x._mask) for x in operands))
+
+        result_data = np.einsum(data, out=outdata, **kwargs)
+        result_mask = np.einsum(nmask, out=outmask, **kwargs)
+        result_mask = np.logical_not(result_mask, out=result_mask)
+        return maskedarray_or_scalar(result_data, result_mask, out)
+
+    #@implements(np.einsum_path)
+
+    @implements(np.correlate)
+    def correlate(a, v, mode='valid'):
+        result_data = np.correlate(a.filled(0), v.filled(0), mode)
+        result_mask = ~np.correlate(~a._mask, v._mask, mode)
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    @implements(np.convolve)
+    def convolve(a, v, mode='full'):
+        result_data = np.convolve(a.filled(0), v.filled(0), mode)
+        result_mask = ~np.convolve(~a._mask, v._mask, mode)
+        return maskedarray_or_scalar(result_data, result_mask)
 
     @implements(np.real)
     def real(self):
@@ -995,7 +1216,7 @@ def setup_ducktype():
 
     @implements(np.partition)
     def partition(a, kth, axis=-1, kind='introselect', order=None):
-        inds = np.argpartition(filled, kth, axis, kind, order)
+        inds = np.argpartition(a, kth, axis, kind, order)
         return np.take_along_axis(a, inds, axis=axis)
 
     @implements(np.ptp)
@@ -1018,31 +1239,39 @@ def setup_ducktype():
         np.put(a._mask, indices, mask, mode)
         return None
 
-    @implements(np.take_along_axis, (0,))
+    @implements(np.take_along_axis, checked_args=(0,))
     def take_along_axis(arr, indices, axis):
         result_data = np.take_along_axis(arr._data, indices, axis)
         result_mask = np.take_along_axis(arr._mask, indices, axis)
         return maskedarray_or_scalar(result_data, result_mask)
 
-    #@implements(np.put_along_axis)
+    @implements(np.put_along_axis, checked_args=(0,))
+    def put_along_axis(arr, indices, values, axis):
+        if isinstance(values, (MaskedArray, MaskedScalar)):
+            np.put_along_axis(arr._mask, indices, values._mask, axis)
+            values = values._data
+        np.put_along_axis(arr._data, indices, values, axis)
+
     #@implements(np.apply_along_axis)
+    #def apply_along_axis(func1d, axis, arr, *args, **kwargs)
+
     #@implements(np.apply_over_axes)
 
     @implements(np.ravel)
     def ravel(a, order='C'):
-        return MaskedArray(a._data.ravel(order=order),
-                           a._mask.ravel(order=order))
+        return MaskedArray(np.ravel(a._data, order=order),
+                           np.ravel(a._mask, order=order))
 
     @implements(np.repeat)
     def repeat(a, repeats, axis=None):
-        return MaskedArray(a._data.repeat(repeats, axis),
-                           a._mask.repeat(repeats, axis))
+        return MaskedArray(np.repeat(a._data, repeats, axis),
+                           np.repeat(a._mask, repeats, axis))
 
     @implements(np.reshape)
     def reshape(a, shape, order='C'):
         # XXX set base
-        return MaskedArray(a._data.reshape(shape, order=order),
-                           a._mask.reshape(shape, order=order))
+        return MaskedArray(np.reshape(a._data, shape, order=order),
+                           np.reshape(a._mask, shape, order=order))
 
 
     @implements(np.resize)
@@ -1050,66 +1279,273 @@ def setup_ducktype():
         return MaskedArray(a._data.resize(new_shape, refcheck),
                            a._mask.resize(new_shape, refcheck))
 
-    @implements(np.round)
-    def round(a, decimals=0, out=None):
+    @implements(np.meshgrid)
+    def meshgrid(*xi, **kwargs):
+        data, mask = zip(*((x._data, x._mask) for x in xi))
+        result_data = np.meshgrid(data, **kwargs)
+        result_mask = np.meshgrid(mask, **kwargs)
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    @implements(np.around)
+    def around(a, decimals=0, out=None):
         outdata, outmask = get_maskedout(out)
         result_data = np.round(a._data, decimals, outdata)
         result_mask = _copy_mask(a._mask, outmask)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
-    #@implements(np.around)
+    @implements(np.around)
+    def round(a, decimals=0, out=None):
+        return np.around(a, decimals, out)
+
+    @implements(np.fix)
+    def fix(x, out=None):
+        outdata, outmask = get_maskedout(out)
+        res = np.ceil(x, out=out)
+        res = np.floor(x, out=res, where=np.greater_equal(x, 0))
+        return out or res
 
     @implements(np.squeeze)
     def squeeze(a, axis=None):
-        return MaskedArray(a._data.squeeze(new_shape, refcheck),
-                           a._mask.squeeze(new_shape, refcheck))
+        return MaskedArray(np.squeeze(a._data, new_shape, refcheck),
+                           np.squeeze(a._mask, new_shape, refcheck))
+
     @implements(np.swapaxes)
     def swapaxes(a, axis1, axis2):
-        return MaskedArray(a._data.swapaxes(axis1, axis2),
-                           a._mask.swapaxes(axis1, axis2))
+        return MaskedArray(np.swapaxes(a._data, axis1, axis2),
+                           np.swapaxes(a._mask, axis1, axis2))
 
     @implements(np.transpose)
     def transpose(a, *axes):
-        return MaskedArray(a._data.transpose(*axes),
-                           a._mask.transpose(*axes))
+        return MaskedArray(np.transpose(a._data, *axes),
+                           np.transpose(a._mask, *axes))
 
-    #@implements(np.ravel_multi_index)
-    #@implements(np.unravel_index)
-    #@implements(np.roll)
-    #@implements(np.rollaxis)
-    #@implements(np.moveaxis)
-    #@implements(np.flip)
-    #@implements(np.expand_dims)
+    @implements(np.roll)
+    def roll(a, shift, axis=None):
+        return MaskedArray(np.roll(a._data, shift, axis),
+                           np.roll(a._mask, shift, axis))
 
+    @implements(np.rollaxis)
+    def rollaxis(a, axis, start=0):
+        return MaskedArray(np.rollaxis(a._data, axis, start),
+                           np.rollaxis(a._mask, axis, start))
+
+    @implements(np.moveaxis)
+    def moveaxis(a, source, destination):
+        return MaskedArray(np.moveaxis(a._data, source, destination),
+                           np.moveaxis(a._mask, source, destination))
+
+    @implements(np.flip)
+    def flip(m, axis=None):
+        return MaskedArray(np.flip(m._data, axis),
+                           np.flip(m._mask, axis))
+
+    #@implements(np.rot90)
+    #def rot90(m, k=1, axes=(0,1)):
+    #    # XXX copy code from np.rot90 but remove asarray
+
+    #@implements(np.fliplr)
+    #@implements(np.flipud)
+
+    @implements(np.expand_dims)
+    def expand_dims(a, axis):
+        return MaskedArray(np.expand_dims(a._data, axis),
+                           np.expand_dims(a._mask, axis))
+
+    # XXX relax dispatch requirement that all inputs are MaskedArrays?
+    # we can handle plain ndarrays too.
     @implements(np.concatenate)
     def concatenate(arrays, axis=0, out=None):
         outdata, outmask = get_maskedout(out)
-        arrays = [MaskedArray(a) for a in arrays]
-        result_data = np.concatenate([a._data for a in arrays], axis, outdata)
-        result_mask = np.concatenate([a._mask for a in arrays], axis, outmask)
+        data, mask = replace_X(arrays)
+        result_data = np.concatenate(data, axis, outdata)
+        result_mask = np.concatenate(mask, axis, outmask)
         return maskedarray_or_scalar(result_data, result_mask)
 
-    #@implements(np.column_stack)
-    #@implements(np.dstack)
-    #@implements(np.array_split)
-    #@implements(np.split)
-    #@implements(np.hsplit)
-    #@implements(np.vsplit)
-    #@implements(np.dsplit)
-    #@implements(np.kron)
-    #@implements(np.tile)
-    #@implements(np.atleast_1d)
-    #@implements(np.atleast_2d)
-    #@implements(np.atleast_3d)
-    #@implements(np.vstack)
-    #@implements(np.hstack)
-    #@implements(np.stack)
-    #@implements(np.block)
+    @implements(np.block)
+    def block(arrays):
+        data, mask = replace_X(arrays)
+        result_data = np.block(data)
+        result_mask = np.block(mask)
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    @implements(np.column_stack)
+    def column_stack(tup):
+        arrays = []
+        for v in tup:
+            arr = MaskedArray(v, copy=False, subok=True)
+            if arr.ndim < 2:
+                arr = MaskedArray(arr, copy=False, subok=True, ndmin=2).T
+            arrays.append(arr)
+        return np.concatenate(arrays, 1)
+
+    @implements(np.dstack)
+    def dstack(tup):
+        return np.dstack.__wrapped__(tup)
+
+    @implements(np.vstack)
+    def vstack(tup):
+        return np.vstack.__wrapped__(tup)
+
+    @implements(np.hstack)
+    def hstack(tup):
+        return np.hstack.__wrapped__(tup)
+
+    @implements(np.array_split, checked_args=(0,))
+    def array_split(ary, indices_or_sections, axis=0):
+        return np.array_split.__wrapped__(ary, indices_or_sections, axis)
+
+    @implements(np.split, checked_args=(0,))
+    def split(ary, indices_or_sections, axis=0):
+        return np.split.__wrapped__(ary, indices_or_sections, axis)
+
+    @implements(np.hsplit)
+    def hsplit(ary, indices_or_sections):
+        return np.hsplit.__wrapped__(ary, indices_or_sections)
+
+    @implements(np.vsplit)
+    def vsplit(ary, indices_or_sections):
+        return np.vsplit.__wrapped__(ary, indices_or_sections)
+
+    @implements(np.dsplit)
+    def dsplit(ary, indices_or_sections):
+        return np.dsplit.__wrapped__(ary, indices_or_sections)
+
+    @implements(np.tile)
+    def tile(A, reps):
+        try:
+            tup = tuple(reps)
+        except TypeError:
+            tup = (reps,)
+        d = len(tup)
+
+        if all(x == 1 for x in tup):
+            return MaskedArray(A, copy=True, subok=True, ndmin=d)
+        else:
+            c = MaskedArray(A, copy=False, subok=True, ndmin=d)
+
+        if (d < c.ndim):
+            tup = (1,)*(c.ndim-d) + tup
+        shape_out = tuple(s*t for s, t in zip(c.shape, tup))
+        n = c.size
+        if n > 0:
+            for dim_in, nrep in zip(c.shape, tup):
+                if nrep != 1:
+                    c = c.reshape(-1, n).repeat(nrep, 0)
+                n //= dim_in
+        return c.reshape(shape_out)
+
+    @implements(np.atleast_1d)
+    def atleast_1d(*arys):
+        res = []
+        for ary in arys:
+            #ary = asanyarray(ary)
+            if ary.ndim == 0:
+                result = ary.reshape(1)
+            else:
+                result = ary
+            res.append(result)
+        if len(res) == 1:
+            return res[0]
+        else:
+            return res
+
+    @implements(np.atleast_2d)
+    def atleast_2d(*arys):
+        res = []
+        for ary in arys:
+            #ary = asanyarray(ary)
+            if ary.ndim == 0:
+                result = ary.reshape(1, 1)
+            elif ary.ndim == 1:
+                result = ary[newaxis,:]
+            else:
+                result = ary
+            res.append(result)
+        if len(res) == 1:
+            return res[0]
+        else:
+            return res
+
+    @implements(np.atleast_3d)
+    def atleast_3d(*arys):
+        res = []
+        for ary in arys:
+            #ary = asanyarray(ary)
+            if ary.ndim == 0:
+                result = ary.reshape(1, 1, 1)
+            elif ary.ndim == 1:
+                result = ary[newaxis,:, newaxis]
+            elif ary.ndim == 2:
+                result = ary[:,:, newaxis]
+            else:
+                result = ary
+            res.append(result)
+        if len(res) == 1:
+            return res[0]
+        else:
+            return res
+
+    @implements(np.stack)
+    def stack(arrays, axis=0, out=None):
+        #arrays = [asanyarray(arr) for arr in arrays]
+        if not arrays:
+            raise ValueError('need at least one array to stack')
+
+        shapes = set(arr.shape for arr in arrays)
+        if len(shapes) != 1:
+            raise ValueError('all input arrays must have the same shape')
+
+        result_ndim = arrays[0].ndim + 1
+        axis = normalize_axis_index(axis, result_ndim)
+
+        sl = (slice(None),) * axis + (np.newaxis,)
+        expanded_arrays = [arr[sl] for arr in arrays]
+        return np.concatenate(expanded_arrays, axis=axis, out=out)
+
+    @implements(np.delete)
+    def delete(arr, obj, axis=None):
+        return MaskedArray(np.delete(a._data, obj, axis),
+                           np.delete(a._mask, obj, axis))
+
+    @implements(np.insert)
+    def insert(arr, obj, values, axis=None):
+        return MaskedArray(np.insert(a._data, obj, values, axis),
+                           np.insert(a._mask, obj, values, axis))
+
+    @implements(np.append)
+    def append(arr, values, axis=None):
+        return MaskedArray(np.append(a._data, values, axis),
+                           np.append(a._mask, values, axis))
+
+    @implements(np.extract)
+    def extract(condition, arr):
+        return np.extract.__wrapped__(condition, arr)
+
+    @implements(np.place)
+    def place(arr, mask, vals):
+        return np.insert(arr, mask, vals)
+
+    #@implements(np.pad)
+    #def pad(array, pad_width, mode, **kwargs):
+    # XXX need identical code to np.pad but wihout call to asarray
 
     @implements(np.broadcast_to)
     def broadcast_to(array, shape):
         return MaskedArray(np.broadcast_to(a._data, shape),
                            np.broadcast_to(a._mask, shape))
+
+    @implements(np.broadcast_arrays)
+    def broadcast_arrays(*args, **kwargs):
+        if kwargs:
+            raise TypeError('broadcast_arrays() got an unexpected keyword '
+                            'argument {!r}'.format(list(kwargs.keys())[0]))
+        shape = _broadcast_shape(*args)
+
+        if all(array.shape == shape for array in args):
+            return args
+
+        return [np.broadcast_to(array, shape, subok=subok, readonly=False)
+                for array in args]
 
     @implements(np.empty_like)
     def empty_like(prototype, dtype=None, order='K', subok=True):
@@ -1153,24 +1589,103 @@ def setup_ducktype():
         result_mask = np.choose(a._mask, choices, outmask, mode)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
-    #@implements(np.select)
+    #@implements(np.piecewise)
+    #def piecewise(x, condlist, funclist, *args, **kw):
+
+    ##@implements(np.select)
+    #def select(condlist, choicelist, default=0):
+    #    # XXX same code as np.select but without asarray
+
     #@implements(np.unique)
 
-    #@implements(np.can_cast)
-    #@implements(np.min_scalar_type)
-    #@implements(np.result_type)
-    #@implements(np.common_type)
+    @implements(np.can_cast, checked_args=())
+    def can_cast(from_, to, casting='safe'):
+        if isinstance(from_, (MaskedArray, MaskedScalar)):
+            from_ = from_._data
+        if isinstance(to, (MaskedArray, MaskedScalar)):
+            to = to._data
+        return np.can_cast(from_, to, casting)
+
+    @implements(np.min_scalar_type)
+    def min_scalar_type(a):
+        return a.dtype
+
+    @implements(np.result_type, checked_args=())
+    def result_type(*arrays_and_dtypes):
+        dat = [a._data if isinstance(a, (MaskedArray, MaskedScalar)) else a
+               for a in arrays_and_dtypes]
+        return np.result_type(dat)
+
+    @implements(np.common_type, checked_args=())
+    def common_type(*arrays_and_dtypes):
+        dat = [a._data if isinstance(a, (MaskedArray, MaskedScalar)) else a
+               for a in arrays_and_dtypes]
+        return np.common_type(dat)
 
     @implements(np.bincount)
     def bincount(x, weights=None, minlength=0):
         return np.bincount(x._data[~x._mask], weights, minlength)
 
-    #@implements(np.count_nonzero)
+    @implements(np.count_nonzero)
+    def count_nonzero(a, axis=None):
+        return np.count_nonzero(a.filled(0), axis)
 
     @implements(np.nonzero)
     def nonzero(a):
-        #XXX should this return a MaskedArray?
-        return np.nonzero(a.filled(0))
+        return np.nonzero(a.filled(0))  # not MaskedArray since is for indexing
+
+    @implements(np.flatnonzero)
+    def flatnonzero(a):
+        return np.nonzero(np.ravel(a))[0]
+
+    @implements(np.histogram, checked_args=(0,))
+    def histogram(a, bins=10, range=None, normed=None, weights=None,
+                  density=None):
+        a = a.ravel()
+        keep = ~a._mask
+        dat = a._data[keep]
+        if weights is not None:
+            weights = weights.ravel()[keep]
+
+        return np.histogram(dat, bins, range, normed, weights, density)
+
+    @implements(np.histogram2d, checked_args=(0,1))
+    def histogram2d(x, y, bins=10, range=None, normed=None, weights=None,
+                    density=None):
+        return np.histogram2d.__wrapped__(x, y, bins, range, normed, weights,
+                                          density)
+
+    @implements(np.histogramdd)
+    def histogramdd(sample, bins=10, range=None, normed=None, weights=None,
+                    density=None):
+        try:
+            # Sample is an ND-array.
+            N, D = sample.shape
+        except (AttributeError, ValueError):
+            # Sample is a sequence of 1D arrays.
+            sample = np.atleast_2d(sample).T
+            N, D = sample.shape
+
+        keep = ~np.any(sample._mask, axis=0)
+        sample = sample._data[...,keep]
+        if weights is not None:
+            weights = weights[keep]
+
+        return histogramdd(sample, bins, range, normed, weights, density)
+
+    @implements(np.histogram_bin_edges)
+    def histogram_bin_edges(a, bins=10, range=None, weights=None):
+        a = a.ravel()
+        keep = ~a._mask
+        dat = a._data[keep]
+        if weights is not None:
+            weights = weights.ravel()[keep]
+        return np.histogram_bin_edges(dat, bins, range, weights)
+
+    #@implements(np.diff)
+    #@implements(np.interp)
+    #@implements(np.ediff1d)
+    #@implements(np.gradient)
 
     @implements(np.array2string)
     def array2string(a, max_line_width=None, precision=None,
@@ -1191,94 +1706,167 @@ def setup_ducktype():
     def array_str(a, max_line_width=None, precision=None, suppress_small=None):
         return duck_str(a, max_line_width, precision, suppress_small)
 
-    #@implements(np.copyto)
-    #@implements(np.putmask)
-    #@implements(np.packbits)
-    #@implements(np.unpackbits)
+    @implements(np.shape)
+    def shape(a):
+        return a.shape
+
+    @implements(np.alen)
+    def alen(a):
+        return len(MaskedArray(a, ndmin=1))
+
+    @implements(np.ndim)
+    def ndim(a):
+        return a.ndim
+
+    @implements(np.size)
+    def size(a):
+        return a.size
+
+    @implements(np.copyto, checked_args=(0))
+    def copyto(dst, src, casting='same_kind', where=True):
+        np.copyto(dst._data, src._data, casting, where)
+        np.copyto(dst._mask, src._mask, casting, where)
+
+    @implements(np.putmask)
+    def putmask(a, mask, values):
+        np.putmask(a._data, mask, values._data)
+        np.putmask(a._mask, mask, values._mask)
+
+    @implements(np.packbits)
+    def packbits(myarray, axis=None):
+        result_data = np.packbits(myarray._data, axis)
+        result_mask = np.packbits(myarray._mask, axis) != 0
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    @implements(np.unpackbits)
+    def unpackbits(myarray, axis=None):
+        result_data = np.unpackbits(myarray._data, axis)
+        result_mask = np.unpackbits(myarray._mask*np.uint8(255), axis)
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    @implements(np.isposinf)
+    def isposinf(x, out=None):
+        return MaskedArray(np.isposinf(x._data), x._mask.copy())
+
+    @implements(np.isneginf)
+    def isneginf(x, out=None):
+        return MaskedArray(np.isneginf(x._data), x._mask.copy())
+
+    @implements(np.iscomplex)
+    def iscomplex(x):
+        return MaskedArray(np.iscomplex(x._data), x._mask.copy())
+
+    @implements(np.isreal)
+    def isreal(x):
+        return MaskedArray(np.isreal(x._data), x._mask.copy())
+
+    @implements(np.iscomplexobj)
+    def iscomplexobj(x):
+        return MaskedArray(np.iscomplexobj(x._data), x._mask.copy())
+
+    @implements(np.isrealobj)
+    def isrealobj(x):
+        return MaskedArray(np.isrealobj(x._data), x._mask.copy())
+
+    @implements(np.nan_to_num)
+    def nan_to_num(x, copy=True):
+        return MaskedArray(np.nan_to_num(x._data, copy),
+                           x._mask.copy() if copy else x._mask)
+
+    @implements(np.real_if_close)
+    def real_if_close(a, tol=100):
+        return MaskedArray(np.real_if_close(x._data, tol), x._mask.copy())
+
+    @implements(np.isclose)
+    def isclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False):
+        result_data = np.isclose(a._data, b._data, rtol, atol, equal_nan)
+        result_mask = a._mask | b._mask
+        return maskedarray_or_scalar(result_data, result_mask)
+
+    @implements(np.allclose)
+    def allclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False):
+        return np.all(np.isclose(a, b, rtol, aton, equal_nan))
+        # Note: unlike original func, this doesn't return a bool
+
+    @implements(np.array_equal)
+    def array_equal(a1, a2):
+        return np.all(a1 == a2)
+        # Note: unlike original func, this doesn't return a bool
+
+    @implements(np.array_equiv)
+    def array_equal(a1, a2):
+        try:
+            np.broadcast(a1, a2)
+        except:
+            return MaskedScalar(np.bool_(False), False)
+        return np.all(a1 == a2)
+        # Note: unlike original func, this doesn't return a bool
+
+    @implements(np.sometrue)
+    def sometrue(*args, **kwargs):
+        return np.any(*args, **kwargs)
+
+    @implements(np.alltrue)
+    def alltrue(*args, **kwargs):
+        return np.all(*args, **kwargs)
+
+    @implements(np.angle)
+    def angle(z, deg=False):
+        if issubclass(z.dtype.type, np.complexfloating):
+            zimag = z.imag
+            zreal = z.real
+        else:
+            zimag = 0
+            zreal = z
+
+        a = arctan2(zimag, zreal)
+        if deg:
+            a *= 180/pi
+        return a
+
+    @implements(np.sinc)
+    def sinc(x):
+        y = np.pi * np.where((x == 0).filled(False), 1.0e-20, x)
+        return np.sin(y)/y
+
+    #@implements(np.unwrap)
+
+
+
+    # Deprecated, don't implement
+    #@implements(np.rank)
+    #@implements(np.asscalar)
+
+    # these won't be implemented since they apply to index arrays, which should
+    # not be masked.
+    #@implements(np.ravel_multi_index)
+    #@implements(np.unravel_index)
+
+    # unclear how to implement
     #@implements(np.shares_memory)
     #@implements(np.may_share_memory)
+
+    # XXX not yet implemented:
 
     #@implements(np.is_busday)
     #@implements(np.busday_offset)
     #@implements(np.busday_count)
     #@implements(np.datetime_as_string)
 
-    #@implements(np.flatnonzero)
-    #@implements(np.correlate)
-    #@implements(np.convolve)
-
-    #@implements(np.tensordot)
-
-    #@implements(np.allclose)
-    #@implements(np.isclose)
-    #@implements(np.array_equal)
-    #@implements(np.array_equiv)
-
-    #@implements(np.shape)
-    #@implements(np.alen)
-    #@implements(np.ndim)
-    #@implements(np.size)
-    #@implements(np.rank)
-
-    #@implements(np.sometrue)
-    #@implements(np.alltrue)
-
-    #@implements(np.einsum_path)
-    #@implements(np.einsum)
-    #@implements(np.fix)
-
-    #@implements(np.isposinf)
-    #@implements(np.isneginf)
-    #@implements(np.iscomplex)
-    #@implements(np.isreal)
-    #@implements(np.iscomplexobj)
-    #@implements(np.isrealobj)
-    #@implements(np.nan_to_num)
-    #@implements(np.real_if_close)
-
-    #@implements(np.angle)
-    #@implements(np.sinc)
-    #@implements(np.rot90)
-
-
-    #@implements(np.asscalar)
     #@implements(np.asfarray)
-    #@implements(np.fliplr)
-    #@implements(np.flipud)
     #@implements(np.vander)
-    #@implements(np.histogram2d)
     #@implements(np.tril_indices_from)
     #@implements(np.triu_indices_from)
 
-    #@implements(np.histogram_bin_edges)
-    #@implements(np.histogram)
-    #@implements(np.histogramdd)
-    #@implements(np.piecewise)
-    #@implements(np.gradient)
-    #@implements(np.diff)
-    #@implements(np.interp)
-    #@implements(np.ediff1d)
-    #@implements(np.unwrap)
     #@implements(np.sort_complex)
     #@implements(np.trim_zeros)
-    #@implements(np.extract)
-    #@implements(np.place)
     #@implements(np.i0)
     #@implements(np.msort)
     #@implements(np.trapz)
-    #@implements(np.meshgrid)
 
-    #@implements(np.delete)
-    #@implements(np.insert)
-    #@implements(np.append)
-    #@implements(np.pad)
-
-    #@implements(np.digitize)
-    #@implements(np.broadcast_arrays)
     #@implements(np.ix_)
     #@implements(np.fill_diagonal)
     #@implements(np.diag_indices_from)
-
 
     #@implements(np.lib.scimath.sqrt)
     #@implements(np.lib.scimath.log)
@@ -1321,7 +1909,6 @@ def setup_ducktype():
     #@implements(np.savez)
     #@implements(np.savez_compressed)
     #@implements(np.savetxt)
-
 
 
 setup_ducktype()
@@ -1398,24 +1985,33 @@ api = ['np.empty_like', 'np.concatenate', 'np.inner', 'np.where', 'np.lexsort',
 'np.fft.ifft2', 'np.fft.rfftn', 'np.fft.rfft2', 'np.fft.irfftn',
 'np.fft.irfft2']
 
-#for a in api:
-#    if a.startswith('np.char.'):
-#        continue
-#    if a.startswith('np.fft.'):
-#        continue
+n_implemented, n_skipped, n_missing = 0, 0, 0
+for a in api:
+    if a.startswith('np.char.'):
+        n_skipped += 1
+        continue
+    if a.startswith('np.fft.'):
+        n_skipped += 1
+        continue
 
-#    parts = a.split('.')[1:]
-#    f = np
-#    while parts and f:
-#        f = getattr(f, parts.pop(0), None)
-#    if f is None:
-#        print("Missing", a)
-#        continue
-#    if f not in HANDLED_FUNCTIONS:
-#        print(a)
-#        pass
-#    #else:
-#    #    print("Have", a)
+    parts = a.split('.')[1:]
+    f = np
+    while parts and f:
+        f = getattr(f, parts.pop(0), None)
+    if f is None:
+        print("Missing", a)
+        continue
+    if f not in HANDLED_FUNCTIONS:
+        n_missing += 1
+        #print(a)
+        pass
+    else:
+        n_implemented += 1
+    #    print("Have", a)
+print("Total api:   ", len(api))
+print("Skipped:     ", n_skipped)
+print("Implemented: ", n_implemented)
+print("Missing:     ", n_missing)
 
 
 ################################################################################
@@ -1455,13 +2051,19 @@ if __name__ == '__main__':
     print(np.sin(C))
     print(np.sin(C)*np.full(3, 100))
     print(repr(MaskedArray([[X, X, 3], [1, X, 1]])))
-    print(repr(MaskedArray([[X, X, X], [X, X, X]])))
+    try:
+        print(repr(MaskedArray([[X, X, X], [X, X, X]])))
+    except ValueError as v:
+        print("Got Exception: ", v)
+    print(repr(MaskedArray([[X, X, X], [X, X, X]], dtype='u1')))
     a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]], dtype='u4')
-    print(repr(a))
     b = np.take_along_axis(a, np.argsort(a, axis=1), axis=1)
     print(repr(b))
     c = a.copy()
     c.sort(axis=1)
     print(repr(c))
+    a = MaskedArray([[1,X,3], [X,4,X], [1,X,6]], dtype='u4')
     print(np.lexsort((a,), axis=1))
     print(np.argsort(a, axis=1))
+    print(repr(np.block([[a,a],[a,a]])))
+    print(repr(a == a))

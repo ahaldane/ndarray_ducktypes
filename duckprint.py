@@ -99,7 +99,7 @@ class BoolFormatter(ElementFormatter):
 
     def get_format_func(self, elem, **options):
         truestr = ' True' if elem.shape != () else 'True'
-        return lambda x: self.truestr if x else "False"
+        return lambda x: truestr if x else "False"
 
 
 class IntegerFormatter(ElementFormatter):
