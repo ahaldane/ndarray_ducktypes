@@ -78,11 +78,15 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         return duck_repr(self)
 
     def __getitem__(self, ind):
+        if not isinstance(ind, tuple):
+            ind = (ind,)
+
         # If a boolean MaskedArray is provided as an ind, treat masked vals as
         # False. Allows code like "a[a>0]", which is then the same as
         # "a[np.nonzero(a>0)]"
-        if isinstance(ind, MaskedArray) and ind.dtype.type is np.bool_:
-            ind = ind.filled(False)
+        ind = tuple(i.filled(False) if 
+                (isinstance(ind, MaskedArray) and ind.dtype.type is np.bool_)
+                else i for i in ind)
 
         data = self._data[ind]
         mask = self._mask[ind]
@@ -91,10 +95,14 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         return MaskedArray(data, mask)
 
     def __setitem__(self, ind, val):
+        if not isinstance(ind, tuple):
+            ind = (ind,)
+
         # If a boolean MaskedArray is provided as an ind, treat masked vals as
         # False. Allows code like "a[a>0] = X"
-        if isinstance(ind, MaskedArray) and ind.dtype.type is np.bool_:
-            ind = ind.filled(False)
+        ind = tuple(i.filled(False) if 
+                (isinstance(ind, MaskedArray) and ind.dtype.type is np.bool_)
+                else i for i in ind)
 
         if val is X:
             self._mask[ind] = True
@@ -105,7 +113,7 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
             self._data[ind] = val
             self._mask[ind] = False
 
-
+    # XXX decisions about how to treat base still to be made
     @property
     def base(self):
         return self._base
@@ -113,6 +121,29 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
     def _set_base(self, base):
         # private method allowing base to be set by code in this module
         self.base = base
+
+    def view(self, dtype=None, type=None):
+        if type is not None:
+            raise ValueError("subclasses not yet supported")
+
+        if dtype is None:
+            dtype = self.dtype
+        else:
+            try:
+                dtype = np.dtype(dtype)
+            except ValueError:
+                raise ValueError("dtype must be a dtype, not subclass")
+
+        if dtype.itemsize != self.itemsize:
+            raise ValueError("views of MaskedArrays cannot change the "
+                             "datatype's itemsize")
+
+        return MaskedArray(self._data.view(dtype), self._mask)
+
+    def astype(self, dtype, order='K', casting='unsafe', subok=True, copy=True):
+        result_data = self._data.astype(dtype, order, casting, subok, copy)
+        result_mask = self._mask.astype(bool, order, casting, subok, copy)
+        return MaskedArray(result_data, result_mask)
 
     # rename this to "X" to be shorter, since it is heavily used?
     #      arr.X()     arr.X(0)   arr.filled()   arr.filled(0)
