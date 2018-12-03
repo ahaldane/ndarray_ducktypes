@@ -26,6 +26,12 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
                 raise ValueError("don't use mask if passing a maskedarray")
 
             self._base = data if data._base is None else data._base
+        elif data is X and mask is None:
+            # 0d masked array
+            if dtype is None:
+                raise ValueError("Must supply dtype for full mask")
+            self._data = np.array(dtype.type(0))
+            self._mask = np.array(True)
         else:
             if mask is None:
                 # if mask is None, user can put masked values in the data.
@@ -249,11 +255,28 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
 # Question: What should happen when you fancy-index using a masked integer
 # array? Probably it should fail - you should use filled first.
 class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
-    def __init__(self, data, mask):
-        self._data = data
-        self._mask = mask
-        self.dtype = data.dtype
-        self.shape = ()
+    def __init__(self, data, mask=None, dtype=None):
+        if isinstance(data, MaskedScalar):
+            self._data = data._data
+            self._mask = data._mask
+            if mask is not None:
+                raise ValueError("don't use mask if passing a maskedscalar")
+        elif data is X:
+            # 0d masked array
+            if dtype is None:
+                raise ValueError("Must supply dtype when data is X")
+            if mask is not None:
+                raise ValueError("don't supply mask when data is X")
+            self._data = dtype.type(0)
+            self._mask = np.bool_(True)
+        else:
+            self._data = np.array(data, dtype=dtype)[()]
+            self._mask = np.bool_(mask)
+            #XXX sanity check we got scalars
+
+        #XXX make into property
+        self.shape = self._data.shape
+        self.dtype = self._data.dtype
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_FUNCTIONS:
@@ -311,6 +334,7 @@ class Masked:
         return 'input_mask'
     def __str__(self):
         return 'input_mask'
+
 masked = X = Masked()
 
 # takes array input, replaces masked value by 0 and return filled data & mask.
