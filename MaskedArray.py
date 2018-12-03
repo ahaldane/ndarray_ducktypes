@@ -5,9 +5,9 @@ from duckprint import (duck_str, duck_repr, duck_array2string,
 import builtins
 import numpy.core.umath as umath
 from numpy.lib.mixins import NDArrayOperatorsMixin
+from ndarray_api_mixin import NDArrayAPIMixin
 import numpy.core.numerictypes as ntypes
 from numpy.core.multiarray import normalize_axis_index
-from ndarray_api_mixin import NDArrayAPIMixin
 from numpy.lib.stride_tricks import _broadcast_shape
 
 class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
@@ -15,7 +15,7 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
                 order=None, subok=True, ndmin=0, **options):
 
         self._base = None
-        if isinstance(data, MaskedArray):
+        if isinstance(data, (MaskedArray, MaskedScalar)):
             self._data = np.array(data._data, copy=copy, order=order,
                                               sobok=subok, ndmin=ndmin)
             self._mask = np.array(data._mask, copy=copy, order=order,
@@ -56,7 +56,7 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
 
         if checked_args is not None:
             types = (t for n,t in enumerate(types) if n in checked_args)
-        if not all(issubclass(t, MaskedArray) for t in types):
+        if not all(issubclass(t, (MaskedArray, MaskedScalar)) for t in types):
             return NotImplemented
 
         return impl(*args, **kwargs)
@@ -78,6 +78,12 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         return duck_repr(self)
 
     def __getitem__(self, ind):
+        # If a boolean MaskedArray is provided as an ind, treat masked vals as
+        # False. Allows code like "a[a>0]", which is then the same as
+        # "a[np.nonzero(a>0)]"
+        if isinstance(ind, MaskedArray) and ind.dtype.type is np.bool_:
+            ind = ind.filled(False)
+
         data = self._data[ind]
         mask = self._mask[ind]
         if data.shape == ():
@@ -85,7 +91,12 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         return MaskedArray(data, mask)
 
     def __setitem__(self, ind, val):
-        if isinstance(val, Masked):
+        # If a boolean MaskedArray is provided as an ind, treat masked vals as
+        # False. Allows code like "a[a>0] = X"
+        if isinstance(ind, MaskedArray) and ind.dtype.type is np.bool_:
+            ind = ind.filled(False)
+
+        if val is X:
             self._mask[ind] = True
         elif isinstance(val, (MaskedArray, MaskedScalar)):
             self._data[ind] = val._data
@@ -93,6 +104,7 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         else:
             self._data[ind] = val
             self._mask[ind] = False
+
 
     @property
     def base(self):
@@ -102,7 +114,8 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         # private method allowing base to be set by code in this module
         self.base = base
 
-
+    # rename this to "X" to be shorter, since it is heavily used?
+    #      arr.X()     arr.X(0)   arr.filled()   arr.filled(0)
     def filled(self, fill_value=0, minmax=None):
 
         if minmax is not None:
@@ -210,6 +223,24 @@ class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
         self._mask = mask
         self.dtype = data.dtype
         self.shape = ()
+
+    def __array_function__(self, func, types, args, kwargs):
+        if func not in HANDLED_FUNCTIONS:
+            return NotImplemented
+        impl, checked_args = HANDLED_FUNCTIONS[func]
+
+        if checked_args is not None:
+            types = (t for n,t in enumerate(types) if n in checked_args)
+        if not all(issubclass(t, (MaskedArray, MaskedScalar)) for t in types):
+            return NotImplemented
+
+        return impl(*args, **kwargs)
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        if ufunc not in masked_ufuncs:
+            return NotImplemented
+
+        return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
 
     def __str__(self):
         if self._mask:
@@ -384,12 +415,12 @@ class _Masked_UFunc:
         return "Masked version of {}".format(self.f)
 
 def getdata(a):
-    if isinstance(a, MaskedArray):
+    if isinstance(a, (MaskedArray, MaskedScalar)):
         return a._data
     return a
 
 def getmask(a):
-    if isinstance(a, MaskedArray):
+    if isinstance(a, (MaskedArray, MaskedScalar)):
         return a._mask
     return False
 
@@ -411,7 +442,9 @@ class _Masked_UniOp(_Masked_UFunc):
 
     def __call__(self, a, *args, **kwargs):
         out = kwargs.get('out', ())
-        if out and isinstance(out[0], MaskedArray):
+        if out:
+            if not isinstance(out[0], MaskedArray):
+                raise ValueError("out must be a MaskedArray")
             kwargs['out'] = (out[0]._data,)
 
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -451,7 +484,9 @@ class _Masked_BinOp(_Masked_UFunc):
         da, db = getdata(a), getdata(b)
 
         out = kwargs.get('out', ())
-        if out and isinstance(out[0], MaskedArray):
+        if out:
+            if not isinstance(out[0], MaskedArray):
+                raise ValueError("out must be a MaskedArray")
             kwargs['out'] = (out[0]._data,)
 
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -1057,7 +1092,7 @@ def setup_ducktype():
 
     @implements(np.vdot)
     def vdot(a, b):
-        a, b = MaskedArray(a), MaskedArray(b)
+        #a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.vdot(a.filled(0), b.filled(0))
         result_mask = np.vdot(~a._mask, ~b._mask)
         result_mask = np.logical_not(result_mask, out=result_mask)
@@ -1065,7 +1100,7 @@ def setup_ducktype():
 
     @implements(np.cross)
     def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
-        a, b = MaskedArray(a), MaskedArray(b)
+        #a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.cross(a.filled(0), b.filled(0), axisa, axisb, axisc,
                                axis)
         result_mask = np.cross(~a._mask, ~b._mask, axisa, axisb, axisc, axis)
@@ -1074,7 +1109,7 @@ def setup_ducktype():
 
     @implements(np.inner)
     def inner(a, b):
-        a, b = MaskedArray(a), MaskedArray(b)
+        #a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.inner(a.filled(0), b.filled(0))
         result_mask = np.inner(~a._mask, ~b._mask)
         result_mask = np.logical_not(result_mask, out=result_mask)
@@ -1083,7 +1118,7 @@ def setup_ducktype():
     @implements(np.outer)
     def outer(a, b, out=None):
         outdata, outmask = get_maskedout(out)
-        a, b = MaskedArray(a), MaskedArray(b)
+        #a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.outer(a.filled(0), b.filled(0), out=outdata)
         result_mask = np.outer(~a._mask, ~b._mask, out=outmask)
         result_mask = np.logical_not(result_mask, out=result_mask)

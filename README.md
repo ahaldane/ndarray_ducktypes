@@ -11,7 +11,7 @@ This repository also implements a helper module, `duckprint`, which provides rea
 
 ## Current Status
 
- * `MaskedArray`: In a working state. Implements both `__array_ufunc__` and `__array_function__`. Supports all ufuncs with domain masking just like numpy's MaskedArray.
+ * `MaskedArray`: In an advanced but little-tested state. Implements both `__array_ufunc__` and `__array_function__`. Supports all ufuncs with domain masking just like numpy's MaskedArray, and supports a most of the numpy API.
  * `ArrayCollection`: In a working state. Implements `__array_function__`, though only a few api functions.
  * `LazyArray`: placeholder only, not in a working state.
  * `duckprint`: Working. This is a reworking of numpy's `arrayprint.py`, removing all the legacy stuff and reorganizing to make it easier for ducktypes to modify the printing dtype-dispatch process.
