@@ -11,7 +11,7 @@ from numpy.core.multiarray import normalize_axis_index
 from numpy.lib.stride_tricks import _broadcast_shape
 
 class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
-    def __init__(self, data=None, mask=None, dtype=None, copy=False,
+    def __init__(self, data, mask=None, dtype=None, copy=False,
                 order=None, subok=True, ndmin=0, **options):
 
         self._base = None
