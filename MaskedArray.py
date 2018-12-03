@@ -84,8 +84,8 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         # If a boolean MaskedArray is provided as an ind, treat masked vals as
         # False. Allows code like "a[a>0]", which is then the same as
         # "a[np.nonzero(a>0)]"
-        ind = tuple(i.filled(False) if 
-                (isinstance(ind, MaskedArray) and ind.dtype.type is np.bool_)
+        ind = tuple(i.filled(False) if
+                (isinstance(i, MaskedArray) and i.dtype.type is np.bool_)
                 else i for i in ind)
 
         data = self._data[ind]
@@ -100,8 +100,8 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
 
         # If a boolean MaskedArray is provided as an ind, treat masked vals as
         # False. Allows code like "a[a>0] = X"
-        ind = tuple(i.filled(False) if 
-                (isinstance(ind, MaskedArray) and ind.dtype.type is np.bool_)
+        ind = tuple(i.filled(False) if
+                (isinstance(i, MaskedArray) and i.dtype.type is np.bool_)
                 else i for i in ind)
 
         if val is X:
@@ -354,7 +354,7 @@ def replace_X(data, dtype=None):
     fill = dtype.type(0)
 
     def replace(data):
-        if data is masked:
+        if data is X:
             return fill, True
         if isinstance(data, (MaskedScalar, MaskedArray)):
             return data._data, data._mask
@@ -513,6 +513,13 @@ class _Masked_BinOp(_Masked_UFunc):
 
     def __call__(self, a, b, **kwargs):
         da, db = getdata(a), getdata(b)
+        ma, mb = getmask(a), getmask(b)
+
+        # treat X as a masked value of the other array's dtype
+        if da is X:
+            da, ma = db.dtype.type(0), np.bool_(True)
+        if db is X:
+            db, mb = da.dtype.type(0), np.bool_(True)
 
         out = kwargs.get('out', ())
         if out:
@@ -523,7 +530,7 @@ class _Masked_BinOp(_Masked_UFunc):
         with np.errstate(divide='ignore', invalid='ignore'):
             result = self.f(da, db, **kwargs)
 
-        m = getmask(a) | getmask(b)
+        m = ma | mb
         if self.domain is not None:
             m |= self.domain(da, db)
 
@@ -665,6 +672,8 @@ def setup_ducktype():
     # * mask behaves as "skipna" style (see NEP)
     # * masks sort as greater than all other values
     #
+    # XXX some methods below may need special-casing in case 'X' was supplied
+    # as an argument. Maybe?
 
     @implements(np.all)
     def all(a, axis=None, out=None, keepdims=np._NoValue):
@@ -2133,3 +2142,4 @@ if __name__ == '__main__':
     print(np.argsort(a, axis=1))
     print(repr(np.block([[a,a],[a,a]])))
     print(repr(a == a))
+    print(repr(a == X))
