@@ -119,6 +119,13 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
             self._data[ind] = val
             self._mask[ind] = False
 
+    @property
+    def mask(self):
+        # return a readonly view of mask
+        m = np.ndarray(self._mask.shape, np.bool_, self._mask)
+        m.flags['WRITEABLE'] = False
+        return m
+
     # XXX decisions about how to treat base still to be made
     @property
     def base(self):
@@ -262,7 +269,6 @@ class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
             if mask is not None:
                 raise ValueError("don't use mask if passing a maskedscalar")
         elif data is X:
-            # 0d masked array
             if dtype is None:
                 raise ValueError("Must supply dtype when data is X")
             if mask is not None:
@@ -270,9 +276,10 @@ class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
             self._data = dtype.type(0)
             self._mask = np.bool_(True)
         else:
-            self._data = np.array(data, dtype=dtype)[()]
+            self._data = np.result_type(data).type(data)
             self._mask = np.bool_(mask)
-            #XXX sanity check we got scalars
+            if not np.isscalar(self._data) or not np.isscalar(self._mask):
+                raise ValueError("MaskedScalar must be called with scalars")
 
         #XXX make into property
         self.shape = self._data.shape
@@ -311,6 +318,10 @@ class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
             return 'masked_{}'.format(self.dtype.name)
         return format(self._data, format_spec)
 
+    @property
+    def mask(self):
+        return self._mask
+
     def filled(self, fill_value=0, minmax=None):
         if minmax is not None:
             if fill_value != 0:
@@ -327,7 +338,7 @@ class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
         return self._data
 
 # create a special dummy object which signifies "masked", which users can put
-# in lists to pass to MaskedArray constructur, or can assign to elements of
+# in lists to pass to MaskedArray constructor, or can assign to elements of
 # a MaskedArray, to set the mask.
 class Masked:
     def __repr__(self):
@@ -2139,6 +2150,7 @@ if __name__ == '__main__':
     print(repr(A))
     print(A[1:3])
     print("")
+
     A = MaskedArray(np.arange(12)).reshape((4,3))
     B = MaskedArray(np.arange(12) % 2).reshape((4,3))
     print(A)
@@ -2149,21 +2161,33 @@ if __name__ == '__main__':
     print(np.max(C, axis=1))
     print(np.sin(C))
     print(np.sin(C)*np.full(3, 100))
+
     print(repr(MaskedArray([[X, X, 3], [1, X, 1]])))
     try:
         print(repr(MaskedArray([[X, X, X], [X, X, X]])))
     except ValueError as v:
         print("Got Exception: ", v)
     print(repr(MaskedArray([[X, X, X], [X, X, X]], dtype='u1')))
+
     a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]], dtype='u4')
     b = np.take_along_axis(a, np.argsort(a, axis=1), axis=1)
     print(repr(b))
     c = a.copy()
     c.sort(axis=1)
     print(repr(c))
+
     a = MaskedArray([[1,X,3], [X,4,X], [1,X,6]], dtype='u4')
     print(np.lexsort((a,), axis=1))
     print(np.argsort(a, axis=1))
     print(repr(np.block([[a,a],[a,a]])))
     print(repr(a == a))
     print(repr(a == X))
+
+    m = a.mask
+    try:
+        m[0,0] = 1
+    except ValueError:
+        pass
+    a[0,0] = X
+    print(m[0,0] == True)
+
