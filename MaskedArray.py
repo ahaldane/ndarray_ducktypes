@@ -29,7 +29,7 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         elif data is X and mask is None:
             # 0d masked array
             if dtype is None:
-                raise ValueError("Must supply dtype for full mask")
+                raise ValueError("must supply dtype if all elements are masked")
             self._data = np.array(dtype.type(0))
             self._mask = np.array(True)
         else:
@@ -49,11 +49,7 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
                                       subok=subok, ndmin=ndmin)
             else:
                 self._mask = np.empty(self._data.shape, dtype='bool')
-                self._mask[:] = np.broadcast_to(mask, self._data.shape)
-
-        #XXX make into property
-        self.shape = self._data.shape
-        self.dtype = self._data.dtype
+                self._mask[...] = np.broadcast_to(mask, self._data.shape)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_FUNCTIONS:
@@ -61,8 +57,13 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         impl, checked_args = HANDLED_FUNCTIONS[func]
 
         if checked_args is not None:
-            types = (t for n,t in enumerate(types) if n in checked_args)
-        if not all(issubclass(t, (MaskedArray, MaskedScalar)) for t in types):
+            types = (type(a) for n,a in enumerate(args) if n in checked_args)
+
+        #types are allowed to be Masked* or plain ndarrays
+        def allowed(t):
+            return (issubclass(t, (MaskedArray, MaskedScalar)) or
+                    t is np.ndarray)
+        if not all(allowed(t) for t in types):
             return NotImplemented
 
         return impl(*args, **kwargs)
@@ -120,11 +121,21 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
             self._mask[ind] = False
 
     @property
-    def mask(self):
-        # return a readonly view of mask
-        m = np.ndarray(self._mask.shape, np.bool_, self._mask)
-        m.flags['WRITEABLE'] = False
-        return m
+    def shape(self):
+        return self._data.shape
+
+    @shape.setter
+    def shape(self, shp):
+        self._data.shape = shp
+        self._mask.shape = shp
+
+    @property
+    def dtype(self):
+        return self._data.dtype
+
+    @dtype.setter
+    def dtype(self, dt):
+        self._data.dtype = dt
 
     # XXX decisions about how to treat base still to be made
     @property
@@ -134,6 +145,13 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
     def _set_base(self, base):
         # private method allowing base to be set by code in this module
         self.base = base
+
+    @property
+    def mask(self):
+        # return a readonly view of mask
+        m = np.ndarray(self._mask.shape, np.bool_, self._mask)
+        m.flags['WRITEABLE'] = False
+        return m
 
     def view(self, dtype=None, type=None):
         if type is not None:
@@ -173,8 +191,8 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
                 raise ValueError("minmax should be 'min' or 'max'")
 
         result = self._data.copy()
-        fill_value = self.dtype.type(fill_value)
-        np.copyto(result, fill_value, where=self._mask)
+        # next line is more complicated that it should be due to struct types
+        result[self._mask] = np.array(fill_value, dtype=self.dtype)[()]
         return result
 
     def count(self, axis=None, keepdims=False):
@@ -276,7 +294,7 @@ class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
             self._data = dtype.type(0)
             self._mask = np.bool_(True)
         else:
-            self._data = np.result_type(data).type(data)
+            self._data = np.array(data)[()]
             self._mask = np.bool_(mask)
             if not np.isscalar(self._data) or not np.isscalar(self._mask):
                 raise ValueError("MaskedScalar must be called with scalars")
@@ -346,6 +364,13 @@ class Masked:
     def __str__(self):
         return 'input_mask'
 
+    # prevent X from being used as an element in np.array, to avoid
+    # confusing the user. X should only be used in MaskedArrays
+    def __array__(self):
+        # hack: the only Exception that numpy doesn't clear here is MemoryError
+        raise MemoryError("Masked X should only be used in "
+                          "MaskedArray assignment or construction")
+
 masked = X = Masked()
 
 # takes array input, replaces masked value by 0 and return filled data & mask.
@@ -357,7 +382,7 @@ def replace_X(data, dtype=None):
     # all masked values by the filler "type(0)".
 
     def get_dtype(data, cur_dtype=X):
-        if isinstance(data, list):
+        if isinstance(data, (list, tuple)):
             dtypes = (get_dtype(d, cur_dtype) for d in data)
             dtypes = [dt for dt in dtypes  if dt is not X]
             if not dtypes:
@@ -1461,12 +1486,11 @@ def setup_ducktype():
         return MaskedArray(np.expand_dims(a._data, axis),
                            np.expand_dims(a._mask, axis))
 
-    # XXX relax dispatch requirement that all inputs are MaskedArrays?
-    # we can handle plain ndarrays too.
     @implements(np.concatenate)
     def concatenate(arrays, axis=0, out=None):
         outdata, outmask = get_maskedout(out)
-        data, mask = replace_X(arrays)
+        arrays = [MaskedArray(a) for a in arrays] # XXX may need tweaking
+        data, mask = zip(*((x._data, x._mask) for x in arrays))
         result_data = np.concatenate(data, axis, outdata)
         result_mask = np.concatenate(mask, axis, outmask)
         return maskedarray_or_scalar(result_data, result_mask)
