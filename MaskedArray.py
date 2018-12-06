@@ -9,6 +9,7 @@ from ndarray_api_mixin import NDArrayAPIMixin
 import numpy.core.numerictypes as ntypes
 from numpy.core.multiarray import normalize_axis_index
 from numpy.lib.stride_tricks import _broadcast_shape
+import operator
 
 class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
     def __init__(self, data, mask=None, dtype=None, copy=False,
@@ -34,12 +35,13 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
             self._mask = np.array(True)
         else:
             if mask is None:
-                # if mask is None, user can put masked values in the data.
-                # Otherwise, we will get some kind of failure in the line after.
+                # if mask is None, user can put X in the data.
+                # Otherwise, X will cause some kind of error in np.array below
                 data, mask = replace_X(data, dtype=dtype)
 
-            self._data = np.array(data, dtype, copy=copy, order=order,
+            self._data = np.array(data, dtype=dtype, copy=copy, order=order,
                                   subok=subok, ndmin=ndmin)
+
             if mask is None:
                 self._mask = np.zeros(self._data.shape, dtype='bool',
                                       order=order)
@@ -97,8 +99,9 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
 
         data = self._data[ind]
         mask = self._mask[ind]
-        if data.shape == ():
-            return MaskedScalar(data, mask)
+
+        if np.isscalar(mask): # use mask, not data, to account for obj arrays
+            return MaskedScalar(data, mask, dtype=self.dtype)
         return MaskedArray(data, mask)
 
     def __setitem__(self, ind, val):
@@ -119,6 +122,39 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         else:
             self._data[ind] = val
             self._mask[ind] = False
+
+    # override the NDArrayOperatorsMixin implementations for cmp ops, as
+    # currently those ufuncs don't work for flexible types
+    def _cmp_op(self, other, op):
+        if other is X:
+            db, mb = self._data.dtype.type(0), np.bool_(True)
+        else:
+            db, mb = getdata(other), getmask(other)
+
+        result = op(self._data, db)
+        m = self._mask | mb
+
+        if np.isscalar(result):
+            return MaskedScalar(result, m)
+        return MaskedArray(result, m)
+
+    def __lt__(self, other):
+        return self._cmp_op(other, operator.lt)
+
+    def __le__(self, other):
+        return self._cmp_op(other, operator.le)
+
+    def __eq__(self, other):
+        return self._cmp_op(other, operator.eq)
+
+    def __ne__(self, other):
+        return self._cmp_op(other, operator.ne)
+
+    def __gt__(self, other):
+        return self._cmp_op(other, operator.gt)
+
+    def __ge__(self, other):
+        return self._cmp_op(other, operator.ge)
 
     @property
     def shape(self):
@@ -286,6 +322,7 @@ class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
             self._mask = data._mask
             if mask is not None:
                 raise ValueError("don't use mask if passing a maskedscalar")
+            self._dtype = self._data.dtype
         elif data is X:
             if dtype is None:
                 raise ValueError("Must supply dtype when data is X")
@@ -293,15 +330,27 @@ class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
                 raise ValueError("don't supply mask when data is X")
             self._data = dtype.type(0)
             self._mask = np.bool_(True)
+            self._dtype = self._data.dtype
         else:
-            self._data = np.array(data)[()]
-            self._mask = np.bool_(mask)
-            if not np.isscalar(self._data) or not np.isscalar(self._mask):
-                raise ValueError("MaskedScalar must be called with scalars")
+            if dtype is None or dtype.type is not np.object_:
+                self._data = np.array(data, dtype=dtype)[()]
+                self._mask = np.bool_(mask)
+                if not np.isscalar(self._data) or not np.isscalar(self._mask):
+                    raise ValueError("MaskedScalar must be called with scalars")
+                self._dtype = self._data.dtype
+            else:
+                # object dtype treated specially
+                self._data = data
+                self._mask = np.bool_(mask)
+                self._dtype = dtype
 
-        #XXX make into property
-        self.shape = self._data.shape
-        self.dtype = self._data.dtype
+    @property
+    def shape(self):
+        return ()
+
+    @property
+    def dtype(self):
+        return self._dtype
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_FUNCTIONS:
@@ -986,7 +1035,7 @@ def setup_ducktype():
         ret = x.sum(axis, dtype, out=outdata, **kwargs)
 
         # Compute degrees of freedom and make sure it is not negative.
-        rcount = self.count(axis=axis, **kwargs)
+        rcount = a.count(axis=axis, **kwargs)
         rcount = np.maximum(rcount - ddof, 0)
 
         # divide by degrees of freedom
@@ -1128,7 +1177,7 @@ def setup_ducktype():
         return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.cumsum)
-    def cumsum(self, axis=None, dtype=None, out=None):
+    def cumsum(a, axis=None, dtype=None, out=None):
         outdata, outmask = get_maskedout(out)
         result_data = np.cumsum(a.filled(0), axis, dtype=dtype, out=outdata)
         result_mask = np.all(a._mask, axis, out=outmask)
@@ -1332,7 +1381,7 @@ def setup_ducktype():
         return maskedarray_or_scalar(result_data, result_mask)
 
     @implements(np.real)
-    def real(self):
+    def real(a):
         # returns a view of the data only. mask is a copy.
         result_data = np.real(a._data)
         result_mask = a._mask.copy()
@@ -1357,11 +1406,11 @@ def setup_ducktype():
     @implements(np.ptp)
     def ptp(a, axis=None, out=None, keepdims=False):
         # Original numpy function is fine.
-        return np.ptp.__wrapped__(self, axis, out, keepdims)
+        return np.ptp.__wrapped__(a, axis, out, keepdims)
 
     #XXX in the functions below, indices can be a plain ndarray
     @implements(np.take)
-    def take(self, indices, axis=None, out=None, mode='raise'):
+    def take(a, indices, axis=None, out=None, mode='raise'):
         outdata, outmask = get_maskedout(out)
         result_data = np.take(a._data, indices, axis, outdata, mode)
         result_mask = np.take(a._mask, indices, axis, outmask, mode)

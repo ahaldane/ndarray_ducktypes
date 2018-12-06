@@ -178,147 +178,137 @@ class TestMaskedArray(object):
         assert_equal(x[1].mask, True)
         assert_equal(x.filled(0)[1], 0)
 
-#    def test_set_element_as_object(self):
-#        # Tests setting elements with object
-#        a = MaskedArray(np.empty(1, dtype=object))
-#        x = (1, 2, 3, 4, 5)
-#        a[0] = x
-#        assert_equal(a[0], x)
-#        assert_(a[0] is x)
-#
-#        import datetime
-#        dt = datetime.datetime.now()
-#        a[0] = dt
-#        assert_(a[0] is dt)
+    def test_set_element_as_object(self):
+        # Tests setting elements with object
+        a = MaskedArray(np.empty(1, dtype=object))
+        x = (1, 2, 3, 4, 5)
+        a[0] = x
+        assert_equal(a[0].filled(), x)
+        assert_(a[0].filled() is x)
 
-#    def test_indexing(self):
-#        # Tests conversions and indexing
-#        x1 = np.array([1, 2, 4, 3])
-#        x2 = array(x1, mask=[1, 0, 0, 0])
-#        x3 = array(x1, mask=[0, 1, 0, 1])
-#        x4 = array(x1)
-#        # test conversion to strings
-#        str(x2)  # raises?
-#        repr(x2)  # raises?
-#        assert_equal(np.sort(x1), sort(x2, endwith=False))
-#        # tests of indexing
-#        assert_(type(x2[1]) is type(x1[1]))
-#        assert_(x1[1] == x2[1])
-#        assert_(x2[0] is masked)
-#        assert_equal(x1[2], x2[2])
-#        assert_equal(x1[2:5], x2[2:5])
-#        assert_equal(x1[:], x2[:])
-#        assert_equal(x1[1:], x3[1:])
-#        x1[2] = 9
-#        x2[2] = 9
-#        assert_equal(x1, x2)
-#        x1[1:3] = 99
-#        x2[1:3] = 99
-#        assert_equal(x1, x2)
-#        x2[1] = masked
-#        assert_equal(x1, x2)
-#        x2[1:3] = masked
-#        assert_equal(x1, x2)
-#        x2[:] = x1
-#        x2[1] = masked
-#        assert_(allequal(getmask(x2), array([0, 1, 0, 0])))
-#        x3[:] = masked_array([1, 2, 3, 4], [0, 1, 1, 0])
-#        assert_(allequal(getmask(x3), array([0, 1, 1, 0])))
-#        x4[:] = masked_array([1, 2, 3, 4], [0, 1, 1, 0])
-#        assert_(allequal(getmask(x4), array([0, 1, 1, 0])))
-#        assert_(allequal(x4, array([1, 2, 3, 4])))
-#        x1 = np.arange(5) * 1.0
-#        x2 = masked_values(x1, 3.0)
-#        assert_equal(x1, x2)
-#        assert_(allequal(array([0, 0, 0, 1, 0], MaskType), x2.mask))
-#        assert_equal(3.0, x2.fill_value)
-#        x1 = array([1, 'hello', 2, 3], object)
-#        x2 = np.array([1, 'hello', 2, 3], object)
-#        s1 = x1[1]
-#        s2 = x2[1]
-#        assert_equal(type(s2), str)
-#        assert_equal(type(s1), str)
-#        assert_equal(s1, s2)
-#        assert_(x1[1:1].shape == (0,))
+        import datetime
+        dt = datetime.datetime.now()
+        a[0] = dt
+        assert_(a[0].filled() is dt)
 
-#    @suppress_copy_mask_on_assignment
-#    def test_copy(self):
-#        # Tests of some subtle points of copying and sizing.
-#        n = [0, 0, 1, 0, 0]
-#        m = make_mask(n)
-#        m2 = make_mask(m)
-#        assert_(m is m2)
-#        m3 = make_mask(m, copy=1)
-#        assert_(m is not m3)
+    def test_indexing(self):
+        # Tests conversions and indexing
+        x1 = np.array([1, 2, 4, 3])
+        x2 = MaskedArray(x1, mask=[1, 0, 0, 0])
+        x3 = MaskedArray(x1, mask=[0, 1, 0, 1])
+        x4 = MaskedArray(x1)
+        # test conversion to strings
+        str(x2)  # raises?
+        repr(x2)  # raises?
+        assert_equal(np.sort(x1), np.sort(x2))
+        # tests of indexing
+        assert_(type(x2[1].filled()) is type(x1[1]))
+        assert_((x1[1] == x2[1]).filled(True).all())
+        assert_(x2[0].mask == True)
+        assert_((x1[2] == x2[2]).filled(True).all())
+        assert_((x1[2:5] == x2[2:5]).filled(True).all())
+        assert_((x1[:] == x2[:]).filled(True).all())
+        assert_((x1[1:] == x3[1:]).filled(True).all())
+        x1[2] = 9
+        x2[2] = 9
+        assert_((x1 == x2).filled(True).all())
+        x1[1:3] = 99
+        x2[1:3] = 99
+        assert_((x1 == x2).filled(True).all())
+        x2[1] = X
+        assert_((x1 == x2).filled(True).all())
+        x2[1:3] = X
+        assert_((x1 == x2).filled(True).all())
+        x2[:] = x1
+        x2[1] = X
+        assert_equal(x2.mask, np.array([0, 1, 0, 0]))
+        x3[:] = MaskedArray([1, 2, 3, 4], [0, 1, 1, 0])
+        assert_equal(x3.mask, np.array([0, 1, 1, 0]))
+        x4[:] = MaskedArray([1, 2, 3, 4], [0, 1, 1, 0])
+        assert_equal(x4.mask, np.array([0, 1, 1, 0]))
+        assert_((x4 == np.array([1, 2, 3, 4])).filled(True).all())
 
-#        x1 = np.arange(5)
-#        y1 = array(x1, mask=m)
-#        assert_equal(y1._data.__array_interface__, x1.__array_interface__)
-#        assert_(allequal(x1, y1.data))
-#        assert_equal(y1._mask.__array_interface__, m.__array_interface__)
+        x1 = MaskedArray([1, 'hello', 2, 3], dtype=object)
+        x2 = np.array([1, 'hello', 2, 3], dtype=object)
+        s1 = x1[1].filled()
+        s2 = x2[1]
+        assert_equal(type(s2), str)
+        assert_equal(type(s1), str)
+        assert_equal(s1, s2)
+        assert_(x1[1:1].shape == (0,))
 
-#        y1a = array(y1)
-#        # Default for masked array is not to copy; see gh-10318.
-#        assert_(y1a._data.__array_interface__ ==
-#                        y1._data.__array_interface__)
-#        assert_(y1a._mask.__array_interface__ ==
-#                        y1._mask.__array_interface__)
+    #def test_copy(self):
+    #    # Tests of some subtle points of copying and sizing.
+    #    n = np.array([0, 0, 1, 0, 0], dtype=bool)
+    #    m = n.copy()
+    #    x1 = np.arange(5)
+    #    y1 = MaskedArray(x1, mask=n)
+    #    assert_equal(y1._data.__array_interface__, x1.__array_interface__)
+    #    assert_equal(x1, y1._data)
+    #    assert_equal(y1._mask.__array_interface__, n.__array_interface__)
 
-#        y2 = array(x1, mask=m3)
-#        assert_(y2._data.__array_interface__ == x1.__array_interface__)
-#        assert_(y2._mask.__array_interface__ == m3.__array_interface__)
-#        assert_(y2[2] is masked)
-#        y2[2] = 9
-#        assert_(y2[2] is not masked)
-#        assert_(y2._mask.__array_interface__ == m3.__array_interface__)
-#        assert_(allequal(y2.mask, 0))
+    #    y1a = MaskedArray(y1)
+    #    # Default for masked array is not to copy; see gh-10318.
+    #    assert_(y1a._data.__array_interface__ ==
+    #                    y1._data.__array_interface__)
+    #    assert_(y1a._mask.__array_interface__ ==
+    #                    y1._mask.__array_interface__)
+        
+    #    y2 = MaskedArray(x1, mask=m)
+    #    assert_(y2._data.__array_interface__ == x1.__array_interface__)
+    #    assert_(y2._mask.__array_interface__ == m.__array_interface__)
+    #    assert_(y2[2] is masked)
+    #    y2[2] = 9
+    #    assert_(y2[2] is not masked)
+    #    assert_(y2._mask.__array_interface__ == m3.__array_interface__)
+    #    assert_(allequal(y2.mask, 0))
 
-#        y2a = array(x1, mask=m, copy=1)
-#        assert_(y2a._data.__array_interface__ != x1.__array_interface__)
-#        #assert_( y2a.mask is not m)
-#        assert_(y2a._mask.__array_interface__ != m.__array_interface__)
-#        assert_(y2a[2] is masked)
-#        y2a[2] = 9
-#        assert_(y2a[2] is not masked)
-#        #assert_( y2a.mask is not m)
-#        assert_(y2a._mask.__array_interface__ != m.__array_interface__)
-#        assert_(allequal(y2a.mask, 0))
+    #    y2a = array(x1, mask=m, copy=1)
+    #    assert_(y2a._data.__array_interface__ != x1.__array_interface__)
+    #    #assert_( y2a.mask is not m)
+    #    assert_(y2a._mask.__array_interface__ != m.__array_interface__)
+    #    assert_(y2a[2] is masked)
+    #    y2a[2] = 9
+    #    assert_(y2a[2] is not masked)
+    #    #assert_( y2a.mask is not m)
+    #    assert_(y2a._mask.__array_interface__ != m.__array_interface__)
+    #    assert_(allequal(y2a.mask, 0))
 
-#        y3 = array(x1 * 1.0, mask=m)
-#        assert_(filled(y3).dtype is (x1 * 1.0).dtype)
+    #    y3 = array(x1 * 1.0, mask=m)
+    #    assert_(filled(y3).dtype is (x1 * 1.0).dtype)
 
-#        x4 = arange(4)
-#        x4[2] = masked
-#        y4 = resize(x4, (8,))
-#        assert_equal(concatenate([x4, x4]), y4)
-#        assert_equal(getmask(y4), [0, 0, 1, 0, 0, 0, 1, 0])
-#        y5 = repeat(x4, (2, 2, 2, 2), axis=0)
-#        assert_equal(y5, [0, 0, 1, 1, 2, 2, 3, 3])
-#        y6 = repeat(x4, 2, axis=0)
-#        assert_equal(y5, y6)
-#        y7 = x4.repeat((2, 2, 2, 2), axis=0)
-#        assert_equal(y5, y7)
-#        y8 = x4.repeat(2, 0)
-#        assert_equal(y5, y8)
+    #    x4 = arange(4)
+    #    x4[2] = masked
+    #    y4 = resize(x4, (8,))
+    #    assert_equal(concatenate([x4, x4]), y4)
+    #    assert_equal(getmask(y4), [0, 0, 1, 0, 0, 0, 1, 0])
+    #    y5 = repeat(x4, (2, 2, 2, 2), axis=0)
+    #    assert_equal(y5, [0, 0, 1, 1, 2, 2, 3, 3])
+    #    y6 = repeat(x4, 2, axis=0)
+    #    assert_equal(y5, y6)
+    #    y7 = x4.repeat((2, 2, 2, 2), axis=0)
+    #    assert_equal(y5, y7)
+    #    y8 = x4.repeat(2, 0)
+    #    assert_equal(y5, y8)
 
-#        y9 = x4.copy()
-#        assert_equal(y9._data, x4._data)
-#        assert_equal(y9._mask, x4._mask)
+    #    y9 = x4.copy()
+    #    assert_equal(y9._data, x4._data)
+    #    assert_equal(y9._mask, x4._mask)
 
-#        x = masked_array([1, 2, 3], mask=[0, 1, 0])
-#        # Copy is False by default
-#        y = masked_array(x)
-#        assert_equal(y._data.ctypes.data, x._data.ctypes.data)
-#        assert_equal(y._mask.ctypes.data, x._mask.ctypes.data)
-#        y = masked_array(x, copy=True)
-#        assert_not_equal(y._data.ctypes.data, x._data.ctypes.data)
-#        assert_not_equal(y._mask.ctypes.data, x._mask.ctypes.data)
+    #    x = masked_array([1, 2, 3], mask=[0, 1, 0])
+    #    # Copy is False by default
+    #    y = masked_array(x)
+    #    assert_equal(y._data.ctypes.data, x._data.ctypes.data)
+    #    assert_equal(y._mask.ctypes.data, x._mask.ctypes.data)
+    #    y = masked_array(x, copy=True)
+    #    assert_not_equal(y._data.ctypes.data, x._data.ctypes.data)
+    #    assert_not_equal(y._mask.ctypes.data, x._mask.ctypes.data)
 
-#    def test_copy_0d(self):
-#        # gh-9430
-#        x = np.ma.array(43, mask=True)
-#        xc = x.copy()
-#        assert_equal(xc.mask, True)
+    #def test_copy_0d(self):
+    #    # gh-9430
+    #    x = MaskedArray(43, mask=True)
+    #    xc = x.copy()
+    #    assert_equal(xc.mask, True)
 
 #    def test_copy_on_python_builtins(self):
 #        # Tests copy works on python builtins (issue#8019)

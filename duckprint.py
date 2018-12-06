@@ -389,7 +389,7 @@ class StructuredFormatter(ElementFormatter):
 
 class ObjectFormatter(ElementFormatter):
     def will_dispatch(self, elem):
-        return issubclass(elem.dtyp.typee, np.object_)
+        return issubclass(elem.dtype.type, np.object_)
 
     def get_format_func(self, elem, **options):
         def fmt(x):
