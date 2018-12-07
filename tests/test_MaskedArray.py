@@ -4,6 +4,7 @@ from numpy.testing import (
 import numpy as np
 from MaskedArray import MaskedArray, X
 from functools import reduce
+import textwrap
 
 pi = np.pi
 
@@ -169,7 +170,7 @@ class TestMaskedArray(object):
         x = np.array([('A', 0)], dtype={'names':['f0','f1'],
                                         'formats':['S4','i8'],
                                         'offsets':[0,8]})
-        data = MaskedArray(x) 
+        data = MaskedArray(x)
         # used to fail due to 'V' padding field in x.dtype.descr
 
     def test_maskedelement(self):
@@ -255,7 +256,7 @@ class TestMaskedArray(object):
                         y1._data.__array_interface__)
         assert_(y1a._mask.__array_interface__ ==
                         y1._mask.__array_interface__)
-        
+
         m = n.copy()
         y2 = MaskedArray(x1, mask=m)
         assert_(y2._data.__array_interface__ == x1.__array_interface__)
@@ -314,136 +315,80 @@ class TestMaskedArray(object):
         xc = x.copy()
         assert_equal(xc.mask, True)
 
-#    def test_copy_on_python_builtins(self):
-#        # Tests copy works on python builtins (issue#8019)
-#        assert_(isMaskedArray(np.ma.copy([1,2,3])))
-#        assert_(isMaskedArray(np.ma.copy((1,2,3))))
+    def test_copy_immutable(self):
+        # Tests that the copy method is immutable, GitHub issue #5247
+        a = np.ma.array([1, 2, 3])
+        b = np.ma.array([4, 5, 6])
+        a_copy_method = a.copy
+        b.copy
+        assert_equal(a_copy_method(), [1, 2, 3])
 
-#    def test_copy_immutable(self):
-#        # Tests that the copy method is immutable, GitHub issue #5247
-#        a = np.ma.array([1, 2, 3])
-#        b = np.ma.array([4, 5, 6])
-#        a_copy_method = a.copy
-#        b.copy
-#        assert_equal(a_copy_method(), [1, 2, 3])
+    def test_deepcopy(self):
+        from copy import deepcopy
+        a = MaskedArray([0, 1, 2], mask=[False, True, False])
+        copied = deepcopy(a)
+        assert_equal(copied.mask, a.mask)
+        assert_(id(a._mask) != id(copied._mask))
 
-#    def test_deepcopy(self):
-#        from copy import deepcopy
-#        a = array([0, 1, 2], mask=[False, True, False])
-#        copied = deepcopy(a)
-#        assert_equal(copied.mask, a.mask)
-#        assert_not_equal(id(a._mask), id(copied._mask))
+        copied[1] = 1
+        assert_equal(copied.mask, [0, 0, 0])
+        assert_equal(a.mask, [0, 1, 0])
 
-#        copied[1] = 1
-#        assert_equal(copied.mask, [0, 0, 0])
-#        assert_equal(a.mask, [0, 1, 0])
+        copied = deepcopy(a)
+        assert_equal(copied.mask, a.mask)
+        copied[1] = 0
+        assert_equal(copied.mask, [0, 0, 0])
+        assert_equal(a.mask, [0, 1, 0])
 
-#        copied = deepcopy(a)
-#        assert_equal(copied.mask, a.mask)
-#        copied.mask[1] = False
-#        assert_equal(copied.mask, [0, 0, 0])
-#        assert_equal(a.mask, [0, 1, 0])
+    def test_str_repr(self):
+        a = MaskedArray([0, 1, 2], mask=[False, True, False])
+        assert_equal(str(a), '[0 X 2]')
+        assert_equal(repr(a), 'MaskedArray([0, X, 2])')
 
-#    def test_str_repr(self):
-#        a = array([0, 1, 2], mask=[False, True, False])
-#        assert_equal(str(a), '[0 -- 2]')
-#        assert_equal(
-#            repr(a),
-#            textwrap.dedent('''\
-#            masked_array(data=[0, --, 2],
-#                         mask=[False,  True, False],
-#                   fill_value=999999)''')
-#        )
+        # arrays with a continuation
+        a = MaskedArray(np.arange(2000))
+        a[1:50] = X
+        assert_equal(repr(a),
+            'MaskedArray([   0,    X,    X, ..., 1997, 1998, 1999])')
 
-#        # arrays with a continuation
-#        a = np.ma.arange(2000)
-#        a[1:50] = np.ma.masked
-#        assert_equal(
-#            repr(a),
-#            textwrap.dedent('''\
-#            masked_array(data=[0, --, --, ..., 1997, 1998, 1999],
-#                         mask=[False,  True,  True, ..., False, False, False],
-#                   fill_value=999999)''')
-#        )
+        # line-wrapped 1d arrays are correctly aligned
+        a = MaskedArray(np.arange(20))
+        assert_equal(
+            repr(a),
+            textwrap.dedent('''\
+        MaskedArray([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
+                     15, 16, 17, 18, 19])'''))
 
-#        # line-wrapped 1d arrays are correctly aligned
-#        a = np.ma.arange(20)
-#        assert_equal(
-#            repr(a),
-#            textwrap.dedent('''\
-#            masked_array(data=[ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,
-#                               14, 15, 16, 17, 18, 19],
-#                         mask=False,
-#                   fill_value=999999)''')
-#        )
+        # 2d arrays cause wrapping
+        a = MaskedArray([[1, 2, 3], [4, 5, 6]], dtype=np.int8)
+        a[1,1] = X
+        assert_equal(
+            repr(a),
+            textwrap.dedent('''\
+            MaskedArray([[1, 2, 3],
+                         [4, X, 6]], dtype=int8)''')
+        )
 
-#        # 2d arrays cause wrapping
-#        a = array([[1, 2, 3], [4, 5, 6]], dtype=np.int8)
-#        a[1,1] = np.ma.masked
-#        assert_equal(
-#            repr(a),
-#            textwrap.dedent('''\
-#            masked_array(
-#              data=[[1, 2, 3],
-#                    [4, --, 6]],
-#              mask=[[False, False, False],
-#                    [False,  True, False]],
-#              fill_value=999999,
-#              dtype=int8)''')
-#        )
+        # but not it they're a row vector
+        assert_equal( repr(a[:1]), 'MaskedArray([[1, 2, 3]], dtype=int8)')
 
-#        # but not it they're a row vector
-#        assert_equal(
-#            repr(a[:1]),
-#            textwrap.dedent('''\
-#            masked_array(data=[[1, 2, 3]],
-#                         mask=[[False, False, False]],
-#                   fill_value=999999,
-#                        dtype=int8)''')
-#        )
+        # dtype=int is implied, so not shown
+        assert_equal(
+            repr(a.astype(int)),
+            textwrap.dedent('''\
+            MaskedArray([[1, 2, 3],
+                         [4, X, 6]])''')
+        )
 
-#        # dtype=int is implied, so not shown
-#        assert_equal(
-#            repr(a.astype(int)),
-#            textwrap.dedent('''\
-#            masked_array(
-#              data=[[1, 2, 3],
-#                    [4, --, 6]],
-#              mask=[[False, False, False],
-#                    [False,  True, False]],
-#              fill_value=999999)''')
-#        )
+    #def test_0d_unicode(self):
+    #    u = u'caf\xe9'
+    #    utype = type(u)
 
-#    def test_str_repr_legacy(self):
-#        oldopts = np.get_printoptions()
-#        np.set_printoptions(legacy='1.13')
-#        try:
-#            a = array([0, 1, 2], mask=[False, True, False])
-#            assert_equal(str(a), '[0 -- 2]')
-#            assert_equal(repr(a), 'masked_array(data = [0 -- 2],\n'
-#                                  '             mask = [False  True False],\n'
-#                                  '       fill_value = 999999)\n')
+    #    arr_nomask = MaskedArray(u)
+    #    arr_masked = MaskedArray(u, mask=True)
 
-#            a = np.ma.arange(2000)
-#            a[1:50] = np.ma.masked
-#            assert_equal(
-#                repr(a),
-#                'masked_array(data = [0 -- -- ..., 1997 1998 1999],\n'
-#                '             mask = [False  True  True ..., False False False],\n'
-#                '       fill_value = 999999)\n'
-#            )
-#        finally:
-#            np.set_printoptions(**oldopts)
-
-#    def test_0d_unicode(self):
-#        u = u'caf\xe9'
-#        utype = type(u)
-
-#        arr_nomask = np.ma.array(u)
-#        arr_masked = np.ma.array(u, mask=True)
-
-#        assert_equal(utype(arr_nomask), u)
-#        assert_equal(utype(arr_masked), u'--')
+    #    assert_equal(utype(arr_nomask), u)
+    #    assert_equal(utype(arr_masked), u'X')
 
 #    def test_pickling(self):
 #        # Tests pickling

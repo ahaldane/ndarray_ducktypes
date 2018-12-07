@@ -490,12 +490,13 @@ def _array2string(a, dispatcher, options, separator, prefix, suffix, linewidth,
                   threshold, edgeitems):
     if a.size > threshold:
         summary_insert = "..."
-        data = _leading_trailing(data, edgeitems)
+        data = _leading_trailing(a, edgeitems)
     else:
         summary_insert = ""
+        data = a
 
     # find the right formatting function for the array
-    format_function = dispatcher.get_format_func(a, **options)
+    format_function = dispatcher.get_format_func(data, **options)
 
     # skip over "["
     next_line_prefix = " "
