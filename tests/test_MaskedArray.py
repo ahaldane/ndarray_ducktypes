@@ -463,52 +463,40 @@ class TestMaskedArray(object):
         # Test of other odd features
         x = MaskedArray(np.arange(20))
         x = x.reshape((4, 5))
-        #x.flat[5] = 12
-        #assert_((x[1, 0] == 12).filled())
         z = x + 10j * x
         assert_equal(z.real, x)
         assert_equal(z.imag, 10 * x)
         assert_equal((z * np.conjugate(z)).real, 101 * x * x)
         z.imag[...] = 0.0
 
-    #    x = MaskedArray(np.arange(10))
-    #    x[3] = X
-    #    assert_(str(x[3]) == 'X')
-    #    c = x >= 8
-    #    assert_(count(np.where(c, masked, masked)) == 0)
-    #    assert_(shape(np.where(c, masked, masked)) == c.shape)
+        x = MaskedArray(np.arange(10))
+        x[3] = X
+        assert_(str(x[3]) == 'X')
+        c = x >= 8
+        assert_(np.where(c, X(int), X).count() == 0)
+        assert_(np.where(c, X(int), X).shape == c.shape)
 
-    #    z = masked_where(c, x)
-    #    assert_(z.dtype is x.dtype)
-    #    assert_(z[3] is masked)
-    #    assert_(z[4] is not masked)
-    #    assert_(z[7] is not masked)
-    #    assert_(z[8] is masked)
-    #    assert_(z[9] is masked)
-    #    assert_equal(x, z)
+    def test_oddfeatures_2(self):
+        # Tests some more features.
+        x = MaskedArray([1., 2., 3., 4., 5.])
+        c = MaskedArray([1, 1, 1, 0, 0])
+        x[2] = X
+        z = np.where(c.filled(), x, -x)
+        assert_equal(z, [1., 2., 0., -4., -5])
+        c[0] = X
+        z = np.where(c.filled(), x, -x)
+        assert_equal(z, [1., 2., 0., -4., -5])
+        assert_(not z[0].mask)
+        assert_(not z[1].mask)
+        assert_(z[2].mask)
 
-#    def test_oddfeatures_2(self):
-#        # Tests some more features.
-#        x = array([1., 2., 3., 4., 5.])
-#        c = array([1, 1, 1, 0, 0])
-#        x[2] = masked
-#        z = where(c, x, -x)
-#        assert_equal(z, [1., 2., 0., -4., -5])
-#        c[0] = masked
-#        z = where(c, x, -x)
-#        assert_equal(z, [1., 2., 0., -4., -5])
-#        assert_(z[0] is masked)
-#        assert_(z[1] is not masked)
-#        assert_(z[2] is masked)
-
-#    @suppress_copy_mask_on_assignment
-#    def test_oddfeatures_3(self):
-#        # Tests some generic features
-#        atest = array([10], mask=True)
-#        btest = array([20])
-#        idx = atest.mask
-#        atest[idx] = btest[idx]
-#        assert_equal(atest, [20])
+    def test_oddfeatures_3(self):
+        # Tests some generic features
+        atest = MaskedArray([10], mask=True)
+        btest = MaskedArray([20])
+        idx = atest.mask
+        atest[idx] = btest[idx]
+        assert_equal(atest.filled(), [20])
 
 #    def test_filled_with_object_dtype(self):
 #        a = np.ma.masked_all(1, dtype='O')

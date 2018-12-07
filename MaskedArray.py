@@ -15,7 +15,7 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
     # shared implementations for MaskedArray, MaskedScalar
 
     # override the NDArrayOperatorsMixin implementations for cmp ops, as
-    # currently those ufuncs don't work for flexible types
+    # currently those don't work for flexible types and fail on them.
     def _cmp_op(self, other, op):
         if other is X:
             db, mb = self._data.dtype.type(0), np.bool_(True)
@@ -68,10 +68,8 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
             types = (type(a) for n,a in enumerate(args) if n in checked_args)
 
         #types are allowed to be Masked* or plain ndarrays
-        def allowed(t):
-            return (issubclass(t, (MaskedArray, MaskedScalar)) or
-                    t is np.ndarray)
-        if not all(allowed(t) for t in types):
+        if not all((issubclass(t, (MaskedArray, MaskedScalar)) or
+                    t is np.ndarray) for t in types):
             return NotImplemented
 
         return impl(*args, **kwargs)
@@ -81,6 +79,10 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
             return NotImplemented
 
         return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
+    
+    # why is this bad to do for __array_function__?
+    #def __array__(self):
+    #    return self.filled()
 
     def _get_fill_value(self, fill_value, minmax):
         if minmax is not None:
@@ -93,11 +95,15 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
             else:
                 raise ValueError("minmax should be 'min' or 'max'")
 
-        # default is 0, for all types (*not* np.nan for inexact)
+        # default is 0 for all types (*not* np.nan for inexact)
         if fill_value is np._NoValue:
             fill_value = 0
 
         return fill_value
+
+    @property
+    def flat(self):
+        raise RuntimeError(".flat not supported by MaskedArray")
 
     @property
     def imag(self):
@@ -119,7 +125,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     def __init__(self, data, mask=None, dtype=None, copy=False,
                 order=None, subok=True, ndmin=0, **options):
 
-        self._base = None
+        #self._base = None
         if isinstance(data, (MaskedArray, MaskedScalar)):
             self._data = np.array(data._data, copy=copy, order=order,
                                               subok=subok, ndmin=ndmin)
@@ -130,7 +136,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
                 #XXX should this override the mask? Or be OR'd in?
                 raise ValueError("don't use mask if passing a maskedarray")
 
-            self._base = data if data._base is None else data._base
+            #self._base = data if data._base is None else data._base
         elif data is X and mask is None:
             # 0d masked array
             if dtype is None:
@@ -189,6 +195,8 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         ind = tuple(i.filled(False) if
                 (isinstance(i, MaskedArray) and i.dtype.type is np.bool_)
                 else i for i in ind)
+        #XXX do somehting similar for integer array indices? no because
+        #there's no way to preserve shape for n-d index arrays.
 
         data = self._data[ind]
         mask = self._mask[ind]
@@ -389,6 +397,9 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
             self._mask = np.bool_(True)
             self._dtype = self._data.dtype
         else:
+            if dtype is not None:
+                dtype = np.dtype(dtype)
+
             if dtype is None or dtype.type is not np.object_:
                 self._data = np.array(data, dtype=dtype)[()]
                 self._mask = np.bool_(mask)
@@ -448,9 +459,13 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
 # a MaskedArray, to set the mask.
 class Masked:
     def __repr__(self):
-        return 'input_mask'
+        return 'masked_input_X'
     def __str__(self):
-        return 'input_mask'
+        return 'masked_input_X'
+
+    # as a convenience, can make this typed by calling with a dtype
+    def __call__(self, dtype):
+        return MaskedScalar(0, True, dtype=dtype)
 
     # prevent X from being used as an element in np.array, to avoid
     # confusing the user. X should only be used in MaskedArrays
@@ -1803,16 +1818,30 @@ def setup_ducktype():
                            subok))
 
     @implements(np.where)
-    def where(condition, x=np._NoValue, y=np._NoValue):
-        if x is np._NoValue and y is np._NoValue:
+    def where(condition, x=None, y=None):
+        if x is None and y is None:
             return np.nonzero(condition)
 
-        # condition should not be masked?
-        data_args = tuple(a._data for a in (x, y) if a is not np._NoValue)
-        result_data = np.where(condition, *data_args)
+        # convert x, y to MaskedArrays, using the other's dtype if one is X
+        if x is X:
+            if y is X:
+                # why would anyone do this? But it is in unit tests, so...
+                raise ValueError("must supply dtype if x and y are both X, "
+                                 "eg using X(dtype)")
+            y = MaskedArray(y)
+            x = MaskedArray(X, dtype=y.dtype)
+        elif y is X:
+            x = MaskedArray(x)
+            y = MaskedArray(X, dtype=x.dtype)
+        else:
+            y = MaskedArray(y)
+            x = MaskedArray(x)
 
-        mask_args = tuple(a._mask for a in (x, y) if a is not np._NoValue)
-        result_mask = np.where(condition, *mask_args)
+        if isinstance(condition, (MaskedArray, MaskedScalar)):
+            condition = condition.filled(0)
+
+        result_data = np.where(condition, *(a._data for a in (x, y)))
+        result_mask = np.where(condition, *(a._mask for a in (x, y)))
 
         return maskedarray_or_scalar(result_data, result_mask)
 
