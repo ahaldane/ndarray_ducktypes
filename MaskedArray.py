@@ -99,6 +99,22 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
 
         return fill_value
 
+    @property
+    def imag(self):
+        return np.imag(self)
+
+    @imag.setter
+    def imag(self, val):
+        self.imag[...] = val
+
+    @property
+    def real(self):
+        return np.real(self)
+
+    @real.setter
+    def real(self, val):
+        self.real[...] = val
+
 class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     def __init__(self, data, mask=None, dtype=None, copy=False,
                 order=None, subok=True, ndmin=0, **options):
@@ -158,6 +174,12 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         return duck_repr(self)
 
     def __getitem__(self, ind):
+        if is_string_or_list_of_strings(ind):
+            data = self._data[ind]
+            mask = self._mask
+            #XXX unclear if mask should be view or copy
+            return MaskedArray(data, mask)
+
         if not isinstance(ind, tuple):
             ind = (ind,)
 
@@ -387,6 +409,14 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
     def dtype(self):
         return self._dtype
 
+    def __getitem__(self, ind):
+        if self.dtype.names and is_string_or_list_of_strings(ind):
+            data = self._data[ind]
+            mask = self._mask
+            #XXX unclear if mask should be view or copy
+            return MaskedArray(data, mask)
+        raise IndexError("invalid index to scalar variable")
+
     def __str__(self):
         if self._mask:
             return MASK_STR
@@ -494,6 +524,16 @@ _min_filler.update([(k, +np.inf) for k in [np.float32, np.float64]])
 if 'float128' in ntypes.typeDict:
     _max_filler.update([(np.float128, -np.inf)])
     _min_filler.update([(np.float128, +np.inf)])
+
+def is_string_or_list_of_strings(val):
+    if isinstance(val, str):
+        return True
+    if not isinstance(val, list):
+        return False
+    for v in val:
+        if not isinstance(v, str):
+            return False
+    return True
 
 ################################################################################
 #                               Printing setup
@@ -1391,21 +1431,27 @@ def setup_ducktype():
 
     @implements(np.real)
     def real(a):
-        # returns a view of the data only. mask is a copy.
         result_data = np.real(a._data)
-        result_mask = a._mask.copy()
+        result_mask = a._mask
         return maskedarray_or_scalar(result_data, result_mask)
         # XXX not clear if mask should be copied or viewed: If we unmask
         # the imag part, should be real part be unmasked too?
 
     @implements(np.imag)
     def imag(a):
-        # returns a view of the data only. mask is a copy.
         result_data = np.imag(a._data)
-        result_mask = a._mask.copy()
+        result_mask = a._mask
         return maskedarray_or_scalar(result_data, result_mask)
         # XXX not clear if mask should be copied or viewed: If we unmask
-        # the imag part, should be real part be unmasked too?
+        # the imag part, should be real part be unmasked too? If we
+        # assigned masked values to unmasked elem in a, does that expose
+        # uninitialized values?
+        # maybe this is where base could come in?
+        # seems like for complex values really want a double mask. Also,
+        # same issues will come up when indexing a multifield structured
+        # type: how should mask of "parent" array be handled? Seems
+        # like we should view the mask, but on assignment we only
+        # OR in the assigned mask to the base obj. Gets messy...
 
     @implements(np.partition)
     def partition(a, kth, axis=-1, kind='introselect', order=None):

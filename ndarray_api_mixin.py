@@ -47,9 +47,6 @@ class NDArrayAPIMixin:
     def dot(self, b, out=None):
         return np.dot(self, b, out=None)
 
-    def imag(self):
-        return np.imag(self)
-
     def max(self, axis=None, out=None, keepdims=False):
         return np.max(self, axis, out, keepdims)
 
@@ -76,9 +73,6 @@ class NDArrayAPIMixin:
 
     def ravel(self, order='C'):
         return np.ravel(self, order)
-
-    def real(self):
-        return np.real(self)
 
     def repeat(self, repeats, axis=None):
         return np.repeat(self, repeats, axis)

@@ -459,17 +459,17 @@ class TestMaskedArray(object):
         assert_raises(TypeError, int, a)
         assert_equal(int(a[-1].filled()), 3)
 
-    #def test_oddfeatures_1(self):
-    #    # Test of other odd features
-    #    x = MaskedArray(np.arange(20))
-    #    x = x.reshape(4, 5)
-    #    x.flat[5] = 12
-    #    assert_((x[1, 0] == 12).filled())
-    #    z = x + 10j * x
-    #    assert_equal(z.real, x)
-    #    assert_equal(z.imag, 10 * x)
-    #    assert_equal((z * conjugate(z)).real, 101 * x * x)
-    #    z.imag[...] = 0.0
+    def test_oddfeatures_1(self):
+        # Test of other odd features
+        x = MaskedArray(np.arange(20))
+        x = x.reshape((4, 5))
+        #x.flat[5] = 12
+        #assert_((x[1, 0] == 12).filled())
+        z = x + 10j * x
+        assert_equal(z.real, x)
+        assert_equal(z.imag, 10 * x)
+        assert_equal((z * np.conjugate(z)).real, 101 * x * x)
+        z.imag[...] = 0.0
 
     #    x = MaskedArray(np.arange(10))
     #    x[3] = X

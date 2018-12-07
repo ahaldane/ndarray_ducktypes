@@ -276,10 +276,12 @@ class ComplexFloatingFormatter(FloatingFormatter):
         imag_opts['sign'] = '+'
 
         formatter = FloatingFormatter()
+        r_fmt = formatter.get_format_func(elem.real, **options)
+        i_fmt = formatter.get_format_func(elem.imag, **imag_opts)
 
         def fmt(x):
-            r = formatter(x.real, **options)
-            i = formatter(x.imag, **imag_opts)
+            r = r_fmt(x.real)
+            i = i_fmt(x.imag)
 
             # add the 'j' before the terminal whitespace in i
             sp = len(i.rstrip())
