@@ -11,7 +11,95 @@ from numpy.core.multiarray import normalize_axis_index
 from numpy.lib.stride_tricks import _broadcast_shape
 import operator
 
-class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
+class MaskedOperatorMixin(NDArrayOperatorsMixin):
+    # shared implementations for MaskedArray, MaskedScalar
+
+    # override the NDArrayOperatorsMixin implementations for cmp ops, as
+    # currently those ufuncs don't work for flexible types
+    def _cmp_op(self, other, op):
+        if other is X:
+            db, mb = self._data.dtype.type(0), np.bool_(True)
+        else:
+            db, mb = getdata(other), getmask(other)
+
+        result = op(self._data, db)
+        m = self._mask | mb
+
+        if np.isscalar(result):
+            return MaskedScalar(result, m)
+        return MaskedArray(result, m)
+
+    def __lt__(self, other):
+        return self._cmp_op(other, operator.lt)
+
+    def __le__(self, other):
+        return self._cmp_op(other, operator.le)
+
+    def __eq__(self, other):
+        return self._cmp_op(other, operator.eq)
+
+    def __ne__(self, other):
+        return self._cmp_op(other, operator.ne)
+
+    def __gt__(self, other):
+        return self._cmp_op(other, operator.gt)
+
+    def __ge__(self, other):
+        return self._cmp_op(other, operator.ge)
+
+    def __complex__(self):
+        raise TypeError("Use .filled() before converting to non-masked scalar")
+
+    def __int__(self):
+        raise TypeError("Use .filled() before converting to non-masked scalar")
+
+    def __float__(self):
+        raise TypeError("Use .filled() before converting to non-masked scalar")
+
+    def __index__(self):
+        raise TypeError("Use .filled() before converting to non-masked scalar")
+
+    def __array_function__(self, func, types, args, kwargs):
+        if func not in HANDLED_FUNCTIONS:
+            return NotImplemented
+        impl, checked_args = HANDLED_FUNCTIONS[func]
+
+        if checked_args is not None:
+            types = (type(a) for n,a in enumerate(args) if n in checked_args)
+
+        #types are allowed to be Masked* or plain ndarrays
+        def allowed(t):
+            return (issubclass(t, (MaskedArray, MaskedScalar)) or
+                    t is np.ndarray)
+        if not all(allowed(t) for t in types):
+            return NotImplemented
+
+        return impl(*args, **kwargs)
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        if ufunc not in masked_ufuncs:
+            return NotImplemented
+
+        return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
+
+    def _get_fill_value(self, fill_value, minmax):
+        if minmax is not None:
+            if fill_value != np._NoValue:
+                raise Exception("Do not give fill_value if providing minmax")
+            if minmax == 'max':
+                fill_value = _max_filler[self.dtype]
+            elif minmax == 'min':
+                fill_value = _min_filler[self.dtype]
+            else:
+                raise ValueError("minmax should be 'min' or 'max'")
+
+        # default is 0, for all types (*not* np.nan for inexact)
+        if fill_value is np._NoValue:
+            fill_value = 0
+
+        return fill_value
+
+class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     def __init__(self, data, mask=None, dtype=None, copy=False,
                 order=None, subok=True, ndmin=0, **options):
 
@@ -59,29 +147,6 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
                 self._mask = np.empty(self._data.shape, dtype='bool')
                 self._mask[...] = np.broadcast_to(mask, self._data.shape)
 
-    def __array_function__(self, func, types, args, kwargs):
-        if func not in HANDLED_FUNCTIONS:
-            return NotImplemented
-        impl, checked_args = HANDLED_FUNCTIONS[func]
-
-        if checked_args is not None:
-            types = (type(a) for n,a in enumerate(args) if n in checked_args)
-
-        #types are allowed to be Masked* or plain ndarrays
-        def allowed(t):
-            return (issubclass(t, (MaskedArray, MaskedScalar)) or
-                    t is np.ndarray)
-        if not all(allowed(t) for t in types):
-            return NotImplemented
-
-        return impl(*args, **kwargs)
-
-    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        if ufunc not in masked_ufuncs:
-            return NotImplemented
-
-        return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
-
     @classmethod
     def __nd_duckprint_dispatcher__(cls):
         return masked_dispatcher
@@ -128,39 +193,6 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         else:
             self._data[ind] = val
             self._mask[ind] = False
-
-    # override the NDArrayOperatorsMixin implementations for cmp ops, as
-    # currently those ufuncs don't work for flexible types
-    def _cmp_op(self, other, op):
-        if other is X:
-            db, mb = self._data.dtype.type(0), np.bool_(True)
-        else:
-            db, mb = getdata(other), getmask(other)
-
-        result = op(self._data, db)
-        m = self._mask | mb
-
-        if np.isscalar(result):
-            return MaskedScalar(result, m)
-        return MaskedArray(result, m)
-
-    def __lt__(self, other):
-        return self._cmp_op(other, operator.lt)
-
-    def __le__(self, other):
-        return self._cmp_op(other, operator.le)
-
-    def __eq__(self, other):
-        return self._cmp_op(other, operator.eq)
-
-    def __ne__(self, other):
-        return self._cmp_op(other, operator.ne)
-
-    def __gt__(self, other):
-        return self._cmp_op(other, operator.gt)
-
-    def __ge__(self, other):
-        return self._cmp_op(other, operator.ge)
 
     @property
     def shape(self):
@@ -220,17 +252,8 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
 
     # rename this to "X" to be shorter, since it is heavily used?
     #      arr.X()     arr.X(0)   arr.filled()   arr.filled(0)
-    def filled(self, fill_value=0, minmax=None):
-
-        if minmax is not None:
-            if fill_value != 0:
-                raise Exception("Do not give fill_value if providing minmax")
-            if minmax == 'max':
-                fill_value = _max_filler[self.dtype]
-            elif minmax == 'min':
-                fill_value = _min_filler[self.dtype]
-            else:
-                raise ValueError("minmax should be 'min' or 'max'")
+    def filled(self, fill_value=np._NoValue, minmax=None):
+        fill_value = self._get_fill_value(fill_value, minmax)
 
         result = self._data.copy()
         # next line is more complicated that it should be due to struct types
@@ -327,7 +350,7 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
 #
 # Question: What should happen when you fancy-index using a masked integer
 # array? Probably it should fail - you should use filled first.
-class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
+class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
     def __init__(self, data, mask=None, dtype=None):
         if isinstance(data, MaskedScalar):
             self._data = data._data
@@ -364,24 +387,6 @@ class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
     def dtype(self):
         return self._dtype
 
-    def __array_function__(self, func, types, args, kwargs):
-        if func not in HANDLED_FUNCTIONS:
-            return NotImplemented
-        impl, checked_args = HANDLED_FUNCTIONS[func]
-
-        if checked_args is not None:
-            types = (t for n,t in enumerate(types) if n in checked_args)
-        if not all(issubclass(t, (MaskedArray, MaskedScalar)) for t in types):
-            return NotImplemented
-
-        return impl(*args, **kwargs)
-
-    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        if ufunc not in masked_ufuncs:
-            return NotImplemented
-
-        return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
-
     def __str__(self):
         if self._mask:
             return MASK_STR
@@ -401,16 +406,8 @@ class MaskedScalar(NDArrayOperatorsMixin, NDArrayAPIMixin):
     def mask(self):
         return self._mask
 
-    def filled(self, fill_value=0, minmax=None):
-        if minmax is not None:
-            if fill_value != 0:
-                raise Exception("Do not give fill_value if providing minmax")
-            if minmax == 'max':
-                fill_value = _max_filler[self.dtype]
-            elif minmax == 'min':
-                fill_value = _min_filler[self.dtype]
-            else:
-                raise ValueError("minmax should be 'min' or 'max'")
+    def filled(self, fill_value=np._NoValue, minmax=None):
+        fill_value = self._get_fill_value(fill_value, minmax)
 
         if self._mask:
             return self._data.dtype.type(fill_value)
@@ -434,8 +431,8 @@ class Masked:
 
 masked = X = Masked()
 
-# takes array input, replaces masked value by 0 and return filled data & mask.
-# This is more-or-less a reimplementation of PyArray_DTypeFromObject to
+# takes array-like input, replaces masked value by 0 and return filled data &
+# mask. This is more-or-less a reimplementation of PyArray_DTypeFromObject to
 # account for masked values
 def replace_X(data, dtype=None):
 

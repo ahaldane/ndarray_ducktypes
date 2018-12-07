@@ -2,6 +2,7 @@ from numpy.testing import (
     assert_raises, assert_warns, suppress_warnings, assert_,
     assert_equal)
 import numpy as np
+from numpy.core.numeric import pickle
 from MaskedArray import MaskedArray, X
 from functools import reduce
 import textwrap
@@ -380,38 +381,33 @@ class TestMaskedArray(object):
                          [4, X, 6]])''')
         )
 
-    #def test_0d_unicode(self):
-    #    u = u'caf\xe9'
-    #    utype = type(u)
+    def test_0d_unicode(self):
+        u = u'caf\xe9'
+        utype = type(u)
 
-    #    arr_nomask = MaskedArray(u)
-    #    arr_masked = MaskedArray(u, mask=True)
+        arr_nomask = MaskedArray(u)
+        arr_masked = MaskedArray(u, mask=True)
 
-    #    assert_equal(utype(arr_nomask), u)
-    #    assert_equal(utype(arr_masked), u'X')
+        assert_equal(utype(arr_nomask), u)
+        assert_equal(utype(arr_masked), u'X')
 
-#    def test_pickling(self):
-#        # Tests pickling
-#        for dtype in (int, float, str, object):
-#            a = arange(10).astype(dtype)
-#            a.fill_value = 999
+    def test_pickling(self):
+        # Tests pickling
+        for dtype in (int, float, str, object):
+            dat = np.arange(10).astype(dtype)
 
-#            masks = ([0, 0, 0, 1, 0, 1, 0, 1, 0, 1],  # partially masked
-#                     True,                            # Fully masked
-#                     False)                           # Fully unmasked
+            masks = ([0, 0, 0, 1, 0, 1, 0, 1, 0, 1],  # partially masked
+                     True,                            # Fully masked
+                     False)                           # Fully unmasked
 
-#            for proto in range(2, pickle.HIGHEST_PROTOCOL + 1):
-#                for mask in masks:
-#                    a.mask = mask
-#                    a_pickled = pickle.loads(pickle.dumps(a, protocol=proto))
-#                    assert_equal(a_pickled._mask, a._mask)
-#                    assert_equal(a_pickled._data, a._data)
-#                    if dtype in (object, int):
-#                        assert_equal(a_pickled.fill_value, 999)
-#                    else:
-#                        assert_equal(a_pickled.fill_value, dtype(999))
-#                    assert_array_equal(a_pickled.mask, mask)
-
+            for proto in range(2, pickle.HIGHEST_PROTOCOL + 1):
+                for mask in masks:
+                    a = MaskedArray(dat, mask)
+                    a_pickled = pickle.loads(pickle.dumps(a, protocol=proto))
+                    assert_equal(a_pickled._mask, a._mask)
+                    assert_equal(a_pickled._data, a._data)
+                    assert_equal(a_pickled.mask, mask)
+# XXX
 #    def test_pickling_subbaseclass(self):
 #        # Test pickling w/ a subclass of ndarray
 #        x = np.array([(1.0, 2), (3.0, 4)],
@@ -423,88 +419,73 @@ class TestMaskedArray(object):
 #            assert_equal(a_pickled, a)
 #            assert_(isinstance(a_pickled._data, np.recarray))
 
-#    def test_pickling_maskedconstant(self):
-#        # Test pickling MaskedConstant
-#        mc = np.ma.masked
-#        for proto in range(2, pickle.HIGHEST_PROTOCOL + 1):
-#            mc_pickled = pickle.loads(pickle.dumps(mc, protocol=proto))
-#            assert_equal(mc_pickled._baseclass, mc._baseclass)
-#            assert_equal(mc_pickled._mask, mc._mask)
-#            assert_equal(mc_pickled._data, mc._data)
+    def test_pickling_wstructured(self):
+        # Tests pickling w/ structured array
+        a = MaskedArray([(1, 1.), (2, 2.)], mask=[0, 1],
+                  dtype=[('a', int), ('b', float)])
+        for proto in range(2, pickle.HIGHEST_PROTOCOL + 1):
+            a_pickled = pickle.loads(pickle.dumps(a, protocol=proto))
+            assert_equal(a_pickled._mask, a._mask)
+            assert_equal(a_pickled, a)
 
-#    def test_pickling_wstructured(self):
-#        # Tests pickling w/ structured array
-#        a = array([(1, 1.), (2, 2.)], mask=[(0, 0), (0, 1)],
-#                  dtype=[('a', int), ('b', float)])
-#        for proto in range(2, pickle.HIGHEST_PROTOCOL + 1):
-#            a_pickled = pickle.loads(pickle.dumps(a, protocol=proto))
-#            assert_equal(a_pickled._mask, a._mask)
-#            assert_equal(a_pickled, a)
+    def test_pickling_keepalignment(self):
+        # Tests pickling w/ F_CONTIGUOUS arrays
+        a = MaskedArray(np.arange(10))
+        a.shape = (-1, 2)
+        b = a.T
+        for proto in range(2, pickle.HIGHEST_PROTOCOL + 1):
+            test = pickle.loads(pickle.dumps(b, protocol=proto))
+            assert_equal(test, b)
 
-#    def test_pickling_keepalignment(self):
-#        # Tests pickling w/ F_CONTIGUOUS arrays
-#        a = arange(10)
-#        a.shape = (-1, 2)
-#        b = a.T
-#        for proto in range(2, pickle.HIGHEST_PROTOCOL + 1):
-#            test = pickle.loads(pickle.dumps(b, protocol=proto))
-#            assert_equal(test, b)
+    def test_single_element_subscript(self):
+        # Tests single element subscripts of Maskedarrays.
+        a = MaskedArray([1, 3, 2])
+        b = MaskedArray([1, 3, 2], mask=[1, 0, 1])
+        assert_equal(a[0].shape, ())
+        assert_equal(b[0].shape, ())
+        assert_equal(b[1].shape, ())
 
-#    def test_single_element_subscript(self):
-#        # Tests single element subscripts of Maskedarrays.
-#        a = array([1, 3, 2])
-#        b = array([1, 3, 2], mask=[1, 0, 1])
-#        assert_equal(a[0].shape, ())
-#        assert_equal(b[0].shape, ())
-#        assert_equal(b[1].shape, ())
+    def test_topython(self):
+        # Tests some communication issues with Python.
+        assert_equal(1, int(MaskedArray(1).filled()))
+        assert_equal(1.0, float(MaskedArray(1).filled()))
+        assert_equal(1, int(MaskedArray([[[1]]]).filled()))
+        assert_equal(1.0, float(MaskedArray([[1]]).filled()))
+        assert_raises(TypeError, float, MaskedArray([1, 1]).filled())
 
-#    def test_topython(self):
-#        # Tests some communication issues with Python.
-#        assert_equal(1, int(array(1)))
-#        assert_equal(1.0, float(array(1)))
-#        assert_equal(1, int(array([[[1]]])))
-#        assert_equal(1.0, float(array([[1]])))
-#        assert_raises(TypeError, float, array([1, 1]))
+        a = MaskedArray([1, 2, 3], mask=[1, 0, 0])
+        assert_raises(TypeError, lambda: float(a))
+        assert_equal(float(a[-1].filled()), 3.)
+        assert_raises(TypeError, int, a)
+        assert_equal(int(a[-1].filled()), 3)
 
-#        with suppress_warnings() as sup:
-#            sup.filter(UserWarning, 'Warning: converting a masked element')
-#            assert_(np.isnan(float(array([1], mask=[1]))))
+    #def test_oddfeatures_1(self):
+    #    # Test of other odd features
+    #    x = MaskedArray(np.arange(20))
+    #    x = x.reshape(4, 5)
+    #    x.flat[5] = 12
+    #    assert_((x[1, 0] == 12).filled())
+    #    z = x + 10j * x
+    #    assert_equal(z.real, x)
+    #    assert_equal(z.imag, 10 * x)
+    #    assert_equal((z * conjugate(z)).real, 101 * x * x)
+    #    z.imag[...] = 0.0
 
-#            a = array([1, 2, 3], mask=[1, 0, 0])
-#            assert_raises(TypeError, lambda: float(a))
-#            assert_equal(float(a[-1]), 3.)
-#            assert_(np.isnan(float(a[0])))
-#        assert_raises(TypeError, int, a)
-#        assert_equal(int(a[-1]), 3)
-#        assert_raises(MAError, lambda:int(a[0]))
+    #    x = MaskedArray(np.arange(10))
+    #    x[3] = X
+    #    assert_(str(x[3]) == 'X')
+    #    c = x >= 8
+    #    assert_(count(np.where(c, masked, masked)) == 0)
+    #    assert_(shape(np.where(c, masked, masked)) == c.shape)
 
-#    def test_oddfeatures_1(self):
-#        # Test of other odd features
-#        x = arange(20)
-#        x = x.reshape(4, 5)
-#        x.flat[5] = 12
-#        assert_(x[1, 0] == 12)
-#        z = x + 10j * x
-#        assert_equal(z.real, x)
-#        assert_equal(z.imag, 10 * x)
-#        assert_equal((z * conjugate(z)).real, 101 * x * x)
-#        z.imag[...] = 0.0
-
-#        x = arange(10)
-#        x[3] = masked
-#        assert_(str(x[3]) == str(masked))
-#        c = x >= 8
-#        assert_(count(where(c, masked, masked)) == 0)
-#        assert_(shape(where(c, masked, masked)) == c.shape)
-
-#        z = masked_where(c, x)
-#        assert_(z.dtype is x.dtype)
-#        assert_(z[3] is masked)
-#        assert_(z[4] is not masked)
-#        assert_(z[7] is not masked)
-#        assert_(z[8] is masked)
-#        assert_(z[9] is masked)
-#        assert_equal(x, z)
+    #    z = masked_where(c, x)
+    #    assert_(z.dtype is x.dtype)
+    #    assert_(z[3] is masked)
+    #    assert_(z[4] is not masked)
+    #    assert_(z[7] is not masked)
+    #    assert_(z[8] is masked)
+    #    assert_(z[9] is masked)
+    #    assert_equal(x, z)
 
 #    def test_oddfeatures_2(self):
 #        # Tests some more features.

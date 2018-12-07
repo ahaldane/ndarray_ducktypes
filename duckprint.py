@@ -797,6 +797,7 @@ def duck_repr(arr, **options):
 
     return arr_str + spacer + dtype_str
 
+_guarded_str = _recursive_guard()(str)
 
 def duck_str(a, **options):
     """
@@ -817,5 +818,11 @@ def duck_str(a, **options):
     '[0 1 2]'
 
     """
+    if a.shape == ():
+        # obtain a scalar and call str on it, avoiding problems for subclasses
+        # for which indexing with () returns a 0d instead of a scalar by using
+        # ndarray's getindex. Also guard against recursive 0d object arrays.
+        return _guarded_str(a[()])
+
     return duck_array2string(a, separator=' ', prefix="", **options)
 
