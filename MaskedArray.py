@@ -18,9 +18,9 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         self._base = None
         if isinstance(data, (MaskedArray, MaskedScalar)):
             self._data = np.array(data._data, copy=copy, order=order,
-                                              sobok=subok, ndmin=ndmin)
+                                              subok=subok, ndmin=ndmin)
             self._mask = np.array(data._mask, copy=copy, order=order,
-                                              sobok=subok, ndmin=ndmin)
+                                              subok=subok, ndmin=ndmin)
 
             if mask is not None:
                 #XXX should this override the mask? Or be OR'd in?
@@ -39,6 +39,12 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
                 # Otherwise, X will cause some kind of error in np.array below
                 data, mask = replace_X(data, dtype=dtype)
 
+                # replace_X sometimes uses broadcast_to, which returns a
+                # readonly array with funny strides. Make writeable if so.
+                if (isinstance(mask, np.ndarray) and
+                        mask.flags['WRITEABLE'] == False):
+                    mask = mask.copy()
+
             self._data = np.array(data, dtype=dtype, copy=copy, order=order,
                                   subok=subok, ndmin=ndmin)
 
@@ -46,7 +52,7 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
                 self._mask = np.zeros(self._data.shape, dtype='bool',
                                       order=order)
             elif (is_ndducktype(mask) and mask.shape == self._data.shape and
-                    isinstance(mask.dtype.type, np.bool_)):
+                    issubclass(mask.dtype.type, np.bool_)):
                 self._mask = np.array(mask, dtype, copy=copy, order=order,
                                       subok=subok, ndmin=ndmin)
             else:
@@ -288,12 +294,18 @@ class MaskedArray(NDArrayOperatorsMixin, NDArrayAPIMixin):
         """
         return (~self._mask).sum(axis=axis, dtype=np.intp, keepdims=keepdims)
 
+    # This works inplace, unlike np.sort
     def sort(self, axis=-1, kind='quicksort', order=None):
         # Note: See comment in np.sort impl below for trick used here.
         # This is the inplace version
         self._data[self._mask] = _min_filler[self.dtype]
         self._data.sort(axis, kind, order)
         self._mask.sort(axis, kind)
+
+    # This works inplace, unlike np.resize, and fills with repeat instead of 0
+    def resize(self, new_shape, refcheck=True):
+        self._data.resize(new_shape, refcheck)
+        self._mask.resize(new_shape, refcheck)
 
 # Ndarrays return scalars when "fully indexed" (integer at each axis). Ducktype
 # implementors need to mimic this. However, they often want the scalars to
@@ -1459,9 +1471,9 @@ def setup_ducktype():
 
 
     @implements(np.resize)
-    def resize(a, new_shape, refcheck=True): #XXX what is this refcheck?
-        return MaskedArray(a._data.resize(new_shape, refcheck),
-                           a._mask.resize(new_shape, refcheck))
+    def resize(a, new_shape):
+        return MaskedArray(np.resize(a._data, new_shape),
+                           np.resize(a._mask, new_shape))
 
     @implements(np.meshgrid)
     def meshgrid(*xi, **kwargs):
@@ -1490,8 +1502,8 @@ def setup_ducktype():
 
     @implements(np.squeeze)
     def squeeze(a, axis=None):
-        return MaskedArray(np.squeeze(a._data, new_shape, refcheck),
-                           np.squeeze(a._mask, new_shape, refcheck))
+        return MaskedArray(np.squeeze(a._data, axis),
+                           np.squeeze(a._mask, axis))
 
     @implements(np.swapaxes)
     def swapaxes(a, axis1, axis2):
