@@ -79,7 +79,7 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
             return NotImplemented
 
         return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
-    
+
     # why is this bad to do for __array_function__?
     #def __array__(self):
     #    return self.filled()
@@ -158,6 +158,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
             self._data = np.array(data, dtype=dtype, copy=copy, order=order,
                                   subok=subok, ndmin=ndmin)
 
+            # XXX need to make sure mask order is same as data?
             if mask is None:
                 self._mask = np.zeros(self._data.shape, dtype='bool',
                                       order=order)
@@ -184,6 +185,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
             data = self._data[ind]
             mask = self._mask
             #XXX unclear if mask should be view or copy
+            #XXX also, what happens for subarrays. Is mask broadcast?
             return MaskedArray(data, mask)
 
         if not isinstance(ind, tuple):
@@ -241,6 +243,10 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     def dtype(self, dt):
         self._data.dtype = dt
 
+    @property
+    def flags(self):
+        return self._data.flags
+
     # XXX decisions about how to treat base still to be made
     @property
     def base(self):
@@ -285,7 +291,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     def filled(self, fill_value=np._NoValue, minmax=None):
         fill_value = self._get_fill_value(fill_value, minmax)
 
-        result = self._data.copy()
+        result = self._data.copy(order='K')
         # next line is more complicated that it should be due to struct types
         result[self._mask] = np.array(fill_value, dtype=self.dtype)[()]
         return result
@@ -421,7 +427,9 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
         return self._dtype
 
     def __getitem__(self, ind):
-        if self.dtype.names and is_string_or_list_of_strings(ind):
+        if (self.dtype.names and is_string_or_list_of_strings(ind) or
+                isinstance(ind, int)):
+            # like structured scalars, support string indexing and int indexing
             data = self._data[ind]
             mask = self._mask
             #XXX unclear if mask should be view or copy
@@ -451,7 +459,8 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
         fill_value = self._get_fill_value(fill_value, minmax)
 
         if self._mask:
-            return self._data.dtype.type(fill_value)
+            # next line is more complicated that desired due to struct types
+            return np.array(fill_value, dtype=self.dtype)[()]
         return self._data
 
 # create a special dummy object which signifies "masked", which users can put
@@ -651,8 +660,10 @@ class _Masked_UniOp(_Masked_UFunc):
                 raise ValueError("out must be a MaskedArray")
             kwargs['out'] = (out[0]._data,)
 
+        d = getdata(a)
+
         with np.errstate(divide='ignore', invalid='ignore'):
-            result = self.f(getdata(a), *args, **kwargs)
+            result = self.f(d, *args, **kwargs)
 
         if self.domain is None:
             m = getmask(a)
@@ -744,12 +755,12 @@ def maskdom_greater(x):
             return umath.less_equal(a, x)
     return maskdom_interval
 
-def maskdom_tan(a):
+def maskdom_tan(x):
     with np.errstate(invalid='ignore'):
         return umath.less(umath.absolute(umath.cos(x)), 1e-35) #XXX use finfo?
 
 def make_maskdom_interval(lo, hi):
-    def maskdom(a):
+    def maskdom(x):
         with np.errstate(invalid='ignore'):
             return umath.logical_or(umath.greater(x, hi),
                                     umath.less(x, lo))
@@ -782,12 +793,12 @@ def setup_ufuncs():
     # XXX should these all be customized for the float size?
 
     # binary ufuncs
-    for ufunc in [umath.add, umath.subtract, umath.multiply, umath.arctan2,
-                  umath.equal, umath.not_equal, umath.less_equal,
-                  umath.greater_equal, umath.less, umath.greater,
-                  umath.logical_and, umath.logical_or, umath.logical_xor,
-                  umath.bitwise_and, umath.bitwise_or, umath.bitwise_xor,
-                  umath.hypot]:
+    for ufunc in [umath.add, umath.subtract, umath.multiply, umath.power,
+                  umath.arctan2, umath.hypot, umath.equal, umath.not_equal,
+                  umath.less_equal, umath.greater_equal, umath.less,
+                  umath.greater, umath.logical_and, umath.logical_or,
+                  umath.logical_xor, umath.bitwise_and, umath.bitwise_or,
+                  umath.bitwise_xor, umath.maximum, umath.minimum]:
         masked_ufuncs[ufunc] = _Masked_BinOp(ufunc)
 
     # domained binary ufuncs
@@ -2029,11 +2040,11 @@ def setup_ducktype():
 
     @implements(np.iscomplexobj)
     def iscomplexobj(x):
-        return MaskedArray(np.iscomplexobj(x._data), x._mask.copy())
+        return np.iscomplexobj(x._data)
 
     @implements(np.isrealobj)
     def isrealobj(x):
-        return MaskedArray(np.isrealobj(x._data), x._mask.copy())
+        return np.isrealobj(x._data)
 
     @implements(np.nan_to_num)
     def nan_to_num(x, copy=True):
@@ -2086,9 +2097,9 @@ def setup_ducktype():
             zimag = 0
             zreal = z
 
-        a = arctan2(zimag, zreal)
+        a = np.arctan2(zimag, zreal)
         if deg:
-            a *= 180/pi
+            a *= 180/np.pi
         return a
 
     @implements(np.sinc)
