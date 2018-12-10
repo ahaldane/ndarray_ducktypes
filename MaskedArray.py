@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import numpy as np
-from duckprint import (duck_str, duck_repr, duck_array2string,
+from duckprint import (duck_str, duck_repr, duck_array2string, typelessdata,
     default_duckprint_options, default_duckprint_formatters, FormatDispatcher)
 import builtins
 import numpy.core.umath as umath
@@ -247,6 +247,10 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     def flags(self):
         return self._data.flags
 
+    @property
+    def strides(self):
+        return self._data.strides
+
     # XXX decisions about how to treat base still to be made
     @property
     def base(self):
@@ -259,7 +263,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     @property
     def mask(self):
         # return a readonly view of mask
-        m = np.ndarray(self._mask.shape, np.bool_, self._mask)
+        m = self._mask.view()
         m.flags['WRITEABLE'] = False
         return m
 
@@ -289,12 +293,11 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     # rename this to "X" to be shorter, since it is heavily used?
     #      arr.X()     arr.X(0)   arr.filled()   arr.filled(0)
     def filled(self, fill_value=np._NoValue, minmax=None):
-        fill_value = self._get_fill_value(fill_value, minmax)
-
-        result = self._data.copy(order='K')
-        # next line is more complicated that it should be due to struct types
-        result[self._mask] = np.array(fill_value, dtype=self.dtype)[()]
-        return result
+        # return a readonly view of data with masked elem filled in
+        d = self._data.view()
+        d[self._mask] = self._get_fill_value(fill_value, minmax)
+        d.flags['WRITEABLE'] = False
+        return d
 
     def count(self, axis=None, keepdims=False):
         """
@@ -399,7 +402,7 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
                 raise ValueError("Must supply dtype when data is X")
             if mask is not None:
                 raise ValueError("don't supply mask when data is X")
-            self._data = dtype.type(0)
+            self._data = np.dtype(dtype).type(0)
             self._mask = np.bool_(True)
             self._dtype = self._data.dtype
         else:
@@ -443,8 +446,14 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
 
     def __repr__(self):
         if self._mask:
-            return 'masked_{}'.format(self.dtype.name)
-        return repr(self._data)
+            return "MaskedScalar(X, dtype={})".format(str(self.dtype))
+
+        if self.dtype.type in typelessdata and self.dtype.names is None:
+            dtstr = ''
+        else:
+            dtstr = ', dtype={}'.format(str(self.dtype))
+
+        return "MaskedScalar({}{})".format(repr(self._data), dtstr)
 
     def __format__(self, format_spec):
         if self._mask:
@@ -757,7 +766,7 @@ class _Masked_BinOp(_Masked_UFunc):
 
         if not np.isscalar(da):
             da[ma] = self.reduce_fill
-            # if da is a scalar, we get correct result without fill
+            # if da is a scalar, we get correct result no matter fill
 
         #with np.errstate(divide='ignore', invalid='ignore'):
         result = self.f.reduce(da, **kwargs)
@@ -778,23 +787,20 @@ class _Masked_BinOp(_Masked_UFunc):
 
         da, ma = getdata(a), getmask(a)
 
-        mkwargs = kwargs.copy()
-        for k in ['initial', 'dtype']:
-            if k in mkwargs:
-                del mkwargs[k]
+        mkwargs = {'axis': axis}
 
-        out = kwargs.get('out', ())
+        dataout, maskout = None, None
         if out:
             if not isinstance(out[0], MaskedArray):
                 raise ValueError("out must be a MaskedArray")
-            kwargs['out'] = (out[0]._data,)
-            mkwargs['out'] = (out[0]._mask,)
+            dataout = out[0]._data
+            maskout = out[0]._mask
 
         if not np.isscalar(da):
             da[ma] = self.reduce_fill
         #with np.errstate(divide='ignore', invalid='ignore'):
-        result = self.f.accumulate(da, **kwargs)
-        m = np.logical_and.accumulate(ma, **mkwargs)
+        result = self.f.accumulate(da, axis, dtype, dataout)
+        m = np.logical_and.accumulate(ma, axis, out=maskout)
         #if self.domain is not None:
         #    dom = self.domain(result[...,:-1], da[...,1:])
         #    m = np.logical_or(ma, dom, **mkwargs)
@@ -1431,7 +1437,7 @@ def setup_ducktype():
 
     @implements(np.vdot)
     def vdot(a, b):
-        #a, b = MaskedArray(a), MaskedArray(b)
+        a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.vdot(a.filled(0), b.filled(0))
         result_mask = np.vdot(~a._mask, ~b._mask)
         result_mask = np.logical_not(result_mask, out=result_mask)
@@ -1439,7 +1445,7 @@ def setup_ducktype():
 
     @implements(np.cross)
     def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
-        #a, b = MaskedArray(a), MaskedArray(b)
+        a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.cross(a.filled(0), b.filled(0), axisa, axisb, axisc,
                                axis)
         result_mask = np.cross(~a._mask, ~b._mask, axisa, axisb, axisc, axis)
@@ -1448,18 +1454,19 @@ def setup_ducktype():
 
     @implements(np.inner)
     def inner(a, b):
-        #a, b = MaskedArray(a), MaskedArray(b)
+        a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.inner(a.filled(0), b.filled(0))
         result_mask = np.inner(~a._mask, ~b._mask)
         result_mask = np.logical_not(result_mask, out=result_mask)
-        return maskedarray_or_scalar(result_data, result_mask, out)
+        return maskedarray_or_scalar(result_data, result_mask)
 
     @implements(np.outer)
     def outer(a, b, out=None):
         outdata, outmask = get_maskedout(out)
-        #a, b = MaskedArray(a), MaskedArray(b)
+        a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.outer(a.filled(0), b.filled(0), out=outdata)
-        result_mask = np.logical_or.outer(a._mask, b._mask, out=outmask)
+        result_mask = np.outer(~a._mask, ~b._mask, out=outmask)
+        result_mask = np.logical_not(result_mask, out=result_mask)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.kron)

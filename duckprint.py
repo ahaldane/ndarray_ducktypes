@@ -705,11 +705,11 @@ def _formatArray(a, format_function, line_width, next_line_prefix,
         recurser = None
 
 
-_typelessdata = [int_, float_, complex_, bool_]
+typelessdata = [int_, float_, complex_, bool_]
 if issubclass(intc, int):
-    _typelessdata.append(intc)
+    typelessdata.append(intc)
 if issubclass(longlong, int):
-    _typelessdata.append(longlong)
+    typelessdata.append(longlong)
 
 def dtype_short_repr(dtype):
     """
@@ -770,7 +770,7 @@ def duck_repr(arr, **options):
         class_name = "array"
 
     skipdtype = False
-    if arr.dtype.type in _typelessdata and arr.dtype.names is None:
+    if arr.dtype.type in typelessdata and arr.dtype.names is None:
         skipdtype = True
 
     prefix = class_name + "("
