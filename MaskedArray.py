@@ -691,9 +691,10 @@ class _Masked_BinOp(_Masked_UFunc):
         Function which returns true for inputs whose output should be masked.
     """
 
-    def __init__(self, ufunc, maskdomain=None):
+    def __init__(self, ufunc, maskdomain=None, reduce_fill=0):
         super().__init__(ufunc)
         self.domain = maskdomain
+        self.reduce_fill = reduce_fill
 
     def __call__(self, a, b, **kwargs):
         da, db = getdata(a), getdata(b)
@@ -705,31 +706,145 @@ class _Masked_BinOp(_Masked_UFunc):
         if db is X:
             db, mb = da.dtype.type(0), np.bool_(True)
 
+        mkwargs = {}
+        for k in ['where', 'order']:
+            if k in kwargs:
+                mkwargs[k] = kwargs[k]
+
         out = kwargs.get('out', ())
         if out:
             if not isinstance(out[0], MaskedArray):
                 raise ValueError("out must be a MaskedArray")
             kwargs['out'] = (out[0]._data,)
+            mkwargs['out'] = (out[0]._mask,)
 
         with np.errstate(divide='ignore', invalid='ignore'):
             result = self.f(da, db, **kwargs)
-
-        m = ma | mb
+        m = np.logical_or(ma, mb, **mkwargs)
         if self.domain is not None:
-            m |= self.domain(da, db)
+            if 'out' not in mkwargs and isinstance(m, np.ndarray):
+                mkwargs['out'] = (m,)
+            m = np.logical_or(m, self.domain(da, db), **mkwargs)
+            #XXX add test that this gets where right
 
-        if out is not ():
-            out[0]._mask[:] = m
+        if out:
             return out[0]
-
         if np.isscalar(result):
             return MaskedScalar(result, m)
-
         return MaskedArray(result, m)
 
-    #def reduce(self, target, axis=0, dtype=None):
-    #def outer(self, a, b):
-    #def accumulate(self, target, axis=0):
+    def reduce(self, a, **kwargs):
+        if self.domain is not None:
+            raise RuntimeError("domained ufuncs do not support reduce")
+
+        da, ma = getdata(a), getmask(a)
+
+        mkwargs = kwargs.copy()
+        for k in ['initial', 'dtype']:
+            if k in mkwargs:
+                del mkwargs[k]
+
+        out = kwargs.get('out', ())
+        if out:
+            if not isinstance(out[0], MaskedArray):
+                raise ValueError("out must be a MaskedArray")
+            kwargs['out'] = (out[0]._data,)
+            mkwargs['out'] = (out[0]._mask,)
+
+        initial = kwargs.get('initial', None)
+        if isinstance(initial, (MaskedScalar, Masked)):
+            raise ValueError("initial should not be masked")
+
+        if not np.isscalar(da):
+            da[ma] = self.reduce_fill
+            # if da is a scalar, we get correct result without fill
+
+        #with np.errstate(divide='ignore', invalid='ignore'):
+        result = self.f.reduce(da, **kwargs)
+        m = np.logical_and.reduce(ma, **mkwargs)
+        #if self.domain is not None:
+        #    m = np.logical_or(ma, dom, **mkwargs)
+        # XXX can reduceat work instead?
+
+        if out:
+            return out[0]
+        if np.isscalar(result):
+            return MaskedScalar(result, m)
+        return MaskedArray(result, m)
+
+    def accumulate(self, a, axis=0, dtype=None, out=None):
+        if self.domain is not None:
+            raise RuntimeError("domained ufuncs do not support reduce")
+
+        da, ma = getdata(a), getmask(a)
+
+        mkwargs = kwargs.copy()
+        for k in ['initial', 'dtype']:
+            if k in mkwargs:
+                del mkwargs[k]
+
+        out = kwargs.get('out', ())
+        if out:
+            if not isinstance(out[0], MaskedArray):
+                raise ValueError("out must be a MaskedArray")
+            kwargs['out'] = (out[0]._data,)
+            mkwargs['out'] = (out[0]._mask,)
+
+        if not np.isscalar(da):
+            da[ma] = self.reduce_fill
+        #with np.errstate(divide='ignore', invalid='ignore'):
+        result = self.f.accumulate(da, **kwargs)
+        m = np.logical_and.accumulate(ma, **mkwargs)
+        #if self.domain is not None:
+        #    dom = self.domain(result[...,:-1], da[...,1:])
+        #    m = np.logical_or(ma, dom, **mkwargs)
+
+        if out:
+            return out[0]
+        if np.isscalar(result):
+            return MaskedScalar(result, m)
+        return MaskedArray(result, m)
+
+    def outer(self, a, b, **kwargs):
+        if self.domain is not None:
+            raise RuntimeError("domained ufuncs do not support reduce")
+
+        da, db = getdata(a), getdata(b)
+        ma, mb = getmask(a), getmask(b)
+
+        # treat X as a masked value of the other array's dtype
+        if da is X:
+            da, ma = db.dtype.type(0), np.bool_(True)
+        if db is X:
+            db, mb = da.dtype.type(0), np.bool_(True)
+
+        mkwargs = kwargs.copy()
+        if 'dtype' in mkwargs:
+            del mkwargs['dtype']
+
+        out = kwargs.get('out', ())
+        if out:
+            if not isinstance(out[0], MaskedArray):
+                raise ValueError("out must be a MaskedArray")
+            kwargs['out'] = (out[0]._data,)
+            mkwargs['out'] = (out[0]._mask,)
+
+        if not np.isscalar(da):
+            da[ma] = self.reduce_fill
+        if not np.isscalar(da):
+            db[mb] = self.reduce_fill
+
+        result = self.f.outer(da, db, **kwargs)
+        m = np.logical_or.outer(ma, mb, **mkwargs)
+
+        if out:
+            return out[0]
+        if np.isscalar(result):
+            return MaskedScalar(result, m)
+        return MaskedArray(result, m)
+
+    #def reduceat(self, target, axis=0):
+    #def at(self, a, b):
 
 def maskdom_divide(a, b):
     out_dtype = np.result_type(a, b)
@@ -1344,8 +1459,7 @@ def setup_ducktype():
         outdata, outmask = get_maskedout(out)
         #a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.outer(a.filled(0), b.filled(0), out=outdata)
-        result_mask = np.outer(~a._mask, ~b._mask, out=outmask)
-        result_mask = np.logical_not(result_mask, out=result_mask)
+        result_mask = np.logical_or.outer(a._mask, b._mask, out=outmask)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.kron)
@@ -1486,8 +1600,9 @@ def setup_ducktype():
 
     @implements(np.ptp)
     def ptp(a, axis=None, out=None, keepdims=False):
-        # Original numpy function is fine.
-        return np.ptp.__wrapped__(a, axis, out, keepdims)
+        return np.subtract(
+            np.maximum.reduce(a, axis, None, out, keepdims),
+            np.minimum.reduce(a, axis, None, None, keepdims), out)
 
     #XXX in the functions below, indices can be a plain ndarray
     @implements(np.take)

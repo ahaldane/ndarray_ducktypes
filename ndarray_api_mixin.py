@@ -54,7 +54,7 @@ class NDArrayAPIMixin:
         return mean(axis, dtype, out, keepdims)
 
     def min(self, axis=None, out=None, keepdims=False):
-        return np.max(self, axis, out, keepdims)
+        return np.min(self, axis, out, keepdims)
 
     def nonzero(self):
         return np.nonzero(self)

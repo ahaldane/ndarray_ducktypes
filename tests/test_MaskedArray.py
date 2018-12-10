@@ -843,99 +843,92 @@ class TestMaskedArrayArithmetic(object):
 #        assert_equal(3, count([1,2,3]))
 #        assert_equal(2, count((1,2)))
 
-    #def test_minmax_func(self):
-    #    # Tests minimum and maximum.
-    #    (x, y, a10, m1, m2, xm, ym, z, zm, xf) = self.d
-    #    # max doesn't work if shaped
-    #    xr = np.ravel(x)
-    #    xmr = np.ravel(xm)
-    #    # following are true because of careful selection of data
-    #    assert_equal(max(xr), np.maximum.reduce(xmr))
-    #    assert_equal(min(xr), np.minimum.reduce(xmr))
+    def test_minmax_func(self):
+        # Tests minimum and maximum.
+        (x, y, a10, m1, m2, xm, ym, z, zm, xf) = self.d
+        # max doesn't work if shaped
+        xr = np.ravel(x)
+        xmr = np.ravel(xm)
+        # following are true because of careful selection of data
+        assert_equal(np.max(xr), np.maximum.reduce(xmr).filled())
+        assert_equal(np.min(xr), np.minimum.reduce(xmr).filled())
+        
+        MA = MaskedArray
+        ma, mb = MaskedArray([1, 2, 3]), MaskedArray([4, 0, 9])
+        assert_equal(np.minimum(ma, mb).filled(), [1, 0, 3])
+        assert_equal(np.maximum(ma, mb).filled(), [4, 2, 9])
+        x = MaskedArray(np.arange(5))
+        y = MaskedArray(np.arange(5)) - 2
+        x[3] = X
+        y[0] = X
+        assert_equal(np.minimum(x, y), np.where(np.less(x, y), x, y))
+        assert_equal(np.maximum(x, y), np.where(np.greater(x, y), x, y))
+        assert_(np.minimum.reduce(x) == 0)
+        assert_(np.maximum.reduce(x) == 4)
 
-    #    assert_equal(minimum([1, 2, 3], [4, 0, 9]), [1, 0, 3])
-    #    assert_equal(maximum([1, 2, 3], [4, 0, 9]), [4, 2, 9])
-    #    x = arange(5)
-    #    y = arange(5) - 2
-    #    x[3] = masked
-    #    y[0] = masked
-    #    assert_equal(minimum(x, y), where(less(x, y), x, y))
-    #    assert_equal(maximum(x, y), where(greater(x, y), x, y))
-    #    assert_(minimum.reduce(x) == 0)
-    #    assert_(maximum.reduce(x) == 4)
+        x = MaskedArray(np.arange(4)).reshape((2, 2))
+        x[-1, -1] = X
+        assert_equal(np.maximum.reduce(x, axis=None).filled(), 2)
 
-    #    x = arange(4).reshape(2, 2)
-    #    x[-1, -1] = masked
-    #    assert_equal(maximum.reduce(x, axis=None), 2)
+    def test_minimummaximum_func(self):
+        a = np.ones((2, 2))
+        ma = MaskedArray(a)
+        aminimum = np.minimum(ma, ma)
+        assert_(isinstance(aminimum, MaskedArray))
+        assert_equal(aminimum, np.minimum(a, a))
 
-#    def test_minimummaximum_func(self):
-#        a = np.ones((2, 2))
-#        aminimum = minimum(a, a)
-#        assert_(isinstance(aminimum, MaskedArray))
-#        assert_equal(aminimum, np.minimum(a, a))
+        aminimum = np.minimum.outer(ma, ma)
+        assert_(isinstance(aminimum, MaskedArray))
+        assert_equal(aminimum, np.minimum.outer(a, a))
 
-#        aminimum = minimum.outer(a, a)
-#        assert_(isinstance(aminimum, MaskedArray))
-#        assert_equal(aminimum, np.minimum.outer(a, a))
+        amaximum = np.maximum(ma, ma)
+        assert_(isinstance(amaximum, MaskedArray))
+        assert_equal(amaximum, np.maximum(a, a))
 
-#        amaximum = maximum(a, a)
-#        assert_(isinstance(amaximum, MaskedArray))
-#        assert_equal(amaximum, np.maximum(a, a))
+        amaximum = np.maximum.outer(ma, ma)
+        assert_(isinstance(amaximum, MaskedArray))
+        assert_equal(amaximum, np.maximum.outer(a, a))
 
-#        amaximum = maximum.outer(a, a)
-#        assert_(isinstance(amaximum, MaskedArray))
-#        assert_equal(amaximum, np.maximum.outer(a, a))
+        #XXX shouldn't this be tested with a masked value?
 
-#    def test_minmax_reduce(self):
-#        # Test np.min/maximum.reduce on array w/ full False mask
-#        a = array([1, 2, 3], mask=[False, False, False])
-#        b = np.maximum.reduce(a)
-#        assert_equal(b, 3)
+    def test_minmax_reduce(self):
+        # Test np.min/maximum.reduce on array w/ full False mask
+        a = MaskedArray([1, 2, 3], mask=[False, False, False])
+        b = np.maximum.reduce(a)
+        assert_equal(b.filled(), 3)
 
-#    def test_minmax_funcs_with_output(self):
-#        # Tests the min/max functions with explicit outputs
-#        mask = np.random.rand(12).round()
-#        xm = array(np.random.uniform(0, 10, 12), mask=mask)
-#        xm.shape = (3, 4)
-#        for funcname in ('min', 'max'):
-#            # Initialize
-#            npfunc = getattr(np, funcname)
-#            mafunc = getattr(numpy.ma.core, funcname)
-#            # Use the np version
-#            nout = np.empty((4,), dtype=int)
-#            try:
-#                result = npfunc(xm, axis=0, out=nout)
-#            except MaskError:
-#                pass
-#            nout = np.empty((4,), dtype=float)
-#            result = npfunc(xm, axis=0, out=nout)
-#            assert_(result is nout)
-#            # Use the ma version
-#            nout.fill(-999)
-#            result = mafunc(xm, axis=0, out=nout)
-#            assert_(result is nout)
+    def test_minmax_funcs_with_output(self):
+        # Tests the min/max functions with explicit outputs
+        mask = np.random.rand(12).round()
+        data = np.random.uniform(0, 10, 12)
+        xm = MaskedArray(data, mask)
+        xm.shape = (3, 4)
+        for func in (np.min, np.max):
+            nout = MaskedArray(np.empty((4,), dtype=float))
+            result = func(xm, axis=0, out=nout)
+            assert_(result is nout)
 
-#    def test_minmax_methods(self):
-#        # Additional tests on max/min
-#        (_, _, _, _, _, xm, _, _, _, _) = self.d
-#        xm.shape = (xm.size,)
-#        assert_equal(xm.max(), 10)
-#        assert_(xm[0].max() is masked)
-#        assert_(xm[0].max(0) is masked)
-#        assert_(xm[0].max(-1) is masked)
-#        assert_equal(xm.min(), -10.)
-#        assert_(xm[0].min() is masked)
-#        assert_(xm[0].min(0) is masked)
-#        assert_(xm[0].min(-1) is masked)
-#        assert_equal(xm.ptp(), 20.)
-#        assert_(xm[0].ptp() is masked)
-#        assert_(xm[0].ptp(0) is masked)
-#        assert_(xm[0].ptp(-1) is masked)
+    def test_minmax_methods(self):
+        # Additional tests on max/min
+        (_, _, _, _, _, xm, _, _, _, _) = self.d
+        xm.shape = (xm.size,)
+        assert_equal(xm.max().filled(), 10)
+        assert_(xm[0].max().mask)
+        assert_(xm[0].max(0).mask)
+        assert_(xm[0].max(-1).mask)
+        assert_equal(xm.min().filled(), -10.)
+        assert_(xm[0].min().mask)
+        assert_(xm[0].min(0).mask)
+        assert_(xm[0].min(-1).mask)
+        assert_equal(np.ptp(xm).filled(), 20.)
+        assert_(xm[0].ptp().mask)
+        assert_(xm[0].ptp(0).mask)
+        assert_(xm[0].ptp(-1).mask)
 
-#        x = array([1, 2, 3], mask=True)
-#        assert_(x.min() is masked)
-#        assert_(x.max() is masked)
-#        assert_(x.ptp() is masked)
+        x = MaskedArray([1, 2, 3], mask=True)
+        assert_(x.min().mask)
+        assert_(x.max().mask)
+        assert_(np.ptp(x).mask)
 
 #    def test_addsumprod(self):
 #        # Tests add, sum, product.
