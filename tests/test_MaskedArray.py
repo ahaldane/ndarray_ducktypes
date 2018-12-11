@@ -1,3 +1,4 @@
+import pytest
 from numpy.testing import (
     assert_raises, assert_warns, suppress_warnings, assert_,
     assert_equal)
@@ -8,6 +9,10 @@ from functools import reduce
 import textwrap
 
 pi = np.pi
+
+# For parametrized numeric testing
+num_dts = [np.dtype(dt_) for dt_ in '?bhilqBHILQefdgFD']
+num_ids = [dt_.char for dt_ in num_dts]
 
 class TestMaskedArray(object):
     # Base test class for MaskedArrays.
@@ -1200,621 +1205,266 @@ class TestMaskedArrayArithmetic(object):
 #                el_by_el = [m1[name] != m2[name] for name in dt.names]
 #                assert_equal(array(el_by_el, dtype=bool).any(), ne_expected)
 
-#    @pytest.mark.parametrize('dt', ['S', 'U'])
-#    @pytest.mark.parametrize('fill', [None, 'A'])
-#    def test_eq_for_strings(self, dt, fill):
-#        # Test the equality of structured arrays
-#        a = MaskedArray(['a', 'b'], dtype=dt, mask=[0, 1], fill_value=fill)
-
-#        test = (a == a)
-#        assert_equal(test.data, [True, True])
-#        assert_equal(test.mask, [False, True])
-#        assert_(test.fill_value == True)
-
-#        test = (a == a[0])
-#        assert_equal(test.data, [True, False])
-#        assert_equal(test.mask, [False, True])
-#        assert_(test.fill_value == True)
-
-#        b = MaskedArray(['a', 'b'], dtype=dt, mask=[1, 0], fill_value=fill)
-#        test = (a == b)
-#        assert_equal(test.data, [False, False])
-#        assert_equal(test.mask, [True, True])
-#        assert_(test.fill_value == True)
-
-#        # test = (a[0] == b)  # doesn't work in Python2
-#        test = (b == a[0])
-#        assert_equal(test.data, [False, False])
-#        assert_equal(test.mask, [True, False])
-#        assert_(test.fill_value == True)
-
-#    @pytest.mark.parametrize('dt', ['S', 'U'])
-#    @pytest.mark.parametrize('fill', [None, 'A'])
-#    def test_ne_for_strings(self, dt, fill):
-#        # Test the equality of structured arrays
-#        a = MaskedArray(['a', 'b'], dtype=dt, mask=[0, 1], fill_value=fill)
-
-#        test = (a != a)
-#        assert_equal(test.data, [False, False])
-#        assert_equal(test.mask, [False, True])
-#        assert_(test.fill_value == True)
-
-#        test = (a != a[0])
-#        assert_equal(test.data, [False, True])
-#        assert_equal(test.mask, [False, True])
-#        assert_(test.fill_value == True)
-
-#        b = MaskedArray(['a', 'b'], dtype=dt, mask=[1, 0], fill_value=fill)
-#        test = (a != b)
-#        assert_equal(test.data, [True, True])
-#        assert_equal(test.mask, [True, True])
-#        assert_(test.fill_value == True)
-
-#        # test = (a[0] != b)  # doesn't work in Python2
-#        test = (b != a[0])
-#        assert_equal(test.data, [True, True])
-#        assert_equal(test.mask, [True, False])
-#        assert_(test.fill_value == True)
-
-#    @pytest.mark.parametrize('dt1', num_dts, ids=num_ids)
-#    @pytest.mark.parametrize('dt2', num_dts, ids=num_ids)
-#    @pytest.mark.parametrize('fill', [None, 1])
-#    def test_eq_for_numeric(self, dt1, dt2, fill):
-#        # Test the equality of structured arrays
-#        a = MaskedArray([0, 1], dtype=dt1, mask=[0, 1], fill_value=fill)
-
-#        test = (a == a)
-#        assert_equal(test.data, [True, True])
-#        assert_equal(test.mask, [False, True])
-#        assert_(test.fill_value == True)
-
-#        test = (a == a[0])
-#        assert_equal(test.data, [True, False])
-#        assert_equal(test.mask, [False, True])
-#        assert_(test.fill_value == True)
-
-#        b = MaskedArray([0, 1], dtype=dt2, mask=[1, 0], fill_value=fill)
-#        test = (a == b)
-#        assert_equal(test.data, [False, False])
-#        assert_equal(test.mask, [True, True])
-#        assert_(test.fill_value == True)
-
-#        # test = (a[0] == b)  # doesn't work in Python2
-#        test = (b == a[0])
-#        assert_equal(test.data, [False, False])
-#        assert_equal(test.mask, [True, False])
-#        assert_(test.fill_value == True)
-
-#    @pytest.mark.parametrize('dt1', num_dts, ids=num_ids)
-#    @pytest.mark.parametrize('dt2', num_dts, ids=num_ids)
-#    @pytest.mark.parametrize('fill', [None, 1])
-#    def test_ne_for_numeric(self, dt1, dt2, fill):
-#        # Test the equality of structured arrays
-#        a = MaskedArray([0, 1], dtype=dt1, mask=[0, 1], fill_value=fill)
-
-#        test = (a != a)
-#        assert_equal(test.data, [False, False])
-#        assert_equal(test.mask, [False, True])
-#        assert_(test.fill_value == True)
-
-#        test = (a != a[0])
-#        assert_equal(test.data, [False, True])
-#        assert_equal(test.mask, [False, True])
-#        assert_(test.fill_value == True)
-
-#        b = MaskedArray([0, 1], dtype=dt2, mask=[1, 0], fill_value=fill)
-#        test = (a != b)
-#        assert_equal(test.data, [True, True])
-#        assert_equal(test.mask, [True, True])
-#        assert_(test.fill_value == True)
-
-#        # test = (a[0] != b)  # doesn't work in Python2
-#        test = (b != a[0])
-#        assert_equal(test.data, [True, True])
-#        assert_equal(test.mask, [True, False])
-#        assert_(test.fill_value == True)
-
-#    def test_eq_with_None(self):
-#        # Really, comparisons with None should not be done, but check them
-#        # anyway. Note that pep8 will flag these tests.
-#        # Deprecation is in place for arrays, and when it happens this
-#        # test will fail (and have to be changed accordingly).
-
-#        # With partial mask
-#        with suppress_warnings() as sup:
-#            sup.filter(FutureWarning, "Comparison to `None`")
-#            a = MaskedArray([None, 1], mask=[0, 1])
-#            assert_equal(a == None, MaskedArray([True, False], mask=[0, 1]))
-#            assert_equal(a.data == None, [True, False])
-#            assert_equal(a != None, MaskedArray([False, True], mask=[0, 1]))
-#            # With nomask
-#            a = MaskedArray([None, 1], mask=False)
-#            assert_equal(a == None, [True, False])
-#            assert_equal(a != None, [False, True])
-#            # With complete mask
-#            a = MaskedArray([None, 2], mask=True)
-#            assert_equal(a == None, MaskedArray([False, True], mask=True))
-#            assert_equal(a != None, MaskedArray([True, False], mask=True))
-#            # Fully masked, even comparison to None should return "masked"
-#            a = masked
-#            assert_equal(a == None, masked)
-
-#    def test_eq_with_scalar(self):
-#        a = MaskedArray(1)
-#        assert_equal(a == 1, True)
-#        assert_equal(a == 0, False)
-#        assert_equal(a != 1, False)
-#        assert_equal(a != 0, True)
-#        b = MaskedArray(1, mask=True)
-#        assert_equal(b == 0, masked)
-#        assert_equal(b == 1, masked)
-#        assert_equal(b != 0, masked)
-#        assert_equal(b != 1, masked)
-
-#    def test_eq_different_dimensions(self):
-#        m1 = MaskedArray([1, 1], mask=[0, 1])
-#        # test comparison with both masked and regular arrays.
-#        for m2 in (array([[0, 1], [1, 2]]),
-#                   np.array([[0, 1], [1, 2]])):
-#            test = (m1 == m2)
-#            assert_equal(test.data, [[False, False],
-#                                     [True, False]])
-#            assert_equal(test.mask, [[False, True],
-#                                     [False, True]])
-
-#    def test_numpyarithmetics(self):
-#        # Check that the mask is not back-propagated when using numpy functions
-#        a = MaskedArray([-1, 0, 1, 2, 3], mask=[0, 0, 0, 0, 1])
-#        control = MaskedArray([np.nan, np.nan, 0, np.log(2), -1],
-#                               mask=[1, 1, 0, 0, 1])
-
-#        test = log(a)
-#        assert_equal(test, control)
-#        assert_equal(test.mask, control.mask)
-#        assert_equal(a.mask, [0, 0, 0, 0, 1])
-
-#        test = np.log(a)
-#        assert_equal(test, control)
-#        assert_equal(test.mask, control.mask)
-#        assert_equal(a.mask, [0, 0, 0, 0, 1])
-
-
-#class TestMaskedArrayAttributes(object):
-#    def test_flat(self):
-#        # Test that flat can return all types of items [#4585, #4615]
-#        # test 2-D record array
-#        # ... on structured array w/ masked records
-#        x = MaskedArray([[(1, 1.1, 'one'), (2, 2.2, 'two'), (3, 3.3, 'thr')],
-#                   [(4, 4.4, 'fou'), (5, 5.5, 'fiv'), (6, 6.6, 'six')]],
-#                  dtype=[('a', int), ('b', float), ('c', '|S8')])
-#        x['a'][0, 1] = masked
-#        x['b'][1, 0] = masked
-#        x['c'][0, 2] = masked
-#        x[-1, -1] = masked
-#        xflat = x.flat
-#        assert_equal(xflat[0], x[0, 0])
-#        assert_equal(xflat[1], x[0, 1])
-#        assert_equal(xflat[2], x[0, 2])
-#        assert_equal(xflat[:3], x[0])
-#        assert_equal(xflat[3], x[1, 0])
-#        assert_equal(xflat[4], x[1, 1])
-#        assert_equal(xflat[5], x[1, 2])
-#        assert_equal(xflat[3:], x[1])
-#        assert_equal(xflat[-1], x[-1, -1])
-#        i = 0
-#        j = 0
-#        for xf in xflat:
-#            assert_equal(xf, x[j, i])
-#            i += 1
-#            if i >= x.shape[-1]:
-#                i = 0
-#                j += 1
-
-#    def test_assign_dtype(self):
-#        # check that the mask's dtype is updated when dtype is changed
-#        a = np.zeros(4, dtype='f4,i4')
-
-#        m = np.ma.array(a)
-#        m.dtype = np.dtype('f4')
-#        repr(m)  # raises?
-#        assert_equal(m.dtype, np.dtype('f4'))
-
-#        # check that dtype changes that change shape of mask too much
-#        # are not allowed
-#        def assign():
-#            m = np.ma.array(a)
-#            m.dtype = np.dtype('f8')
-#        assert_raises(ValueError, assign)
-
-#        b = a.view(dtype='f4', type=np.ma.MaskedArray)  # raises?
-#        assert_equal(b.dtype, np.dtype('f4'))
-
-#        # check that nomask is preserved
-#        a = np.zeros(4, dtype='f4')
-#        m = np.ma.array(a)
-#        m.dtype = np.dtype('f4,i4')
-#        assert_equal(m.dtype, np.dtype('f4,i4'))
-#        assert_equal(m._mask, np.ma.nomask)
-
-
-#class TestFillingValues(object):
-
-#    def test_check_on_scalar(self):
-#        # Test _check_fill_value set to valid and invalid values
-#        _check_fill_value = np.ma.core._check_fill_value
-
-#        fval = _check_fill_value(0, int)
-#        assert_equal(fval, 0)
-#        fval = _check_fill_value(None, int)
-#        assert_equal(fval, default_fill_value(0))
-
-#        fval = _check_fill_value(0, "|S3")
-#        assert_equal(fval, b"0")
-#        fval = _check_fill_value(None, "|S3")
-#        assert_equal(fval, default_fill_value(b"camelot!"))
-#        assert_raises(TypeError, _check_fill_value, 1e+20, int)
-#        assert_raises(TypeError, _check_fill_value, 'stuff', int)
-
-#    def test_check_on_fields(self):
-#        # Tests _check_fill_value with records
-#        _check_fill_value = np.ma.core._check_fill_value
-#        ndtype = [('a', int), ('b', float), ('c', "|S3")]
-#        # A check on a list should return a single record
-#        fval = _check_fill_value([-999, -12345678.9, "???"], ndtype)
-#        assert_(isinstance(fval, ndarray))
-#        assert_equal(fval.item(), [-999, -12345678.9, b"???"])
-#        # A check on None should output the defaults
-#        fval = _check_fill_value(None, ndtype)
-#        assert_(isinstance(fval, ndarray))
-#        assert_equal(fval.item(), [default_fill_value(0),
-#                                   default_fill_value(0.),
-#                                   asbytes(default_fill_value("0"))])
-#        #.....Using a structured type as fill_value should work
-#        fill_val = np.array((-999, -12345678.9, "???"), dtype=ndtype)
-#        fval = _check_fill_value(fill_val, ndtype)
-#        assert_(isinstance(fval, ndarray))
-#        assert_equal(fval.item(), [-999, -12345678.9, b"???"])
-
-#        #.....Using a flexible type w/ a different type shouldn't matter
-#        # BEHAVIOR in 1.5 and earlier, and 1.13 and later: match structured
-#        # types by position
-#        fill_val = np.array((-999, -12345678.9, "???"),
-#                            dtype=[("A", int), ("B", float), ("C", "|S3")])
-#        fval = _check_fill_value(fill_val, ndtype)
-#        assert_(isinstance(fval, ndarray))
-#        assert_equal(fval.item(), [-999, -12345678.9, b"???"])
-
-#        #.....Using an object-array shouldn't matter either
-#        fill_val = np.ndarray(shape=(1,), dtype=object)
-#        fill_val[0] = (-999, -12345678.9, b"???")
-#        fval = _check_fill_value(fill_val, object)
-#        assert_(isinstance(fval, ndarray))
-#        assert_equal(fval.item(), [-999, -12345678.9, b"???"])
-#        # NOTE: This test was never run properly as "fill_value" rather than
-#        # "fill_val" was assigned.  Written properly, it fails.
-#        #fill_val = np.array((-999, -12345678.9, "???"))
-#        #fval = _check_fill_value(fill_val, ndtype)
-#        #assert_(isinstance(fval, ndarray))
-#        #assert_equal(fval.item(), [-999, -12345678.9, b"???"])
-#        #.....One-field-only flexible type should work as well
-#        ndtype = [("a", int)]
-#        fval = _check_fill_value(-999999999, ndtype)
-#        assert_(isinstance(fval, ndarray))
-#        assert_equal(fval.item(), (-999999999,))
-
-#    def test_fillvalue_conversion(self):
-#        # Tests the behavior of fill_value during conversion
-#        # We had a tailored comment to make sure special attributes are
-#        # properly dealt with
-#        a = MaskedArray([b'3', b'4', b'5'])
-#        a._optinfo.update({'comment':"updated!"})
-
-#        b = MaskedArray(a, dtype=int)
-#        assert_equal(b._data, [3, 4, 5])
-#        assert_equal(b.fill_value, default_fill_value(0))
-
-#        b = MaskedArray(a, dtype=float)
-#        assert_equal(b._data, [3, 4, 5])
-#        assert_equal(b.fill_value, default_fill_value(0.))
-
-#        b = a.astype(int)
-#        assert_equal(b._data, [3, 4, 5])
-#        assert_equal(b.fill_value, default_fill_value(0))
-#        assert_equal(b._optinfo['comment'], "updated!")
-
-#        b = a.astype([('a', '|S3')])
-#        assert_equal(b['a']._data, a._data)
-#        assert_equal(b['a'].fill_value, a.fill_value)
-
-#    def test_default_fill_value(self):
-#        # check all calling conventions
-#        f1 = default_fill_value(1.)
-#        f2 = default_fill_value(np.array(1.))
-#        f3 = default_fill_value(np.array(1.).dtype)
-#        assert_equal(f1, f2)
-#        assert_equal(f1, f3)
-
-#    def test_default_fill_value_structured(self):
-#        fields = MaskedArray([(1, 1, 1)],
-#                      dtype=[('i', int), ('s', '|S8'), ('f', float)])
-
-#        f1 = default_fill_value(fields)
-#        f2 = default_fill_value(fields.dtype)
-#        expected = np.array((default_fill_value(0),
-#                             default_fill_value('0'),
-#                             default_fill_value(0.)), dtype=fields.dtype)
-#        assert_equal(f1, expected)
-#        assert_equal(f2, expected)
-
-#    def test_default_fill_value_void(self):
-#        dt = np.dtype([('v', 'V7')])
-#        f = default_fill_value(dt)
-#        assert_equal(f['v'], np.array(default_fill_value(dt['v']), dt['v']))
-
-#    def test_fillvalue(self):
-#        # Yet more fun with the fill_value
-#        data = MaskedArray([1, 2, 3], fill_value=-999)
-#        series = data[[0, 2, 1]]
-#        assert_equal(series._fill_value, data._fill_value)
-
-#        mtype = [('f', float), ('s', '|S3')]
-#        x = MaskedArray([(1, 'a'), (2, 'b'), (pi, 'pi')], dtype=mtype)
-#        x.fill_value = 999
-#        assert_equal(x.fill_value.item(), [999., b'999'])
-#        assert_equal(x['f'].fill_value, 999)
-#        assert_equal(x['s'].fill_value, b'999')
-
-#        x.fill_value = (9, '???')
-#        assert_equal(x.fill_value.item(), (9, b'???'))
-#        assert_equal(x['f'].fill_value, 9)
-#        assert_equal(x['s'].fill_value, b'???')
-
-#        x = MaskedArray([1, 2, 3.1])
-#        x.fill_value = 999
-#        assert_equal(np.asarray(x.fill_value).dtype, float)
-#        assert_equal(x.fill_value, 999.)
-#        assert_equal(x._fill_value, np.array(999.))
-
-#    def test_fillvalue_exotic_dtype(self):
-#        # Tests yet more exotic flexible dtypes
-#        _check_fill_value = np.ma.core._check_fill_value
-#        ndtype = [('i', int), ('s', '|S8'), ('f', float)]
-#        control = np.array((default_fill_value(0),
-#                            default_fill_value('0'),
-#                            default_fill_value(0.),),
-#                           dtype=ndtype)
-#        assert_equal(_check_fill_value(None, ndtype), control)
-#        # The shape shouldn't matter
-#        ndtype = [('f0', float, (2, 2))]
-#        control = np.array((default_fill_value(0.),),
-#                           dtype=[('f0', float)]).astype(ndtype)
-#        assert_equal(_check_fill_value(None, ndtype), control)
-#        control = np.array((0,), dtype=[('f0', float)]).astype(ndtype)
-#        assert_equal(_check_fill_value(0, ndtype), control)
-
-#        ndtype = np.dtype("int, (2,3)float, float")
-#        control = np.array((default_fill_value(0),
-#                            default_fill_value(0.),
-#                            default_fill_value(0.),),
-#                           dtype="int, float, float").astype(ndtype)
-#        test = _check_fill_value(None, ndtype)
-#        assert_equal(test, control)
-#        control = np.array((0, 0, 0), dtype="int, float, float").astype(ndtype)
-#        assert_equal(_check_fill_value(0, ndtype), control)
-#        # but when indexing, fill value should become scalar not tuple
-#        # See issue #6723
-#        M = MaskedArray(control)
-#        assert_equal(M["f1"].fill_value.ndim, 0)
-
-#    def test_fillvalue_datetime_timedelta(self):
-#        # Test default fillvalue for datetime64 and timedelta64 types.
-#        # See issue #4476, this would return '?' which would cause errors
-#        # elsewhere
-
-#        for timecode in ("as", "fs", "ps", "ns", "us", "ms", "s", "m",
-#                         "h", "D", "W", "M", "Y"):
-#            control = numpy.datetime64("NaT", timecode)
-#            test = default_fill_value(numpy.dtype("<M8[" + timecode + "]"))
-#            np.testing.assert_equal(test, control)
-
-#            control = numpy.timedelta64("NaT", timecode)
-#            test = default_fill_value(numpy.dtype("<m8[" + timecode + "]"))
-#            np.testing.assert_equal(test, control)
-
-#    def test_extremum_fill_value(self):
-#        # Tests extremum fill values for flexible type.
-#        a = MaskedArray([(1, (2, 3)), (4, (5, 6))],
-#                  dtype=[('A', int), ('B', [('BA', int), ('BB', int)])])
-#        test = a.fill_value
-#        assert_equal(test.dtype, a.dtype)
-#        assert_equal(test['A'], default_fill_value(a['A']))
-#        assert_equal(test['B']['BA'], default_fill_value(a['B']['BA']))
-#        assert_equal(test['B']['BB'], default_fill_value(a['B']['BB']))
-
-#        test = minimum_fill_value(a)
-#        assert_equal(test.dtype, a.dtype)
-#        assert_equal(test[0], minimum_fill_value(a['A']))
-#        assert_equal(test[1][0], minimum_fill_value(a['B']['BA']))
-#        assert_equal(test[1][1], minimum_fill_value(a['B']['BB']))
-#        assert_equal(test[1], minimum_fill_value(a['B']))
-
-#        test = maximum_fill_value(a)
-#        assert_equal(test.dtype, a.dtype)
-#        assert_equal(test[0], maximum_fill_value(a['A']))
-#        assert_equal(test[1][0], maximum_fill_value(a['B']['BA']))
-#        assert_equal(test[1][1], maximum_fill_value(a['B']['BB']))
-#        assert_equal(test[1], maximum_fill_value(a['B']))
-
-#    def test_extremum_fill_value_subdtype(self):
-#        a = MaskedArray(([2, 3, 4],), dtype=[('value', np.int8, 3)])
-
-#        test = minimum_fill_value(a)
-#        assert_equal(test.dtype, a.dtype)
-#        assert_equal(test[0], np.full(3, minimum_fill_value(a['value'])))
-
-#        test = maximum_fill_value(a)
-#        assert_equal(test.dtype, a.dtype)
-#        assert_equal(test[0], np.full(3, maximum_fill_value(a['value'])))
-
-#    def test_fillvalue_individual_fields(self):
-#        # Test setting fill_value on individual fields
-#        ndtype = [('a', int), ('b', int)]
-#        # Explicit fill_value
-#        a = MaskedArray(list(zip([1, 2, 3], [4, 5, 6])),
-#                  fill_value=(-999, -999), dtype=ndtype)
-#        aa = a['a']
-#        aa.set_fill_value(10)
-#        assert_equal(aa._fill_value, np.array(10))
-#        assert_equal(tuple(a.fill_value), (10, -999))
-#        a.fill_value['b'] = -10
-#        assert_equal(tuple(a.fill_value), (10, -10))
-#        # Implicit fill_value
-#        t = MaskedArray(list(zip([1, 2, 3], [4, 5, 6])), dtype=ndtype)
-#        tt = t['a']
-#        tt.set_fill_value(10)
-#        assert_equal(tt._fill_value, np.array(10))
-#        assert_equal(tuple(t.fill_value), (10, default_fill_value(0)))
-
-#    def test_fillvalue_implicit_structured_array(self):
-#        # Check that fill_value is always defined for structured arrays
-#        ndtype = ('b', float)
-#        adtype = ('a', float)
-#        a = MaskedArray([(1.,), (2.,)], mask=[(False,), (False,)],
-#                  fill_value=(np.nan,), dtype=np.dtype([adtype]))
-#        b = empty(a.shape, dtype=[adtype, ndtype])
-#        b['a'] = a['a']
-#        b['a'].set_fill_value(a['a'].fill_value)
-#        f = b._fill_value[()]
-#        assert_(np.isnan(f[0]))
-#        assert_equal(f[-1], default_fill_value(1.))
-
-#    def test_fillvalue_as_arguments(self):
-#        # Test adding a fill_value parameter to empty/ones/zeros
-#        a = empty(3, fill_value=999.)
-#        assert_equal(a.fill_value, 999.)
-
-#        a = ones(3, fill_value=999., dtype=float)
-#        assert_equal(a.fill_value, 999.)
-
-#        a = zeros(3, fill_value=0., dtype=complex)
-#        assert_equal(a.fill_value, 0.)
-
-#        a = identity(3, fill_value=0., dtype=complex)
-#        assert_equal(a.fill_value, 0.)
-
-#    def test_shape_argument(self):
-#        # Test that shape can be provides as an argument
-#        # GH issue 6106
-#        a = empty(shape=(3, ))
-#        assert_equal(a.shape, (3, ))
-
-#        a = ones(shape=(3, ), dtype=float)
-#        assert_equal(a.shape, (3, ))
-
-#        a = zeros(shape=(3, ), dtype=complex)
-#        assert_equal(a.shape, (3, ))
-
-#    def test_fillvalue_in_view(self):
-#        # Test the behavior of fill_value in view
-
-#        # Create initial masked array
-#        x = MaskedArray([1, 2, 3], fill_value=1, dtype=np.int64)
-
-#        # Check that fill_value is preserved by default
-#        y = x.view()
-#        assert_(y.fill_value == 1)
-
-#        # Check that fill_value is preserved if dtype is specified and the
-#        # dtype is an ndarray sub-class and has a _fill_value attribute
-#        y = x.view(MaskedArray)
-#        assert_(y.fill_value == 1)
-
-#        # Check that fill_value is preserved if type is specified and the
-#        # dtype is an ndarray sub-class and has a _fill_value attribute (by
-#        # default, the first argument is dtype, not type)
-#        y = x.view(type=MaskedArray)
-#        assert_(y.fill_value == 1)
-
-#        # Check that code does not crash if passed an ndarray sub-class that
-#        # does not have a _fill_value attribute
-#        y = x.view(np.ndarray)
-#        y = x.view(type=np.ndarray)
-
-#        # Check that fill_value can be overridden with view
-#        y = x.view(MaskedArray, fill_value=2)
-#        assert_(y.fill_value == 2)
-
-#        # Check that fill_value can be overridden with view (using type=)
-#        y = x.view(type=MaskedArray, fill_value=2)
-#        assert_(y.fill_value == 2)
-
-#        # Check that fill_value gets reset if passed a dtype but not a
-#        # fill_value. This is because even though in some cases one can safely
-#        # cast the fill_value, e.g. if taking an int64 view of an int32 array,
-#        # in other cases, this cannot be done (e.g. int32 view of an int64
-#        # array with a large fill_value).
-#        y = x.view(dtype=np.int32)
-#        assert_(y.fill_value == 999999)
-
-#    def test_fillvalue_bytes_or_str(self):
-#        # Test whether fill values work as expected for structured dtypes
-#        # containing bytes or str.  See issue #7259.
-#        a = empty(shape=(3, ), dtype="(2)3S,(2)3U")
-#        assert_equal(a["f0"].fill_value, default_fill_value(b"spam"))
-#        assert_equal(a["f1"].fill_value, default_fill_value("eggs"))
-
-
-#class TestUfuncs(object):
-#    # Test class for the application of ufuncs on MaskedArrays.
-
-#    def setup(self):
-#        # Base data definition.
-#        self.d = (array([1.0, 0, -1, pi / 2] * 2, mask=[0, 1] + [0] * 6),
-#                  MaskedArray([1.0, 0, -1, pi / 2] * 2, mask=[1, 0] + [0] * 6),)
-#        self.err_status = np.geterr()
-#        np.seterr(divide='ignore', invalid='ignore')
-
-#    def teardown(self):
-#        np.seterr(**self.err_status)
-
-#    def test_testUfuncRegression(self):
-#        # Tests new ufuncs on MaskedArrays.
-#        for f in ['sqrt', 'log', 'log10', 'exp', 'conjugate',
-#                  'sin', 'cos', 'tan',
-#                  'arcsin', 'arccos', 'arctan',
-#                  'sinh', 'cosh', 'tanh',
-#                  'arcsinh',
-#                  'arccosh',
-#                  'arctanh',
-#                  'absolute', 'fabs', 'negative',
-#                  'floor', 'ceil',
-#                  'logical_not',
-#                  'add', 'subtract', 'multiply',
-#                  'divide', 'true_divide', 'floor_divide',
-#                  'remainder', 'fmod', 'hypot', 'arctan2',
-#                  'equal', 'not_equal', 'less_equal', 'greater_equal',
-#                  'less', 'greater',
-#                  'logical_and', 'logical_or', 'logical_xor',
-#                  ]:
-#            try:
-#                uf = getattr(umath, f)
-#            except AttributeError:
-#                uf = getattr(fromnumeric, f)
-#            mf = getattr(numpy.ma.core, f)
-#            args = self.d[:uf.nin]
-#            ur = uf(*args)
-#            mr = mf(*args)
-#            assert_equal(ur.filled(0), mr.filled(0), f)
-#            assert_mask_equal(ur.mask, mr.mask, err_msg=f)
-
-#    def test_reduce(self):
-#        # Tests reduce on MaskedArrays.
-#        a = self.d[0]
-#        assert_(not alltrue(a, axis=0))
-#        assert_(sometrue(a, axis=0))
-#        assert_equal(sum(a[:3], axis=0), 0)
-#        assert_equal(product(a, axis=0), 0)
-#        assert_equal(add.reduce(a), pi)
+    @pytest.mark.parametrize('dt', ['S', 'U'])
+    def test_eq_for_strings(self, dt):
+        # Test the equality of structured arrays
+        a = MaskedArray(['a', 'b'], dtype=dt, mask=[0, 1])
+
+        test = (a == a)
+        assert_equal(test.filled(), [True, False])
+        assert_equal(test.mask, [False, True])
+
+        test = (a == a[0])
+        assert_equal(test.filled(), [True, False])
+        assert_equal(test.mask, [False, True])
+
+        b = MaskedArray(['a', 'b'], dtype=dt, mask=[1, 0])
+        test = (a == b)
+        assert_equal(test.filled(), [False, False])
+        assert_equal(test.mask, [True, True])
+
+        # test = (a[0] == b)  # doesn't work in Python2
+        test = (b == a[0])
+        assert_equal(test.filled(), [False, False])
+        assert_equal(test.mask, [True, False])
+
+    @pytest.mark.parametrize('dt', ['S', 'U'])
+    def test_ne_for_strings(self, dt):
+        # Test the equality of structured arrays
+        a = MaskedArray(['a', 'b'], dtype=dt, mask=[0, 1])
+
+        test = (a != a)
+        assert_equal(test.filled(), [False, False])
+        assert_equal(test.mask, [False, True])
+
+        test = (a != a[0])
+        assert_equal(test.filled(), [False, False])
+        assert_equal(test.mask, [False, True])
+
+        b = MaskedArray(['a', 'b'], dtype=dt, mask=[1, 0])
+        test = (a != b)
+        assert_equal(test.filled(), [False, False])
+        assert_equal(test.mask, [True, True])
+
+        # test = (a[0] != b)  # doesn't work in Python2
+        test = (b != a[0])
+        assert_equal(test.filled(), [False, True])
+        assert_equal(test.mask, [True, False])
+
+    @pytest.mark.parametrize('dt1', num_dts, ids=num_ids)
+    @pytest.mark.parametrize('dt2', num_dts, ids=num_ids)
+    def test_eq_for_numeric(self, dt1, dt2):
+        # Test the equality of structured arrays
+        a = MaskedArray([0, 1], dtype=dt1, mask=[0, 1])
+
+        test = (a == a)
+        assert_equal(test.filled(), [True, False])
+        assert_equal(test.mask, [False, True])
+
+        test = (a == a[0])
+        assert_equal(test.filled(), [True, False])
+        assert_equal(test.mask, [False, True])
+
+        b = MaskedArray([0, 1], dtype=dt2, mask=[1, 0])
+        test = (a == b)
+        assert_equal(test.filled(), [False, False])
+        assert_equal(test.mask, [True, True])
+
+        # test = (a[0] == b)  # doesn't work in Python2
+        test = (b == a[0])
+        assert_equal(test.filled(), [False, False])
+        assert_equal(test.mask, [True, False])
+
+    @pytest.mark.parametrize('dt1', num_dts, ids=num_ids)
+    @pytest.mark.parametrize('dt2', num_dts, ids=num_ids)
+    def test_ne_for_numeric(self, dt1, dt2):
+        # Test the equality of structured arrays
+        a = MaskedArray([0, 1], dtype=dt1, mask=[0, 1])
+
+        test = (a != a)
+        assert_equal(test.filled(), [False, False])
+        assert_equal(test.mask, [False, True])
+
+        test = (a != a[0])
+        assert_equal(test.filled(), [False, False])
+        assert_equal(test.mask, [False, True])
+
+        b = MaskedArray([0, 1], dtype=dt2, mask=[1, 0])
+        test = (a != b)
+        assert_equal(test.filled(), [False, False])
+        assert_equal(test.mask, [True, True])
+
+        # test = (a[0] != b)  # doesn't work in Python2
+        test = (b != a[0])
+        assert_equal(test.filled(), [False, True])
+        assert_equal(test.mask, [True, False])
+
+    def test_eq_with_None(self):
+        # Really, comparisons with None should not be done, but check them
+        # anyway. Note that pep8 will flag these tests.
+        # Deprecation is in place for arrays, and when it happens this
+        # test will fail (and have to be changed accordingly).
+
+        # With partial mask
+        with suppress_warnings() as sup:
+            sup.filter(FutureWarning, "Comparison to `None`")
+            a = MaskedArray([None, 1], mask=[0, 1])
+            assert_equal(a == None, MaskedArray([True, False], mask=[0, 1]))
+            assert_equal(a.filled() == None, [True, False])
+            assert_equal(a != None, MaskedArray([False, True], mask=[0, 1]))
+            # With nomask
+            a = MaskedArray([None, 1], mask=False)
+            assert_equal(a == None, [True, False])
+            assert_equal(a != None, [False, True])
+            # With complete mask
+            a = MaskedArray([None, 2], mask=True)
+            assert_equal(a == None, MaskedArray([False, True], mask=True))
+            assert_equal(a != None, MaskedArray([True, False], mask=True))
+            # Fully masked, even comparison to None should return "masked"
+            a[:] = X
+            assert_((a == None).mask.all())
+
+    def test_eq_with_scalar(self):
+        a = MaskedArray(1)
+        assert_equal((a == 1).filled(), True)
+        assert_equal((a == 0).filled(), False)
+        assert_equal((a != 1).filled(), False)
+        assert_equal((a != 0).filled(), True)
+        b = MaskedArray(1, mask=True)
+        assert_((b == 0).mask.all())
+        assert_((b == 1).mask.all())
+        assert_((b != 0).mask.all())
+        assert_((b != 1).mask.all())
+
+    def test_eq_different_dimensions(self):
+        m1 = MaskedArray([1, 1], mask=[0, 1])
+        # test comparison with both masked and regular arrays.
+        for m2 in (MaskedArray([[0, 1], [1, 2]]),
+                   np.array([[0, 1], [1, 2]])):
+            test = (m1 == m2)
+            assert_equal(test.filled(), [[False, False],
+                                         [True, False]])
+            assert_equal(test.mask, [[False, True],
+                                     [False, True]])
+
+    def test_numpyarithmetics(self):
+        # Check that the mask is not back-propagated when using numpy functions
+        a = MaskedArray([-1, 0, 1, 2, 3], mask=[0, 0, 0, 0, 1])
+        control = MaskedArray([np.nan, np.nan, 0, np.log(2), -1],
+                               mask=[1, 1, 0, 0, 1])
+
+        test = np.log(a)
+        assert_equal(test, control)
+        assert_equal(test.mask, control.mask)
+        assert_equal(a.mask, [0, 0, 0, 0, 1])
+
+
+class TestMaskedArrayAttributes(object):
+    def test_flat(self):
+        # Test that flat can return all types of items [#4585, #4615]
+        # test 2-D record array
+        # ... on structured array w/ masked records
+        x = MaskedArray([[(1, 1.1, 'one'), (2, 2.2, 'two'), (3, 3.3, 'thr')],
+                         [(4, 4.4, 'fou'), (5, 5.5, 'fiv'), (6, 6.6, 'six')]],
+                        dtype=[('a', int), ('b', float), ('c', '|S8')])
+        x['a'][0, 1] = X
+        x['b'][1, 0] = X
+        x['c'][0, 2] = X
+        x[-1, -1] = X
+        xflat = x.flat
+        assert_equal(xflat[0], x[0, 0])
+        assert_equal(xflat[1], x[0, 1])
+        assert_equal(xflat[2], x[0, 2])
+        assert_equal(xflat[:3], x[0])
+        assert_equal(xflat[3], x[1, 0])
+        assert_equal(xflat[4], x[1, 1])
+        assert_equal(xflat[5], x[1, 2])
+        assert_equal(xflat[3:], x[1])
+        assert_equal(xflat[-1], x[-1, -1])
+        i = 0
+        j = 0
+        for xf in xflat:
+            assert_equal(xf, x[j, i])
+            i += 1
+            if i >= x.shape[-1]:
+                i = 0
+                j += 1
+
+    def test_assign_dtype(self):
+        # check that the mask's dtype is updated when dtype is changed
+        a = np.zeros(4, dtype='f4,i4')
+
+        m = MaskedArray(a)
+        m.dtype = np.dtype('f8')
+        repr(m)  # raises?
+        assert_equal(m.dtype, np.dtype('f8'))
+
+        # check that dtype changes that change shape of mask are not allowed
+        def assign():
+            m = MaskedArray(a)
+            m.dtype = np.dtype('f4')
+        assert_raises(ValueError, assign)
+
+        # check that nomask is preserved
+        a = MaskedArray(np.zeros(4, dtype='f8'))
+        b = a.copy()
+        b.dtype = np.dtype('f4,i4')
+        assert_equal(b.dtype, np.dtype('f4,i4'))
+        assert_equal(b._mask, a._mask)
+
+
+class TestFillingValues(object):
+    def test_extremum_fill_value(self):
+        # Tests extremum fill values for flexible type.
+        a = MaskedArray([(1, (2, 3)), (4, (5, 6))],
+                        mask=[0,1],
+                        dtype=[('A', int), ('B', [('BA', int), ('BB', int)])])
+        assert_raises(ValueError, a.filled, minmax='min')
+
+class TestUfuncs(object):
+    # Test class for the application of ufuncs on MaskedArrays.
+
+    def setup(self):
+        # Base data definition.
+        self.d = (MaskedArray([1.0, 0, -1, pi / 2] * 2, mask=[0, 1] + [0] * 6),
+                  MaskedArray([1.0, 0, -1, pi / 2] * 2, mask=[1, 0] + [0] * 6),)
+        self.err_status = np.geterr()
+        np.seterr(divide='ignore', invalid='ignore')
+
+    def teardown(self):
+        np.seterr(**self.err_status)
+
+    def test_testUfuncRegression(self):
+        # Tests new ufuncs on MaskedArrays.
+        for f in ['sqrt', 'log', 'log10', 'exp', 'conjugate',
+                  'sin', 'cos', 'tan',
+                  'arcsin', 'arccos', 'arctan',
+                  'sinh', 'cosh', 'tanh',
+                  'arcsinh',
+                  'arccosh',
+                  'arctanh',
+                  'absolute', 'fabs', 'negative',
+                  'floor', 'ceil',
+                  'logical_not',
+                  'add', 'subtract', 'multiply',
+                  'divide', 'true_divide', 'floor_divide',
+                  'remainder', 'fmod', 'hypot', 'arctan2',
+                  'equal', 'not_equal', 'less_equal', 'greater_equal',
+                  'less', 'greater',
+                  'logical_and', 'logical_or', 'logical_xor',
+                  ]:
+            uf = getattr(np, f)
+            args = self.d[:uf.nin]
+            mr = uf(*args) # test no fail
+
+    #def test_reduce(self):
+    #    # Tests reduce on MaskedArrays.
+    #    a = self.d[0]
+    #    assert_(not (a, axis=0))
+    #    assert_(sometrue(a, axis=0))
+    #    assert_equal(np.sum(a[:3], axis=0), 0)
+    #    assert_equal(np.product(a, axis=0), 0)
+    #    assert_equal(np.add.reduce(a), pi)
 
 #    def test_minmax(self):
 #        # Tests extrema on MaskedArrays.

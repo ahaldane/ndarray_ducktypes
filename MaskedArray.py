@@ -16,19 +16,16 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
     # shared implementations for MaskedArray, MaskedScalar
 
     # override the NDArrayOperatorsMixin implementations for cmp ops, as
-    # currently those don't work for flexible types and fail on them.
+    # currently those don't work for flexible types.
     def _cmp_op(self, other, op):
         if other is X:
             db, mb = self._data.dtype.type(0), np.bool_(True)
         else:
             db, mb = getdata(other), getmask(other)
 
-        result = op(self._data, db)
-        m = self._mask | mb
-
-        if np.isscalar(result):
-            return MaskedScalar(result, m)
-        return MaskedArray(result, m)
+        data = op(self._data, db)
+        mask = self._mask | mb
+        return maskedarray_or_scalar(data, mask)
 
     def __lt__(self, other):
         return self._cmp_op(other, operator.lt)
@@ -81,7 +78,7 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
 
         return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
 
-    # why is this bad to do for __array_function__?
+    # XXX why is this bad to do for __array_function__?
     #def __array__(self):
     #    return self.filled()
 
@@ -96,15 +93,15 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
             else:
                 raise ValueError("minmax should be 'min' or 'max'")
 
-        # default is 0 for all types (*not* np.nan for inexact)
-        if fill_value is np._NoValue:
+            if fill_value is None:
+                raise ValueError("minmax not supported for dtype {}".format(
+                                  self.dtype))
+        elif fill_value is np._NoValue:
+            # default is 0 for all types (*not* np.nan for inexact)
             fill_value = 0
 
-        return fill_value
 
-    @property
-    def flat(self):
-        raise RuntimeError(".flat not supported by MaskedArray")
+        return fill_value
 
     @property
     def imag(self):
@@ -121,6 +118,10 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
     @real.setter
     def real(self, val):
         self.real[...] = val
+
+    @property
+    def flat(self):
+        return MaskedIterator(self)
 
 class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     def __init__(self, data, mask=None, dtype=None, copy=False,
@@ -165,7 +166,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
                                       order=order)
             elif (is_ndducktype(mask) and mask.shape == self._data.shape and
                     issubclass(mask.dtype.type, np.bool_)):
-                self._mask = np.array(mask, dtype, copy=copy, order=order,
+                self._mask = np.array(mask, copy=copy, order=order,
                                       subok=subok, ndmin=ndmin)
             else:
                 self._mask = np.empty(self._data.shape, dtype='bool')
@@ -242,6 +243,11 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
     @dtype.setter
     def dtype(self, dt):
+        dt = np.dtype(dt)
+
+        if self._data.dtype.itemsize != dt.itemsize:
+            raise ValueError("views of MaskedArrays cannot change the "
+                             "datatype's itemsize")
         self._data.dtype = dt
 
     @property
@@ -289,10 +295,11 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     def astype(self, dtype, order='K', casting='unsafe', subok=True, copy=True):
         result_data = self._data.astype(dtype, order, casting, subok, copy)
         result_mask = self._mask.astype(bool, order, casting, subok, copy)
+        # XXX compute copy in mask based on wheterh result_data is a copy?
         return MaskedArray(result_data, result_mask)
 
     # rename this to "X" to be shorter, since it is heavily used?
-    #      arr.X()     arr.X(0)   arr.filled()   arr.filled(0)
+    #   arr.X()  arr.filled()  arr.fillX()  arr.rX()
     def filled(self, fill_value=np._NoValue, minmax=None):
         # return a readonly view of data with masked elem filled in
         d = self._data.view()
@@ -549,12 +556,37 @@ def replace_X(data, dtype=None):
 
     return replace(data)
 
+class MaskedIterator:
+    def __init__(self, ma):
+        self.dataiter = ma._data.flat
+        self.maskiter = ma._mask.flat
+
+    def __iter__(self):
+        return self
+
+    def __getitem__(self, indx):
+        data = self.dataiter.__getitem__(indx)
+        mask = self.maskiter.__getitem__(indx)
+        return maskedarray_or_scalar(data, mask)
+
+    def __setitem__(self, index, value):
+        if value is X or (isinstance(value, MaskedScalar) and value.mask):
+            self.maskiter[index] = True
+        else:
+            self.dataiter[index] = getdata(value)
+            self.maskiter[index] = getmask(value)
+
+    def __next__(self):
+        return maskedarray_or_scalar(next(self.dataiter), next(self.maskiter))
+
+    next = __next__
+
 # carried over from numpy's MaskedArray, but naming is somewhat confusing
 # as the max_filler is actually the minimum value. Change?
 _max_filler = ntypes._minvals
-_max_filler.update([(k, -np.inf) for k in [np.float32, np.float64]])
+_max_filler.update([(k, -np.inf) for k in [np.float16, np.float32, np.float64]])
 _min_filler = ntypes._maxvals
-_min_filler.update([(k, +np.inf) for k in [np.float32, np.float64]])
+_min_filler.update([(k, +np.inf) for k in [np.float16, np.float32, np.float64]])
 if 'float128' in ntypes.typeDict:
     _max_filler.update([(np.float128, -np.inf)])
     _min_filler.update([(np.float128, +np.inf)])
@@ -598,7 +630,7 @@ def as_masked_fmt(formattercls):
             reslen = builtins.max(len(example_str), len(masked_str))
 
             # pad the columns to align when including the masked string
-            if issubclass(elem.dtype.type, np.floating) and example_str != '':
+            if issubclass(elem.dtype.type, np.floating) and unmasked.size > 0:
                 # for floats, try to align with decimal point if present
                 frac = example_str.partition('.')
                 nfrac = len(frac[1]) + len(frac[2])
@@ -622,7 +654,6 @@ masked_formatters = [as_masked_fmt(f) for f in default_duckprint_formatters]
 default_options = default_duckprint_options.copy()
 default_options['masked_str'] = MASK_STR
 masked_dispatcher = FormatDispatcher(masked_formatters, default_options)
-
 
 ################################################################################
 #                               Ufunc setup
