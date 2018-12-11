@@ -1059,80 +1059,69 @@ class TestMaskedArrayArithmetic(object):
         assert_(t[1] == 2)
         assert_(t[2] == 3)
 
-#    def test_imag_real(self):
-#        # Check complex
-#        xx = MaskedArray([1 + 10j, 20 + 2j], mask=[1, 0])
-#        assert_equal(xx.imag, [10, 2])
-#        assert_equal(xx.imag.filled(), [1e+20, 2])
-#        assert_equal(xx.imag.dtype, xx._data.imag.dtype)
-#        assert_equal(xx.real, [1, 20])
-#        assert_equal(xx.real.filled(), [1e+20, 20])
-#        assert_equal(xx.real.dtype, xx._data.real.dtype)
+    def test_imag_real(self):
+        # Check complex
+        xx = MaskedArray([1 + 10j, 20 + 2j], mask=[1, 0])
+        assert_equal(xx.imag.filled(0), [0, 2])
+        assert_equal(xx.imag.dtype, xx._data.imag.dtype)
+        assert_equal(xx.real.filled(0), [0, 20])
+        assert_equal(xx.real.dtype, xx._data.real.dtype)
 
-#    def test_methods_with_output(self):
-#        xm = MaskedArray(np.random.uniform(0, 10, 12)).reshape(3, 4)
-#        xm[:, 0] = xm[0] = xm[-1, -1] = masked
+    def test_methods_with_output(self):
+        xm = MaskedArray(np.random.uniform(0, 10, 12)).reshape(3, 4)
+        xm[:, 0] = xm[0] = xm[-1, -1] = X
 
-#        funclist = ('sum', 'prod', 'var', 'std', 'max', 'min', 'ptp', 'mean',)
+        funclist = ('sum', 'prod', 'var', 'std', 'max', 'min', 'ptp', 'mean',)
 
-#        for funcname in funclist:
-#            npfunc = getattr(np, funcname)
-#            xmmeth = getattr(xm, funcname)
-#            # A ndarray as explicit input
-#            output = np.empty(4, dtype=float)
-#            output.fill(-9999)
-#            result = npfunc(xm, axis=0, out=output)
-#            # ... the result should be the given output
-#            assert_(result is output)
-#            assert_equal(result, xmmeth(axis=0, out=output))
+        for funcname in funclist:
+            npfunc = getattr(np, funcname)
+            xmmeth = getattr(xm, funcname)
+            # A ndarray as explicit input
+            output = MaskedArray(np.empty(4, dtype=float))
+            output.fill(-9999)
+            result = npfunc(xm, axis=0, out=output)
+            # ... the result should be the given output
+            assert_(result is output)
+            assert_(output[0].mask)
+            assert_equal(result, xmmeth(axis=0, out=output))
 
-#            output = empty(4, dtype=int)
-#            result = xmmeth(axis=0, out=output)
-#            assert_(result is output)
-#            assert_(output[0] is masked)
+    def test_eq_on_structured(self):
+        # Test the equality of structured arrays
+        ndtype = [('A', int), ('B', int)]
+        a = MaskedArray([(1, 1), (2, 2)], mask=[0, 1], dtype=ndtype)
 
-#    def test_eq_on_structured(self):
-#        # Test the equality of structured arrays
-#        ndtype = [('A', int), ('B', int)]
-#        a = MaskedArray([(1, 1), (2, 2)], mask=[(0, 1), (0, 0)], dtype=ndtype)
+        test = (a == a)
+        assert_equal(test.filled(False), [True, False])
+        assert_equal(test.mask, [False, True])
 
-#        test = (a == a)
-#        assert_equal(test.data, [True, True])
-#        assert_equal(test.mask, [False, False])
-#        assert_(test.fill_value == True)
+        test = (a == a[0])
+        assert_equal(test.filled(False), [True, False])
+        assert_equal(test.mask, [False, True])
 
-#        test = (a == a[0])
-#        assert_equal(test.data, [True, False])
-#        assert_equal(test.mask, [False, False])
-#        assert_(test.fill_value == True)
+        b = MaskedArray([(1, 1), (2, 2)], mask=[0, 0], dtype=ndtype)
+        test = (a == b)
+        assert_equal(test.filled(False), [True, False])
+        assert_equal(test.mask, [False, True])
 
-#        b = MaskedArray([(1, 1), (2, 2)], mask=[(1, 0), (0, 0)], dtype=ndtype)
-#        test = (a == b)
-#        assert_equal(test.data, [False, True])
-#        assert_equal(test.mask, [True, False])
-#        assert_(test.fill_value == True)
+        test = (a[0] == b)
+        assert_equal(test.filled(False), [True, False])
+        assert_equal(test.mask, [False, False])
 
-#        test = (a[0] == b)
-#        assert_equal(test.data, [False, False])
-#        assert_equal(test.mask, [True, False])
-#        assert_(test.fill_value == True)
+        b = MaskedArray([(1, 1), (2, 2)], mask=[1, 0], dtype=ndtype)
+        test = (a == b)
+        assert_equal(test.filled(False), [False, False])
+        assert_equal(test.mask, [True, True])
 
-#        b = MaskedArray([(1, 1), (2, 2)], mask=[(0, 1), (1, 0)], dtype=ndtype)
-#        test = (a == b)
-#        assert_equal(test.data, [True, True])
-#        assert_equal(test.mask, [False, False])
-#        assert_(test.fill_value == True)
-
-#        # complicated dtype, 2-dimensional array.
-#        ndtype = [('A', int), ('B', [('BA', int), ('BB', int)])]
-#        a = MaskedArray([[(1, (1, 1)), (2, (2, 2))],
-#                   [(3, (3, 3)), (4, (4, 4))]],
-#                  mask=[[(0, (1, 0)), (0, (0, 1))],
-#                        [(1, (0, 0)), (1, (1, 1))]], dtype=ndtype)
-#        test = (a[0, 0] == a)
-#        assert_equal(test.data, [[True, False], [False, False]])
-#        assert_equal(test.mask, [[False, False], [False, True]])
-#        assert_(test.fill_value == True)
+        ## complicated dtype, 2-dimensional array.
+        #ndtype = [('A', int), ('B', [('BA', int), ('BB', int)])]
+        #a = MaskedArray([[(1, (1, 1)), (2, (2, 2))],
+        #           [(3, (3, 3)), (4, (4, 4))]],
+        #          mask=[[(0, (1, 0)), (0, (0, 1))],
+        #                [(1, (0, 0)), (1, (1, 1))]], dtype=ndtype)
+        #test = (a[0, 0] == a)
+        #assert_equal(test.data, [[True, False], [False, False]])
+        #assert_equal(test.mask, [[False, False], [False, True]])
+        #assert_(test.fill_value == True)
 
 #    def test_ne_on_structured(self):
 #        # Test the equality of structured arrays

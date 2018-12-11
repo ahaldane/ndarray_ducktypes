@@ -50,8 +50,8 @@ class NDArrayAPIMixin:
     def max(self, axis=None, out=None, keepdims=False):
         return np.max(self, axis, out, keepdims)
 
-    def mean(axis=None, dtype=None, out=None, keepdims=False):
-        return mean(axis, dtype, out, keepdims)
+    def mean(self, axis=None, dtype=None, out=None, keepdims=False):
+        return np.mean(self, axis, dtype, out, keepdims)
 
     def min(self, axis=None, out=None, keepdims=False):
         return np.min(self, axis, out, keepdims)
@@ -60,10 +60,10 @@ class NDArrayAPIMixin:
         return np.nonzero(self)
 
     def partition(self, kth, axis=-1, kind='introselect', order=None):
-        return np.partition(array, kth, axis, kind, order)
+        return np.partition(self, kth, axis, kind, order)
 
     def prod(self, axis=None, dtype=None, out=None, keepdims=False):
-        return np.prod(axis, dtype, out, keepdims)
+        return np.prod(self, axis, dtype, out, keepdims)
 
     def ptp(self, axis=None, out=None, keepdims=False):
         return np.ptp(self, axis, out, keepdims)
@@ -83,7 +83,7 @@ class NDArrayAPIMixin:
             shape = (shape,)
         return np.reshape(self, *shape, **kwargs)
 
-    def resize(new_shape, refcheck=True): #XXX what is this refcheck?
+    def resize(self, new_shape, refcheck=True): #XXX what is this refcheck?
         return np.resize(self, new_shape)
 
     def round(self, decimals=0, out=None):
@@ -117,7 +117,7 @@ class NDArrayAPIMixin:
         return np.transpose(self, *axes)
 
     def var(self, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
-        return var(self, axis, dtype, out, ddof, keepdims)
+        return np.var(self, axis, dtype, out, ddof, keepdims)
 
     # not part of the numpy api, but implementation is obvious:
     def conj(self):

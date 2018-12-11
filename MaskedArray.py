@@ -10,6 +10,7 @@ import numpy.core.numerictypes as ntypes
 from numpy.core.multiarray import normalize_axis_index
 from numpy.lib.stride_tricks import _broadcast_shape
 import operator
+import warnings
 
 class MaskedOperatorMixin(NDArrayOperatorsMixin):
     # shared implementations for MaskedArray, MaskedScalar
@@ -590,7 +591,9 @@ def as_masked_fmt(formattercls):
 
             # default_fmt should always give back same str length.
             # Figure out what this is with a test call.
-            example_str = default_fmt(unmasked[0]) if len(unmasked) > 0 else ''
+            # This is a bit complicated to account for struct types.
+            example_elem = np.array(0, dtype=elem._data.dtype)[()]
+            example_str = default_fmt(example_elem)
             masked_str = options['masked_str']
             reslen = builtins.max(len(example_str), len(masked_str))
 
@@ -786,8 +789,6 @@ class _Masked_BinOp(_Masked_UFunc):
             raise RuntimeError("domained ufuncs do not support reduce")
 
         da, ma = getdata(a), getmask(a)
-
-        mkwargs = {'axis': axis}
 
         dataout, maskout = None, None
         if out:
@@ -1200,11 +1201,7 @@ def setup_ducktype():
         outdata, outmask = get_maskedout(out)
 
         # code largely copied from _methods.var
-
-        # Make this warning show up on top.
-        if ddof >= rcount:
-            warnings.warn("Degrees of freedom <= 0 for slice", RuntimeWarning,
-                          stacklevel=2)
+        rcount = a.count(axis=axis, **kwargs)
 
         # Cast bool, unsigned int, and int to float64 by default
         if dtype is None and issubclass(a.dtype.type, (np.integer, np.bool_)):
@@ -1228,7 +1225,7 @@ def setup_ducktype():
             x = np.multiply(x, np.conjugate(x), out=x).real
         else:
             x = np.multiply(x, x, out=x)
-        ret = x.sum(axis, dtype, out=outdata, **kwargs)
+        ret = x.filled(0).sum(axis, dtype, out=outdata, **kwargs)
 
         # Compute degrees of freedom and make sure it is not negative.
         rcount = a.count(axis=axis, **kwargs)
@@ -1244,7 +1241,10 @@ def setup_ducktype():
             else:
                 ret = ret / rcount
 
-        return maskedarray_or_scalar(ret, rcount == 0, out)
+        if out:
+            out[rcount == 0] = X
+            return out
+        return maskedarray_or_scalar(ret, rcount == 0)
 
     @implements(np.std)
     def std(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
@@ -2408,10 +2408,10 @@ for a in api:
     else:
         n_implemented += 1
     #    print("Have", a)
-print("Total api:   ", len(api))
-print("Skipped:     ", n_skipped)
-print("Implemented: ", n_implemented)
-print("Missing:     ", n_missing)
+#print("Total api:   ", len(api))
+#print("Skipped:     ", n_skipped)
+#print("Implemented: ", n_implemented)
+#print("Missing:     ", n_missing)
 
 
 ################################################################################
