@@ -7,6 +7,8 @@ from numpy.core.numeric import pickle
 from MaskedArray import MaskedArray, MaskedScalar, X
 from functools import reduce
 import textwrap
+import operator
+import warnings
 
 pi = np.pi
 
@@ -1457,607 +1459,587 @@ class TestUfuncs(object):
             args = self.d[:uf.nin]
             mr = uf(*args) # test no fail
 
-    #def test_reduce(self):
-    #    # Tests reduce on MaskedArrays.
-    #    a = self.d[0]
-    #    assert_(not (a, axis=0))
-    #    assert_(sometrue(a, axis=0))
-    #    assert_equal(np.sum(a[:3], axis=0), 0)
-    #    assert_equal(np.product(a, axis=0), 0)
-    #    assert_equal(np.add.reduce(a), pi)
-
-#    def test_minmax(self):
-#        # Tests extrema on MaskedArrays.
-#        a = arange(1, 13).reshape(3, 4)
-#        amask = masked_where(a < 5, a)
-#        assert_equal(amask.max(), a.max())
-#        assert_equal(amask.min(), 5)
-#        assert_equal(amask.max(0), a.max(0))
-#        assert_equal(amask.min(0), [5, 6, 7, 8])
-#        assert_(amask.max(1)[0].mask)
-#        assert_(amask.min(1)[0].mask)
-
-#    def test_ndarray_mask(self):
-#        # Check that the mask of the result is a ndarray (not a MaskedArray...)
-#        a = MaskedArray([-1, 0, 1, 2, 3], mask=[0, 0, 0, 0, 1])
-#        test = np.sqrt(a)
-#        control = MaskedArray([-1, 0, 1, np.sqrt(2), -1],
-#                               mask=[1, 0, 0, 0, 1])
-#        assert_equal(test, control)
-#        assert_equal(test.mask, control.mask)
-#        assert_(not isinstance(test.mask, MaskedArray))
-
-#    def test_treatment_of_NotImplemented(self):
-#        # Check that NotImplemented is returned at appropriate places
-
-#        a = MaskedArray([1., 2.], mask=[1, 0])
-#        assert_raises(TypeError, operator.mul, a, "abc")
-#        assert_raises(TypeError, operator.truediv, a, "abc")
-
-#        class MyClass(object):
-#            __array_priority__ = a.__array_priority__ + 1
-
-#            def __mul__(self, other):
-#                return "My mul"
-
-#            def __rmul__(self, other):
-#                return "My rmul"
-
-#        me = MyClass()
-#        assert_(me * a == "My mul")
-#        assert_(a * me == "My rmul")
-
-#        # and that __array_priority__ is respected
-#        class MyClass2(object):
-#            __array_priority__ = 100
-
-#            def __mul__(self, other):
-#                return "Me2mul"
-
-#            def __rmul__(self, other):
-#                return "Me2rmul"
-
-#            def __rdiv__(self, other):
-#                return "Me2rdiv"
-
-#            __rtruediv__ = __rdiv__
-
-#        me_too = MyClass2()
-#        assert_(a.__mul__(me_too) is NotImplemented)
-#        assert_(all(multiply.outer(a, me_too) == "Me2rmul"))
-#        assert_(a.__truediv__(me_too) is NotImplemented)
-#        assert_(me_too * a == "Me2mul")
-#        assert_(a * me_too == "Me2rmul")
-#        assert_(a / me_too == "Me2rdiv")
-
-#    def test_no_masked_nan_warnings(self):
-#        # check that a nan in masked position does not
-#        # cause ufunc warnings
-
-#        m = np.ma.array([0.5, np.nan], mask=[0,1])
-
-#        with warnings.catch_warnings():
-#            warnings.filterwarnings("error")
-
-#            # test unary and binary ufuncs
-#            exp(m)
-#            add(m, 1)
-#            m > 0
-
-#            # test different unary domains
-#            sqrt(m)
-#            log(m)
-#            tan(m)
-#            arcsin(m)
-#            arccos(m)
-#            arccosh(m)
-
-#            # test binary domains
-#            divide(m, 2)
-
-#            # also check that allclose uses ma ufuncs, to avoid warning
-#            allclose(m, 0.5)
-
-#class TestMaskedArrayInPlaceArithmetics(object):
-#    # Test MaskedArray Arithmetics
-
-#    def setup(self):
-#        x = arange(10)
-#        y = arange(10)
-#        xm = arange(10)
-#        xm[2] = masked
-#        self.intdata = (x, y, xm)
-#        self.floatdata = (x.astype(float), y.astype(float), xm.astype(float))
-#        self.othertypes = np.typecodes['AllInteger'] + np.typecodes['AllFloat']
-#        self.othertypes = [np.dtype(_).type for _ in self.othertypes]
-#        self.uint8data = (
-#            x.astype(np.uint8),
-#            y.astype(np.uint8),
-#            xm.astype(np.uint8)
-#        )
-
-#    def test_inplace_addition_scalar(self):
-#        # Test of inplace additions
-#        (x, y, xm) = self.intdata
-#        xm[2] = masked
-#        x += 1
-#        assert_equal(x, y + 1)
-#        xm += 1
-#        assert_equal(xm, y + 1)
-
-#        (x, _, xm) = self.floatdata
-#        id1 = x.data.ctypes._data
-#        x += 1.
-#        assert_(id1 == x.data.ctypes._data)
-#        assert_equal(x, y + 1.)
-
-#    def test_inplace_addition_array(self):
-#        # Test of inplace additions
-#        (x, y, xm) = self.intdata
-#        m = xm.mask
-#        a = arange(10, dtype=np.int16)
-#        a[-1] = masked
-#        x += a
-#        xm += a
-#        assert_equal(x, y + a)
-#        assert_equal(xm, y + a)
-#        assert_equal(xm.mask, mask_or(m, a.mask))
-
-#    def test_inplace_subtraction_scalar(self):
-#        # Test of inplace subtractions
-#        (x, y, xm) = self.intdata
-#        x -= 1
-#        assert_equal(x, y - 1)
-#        xm -= 1
-#        assert_equal(xm, y - 1)
-
-#    def test_inplace_subtraction_array(self):
-#        # Test of inplace subtractions
-#        (x, y, xm) = self.floatdata
-#        m = xm.mask
-#        a = arange(10, dtype=float)
-#        a[-1] = masked
-#        x -= a
-#        xm -= a
-#        assert_equal(x, y - a)
-#        assert_equal(xm, y - a)
-#        assert_equal(xm.mask, mask_or(m, a.mask))
-
-#    def test_inplace_multiplication_scalar(self):
-#        # Test of inplace multiplication
-#        (x, y, xm) = self.floatdata
-#        x *= 2.0
-#        assert_equal(x, y * 2)
-#        xm *= 2.0
-#        assert_equal(xm, y * 2)
-
-#    def test_inplace_multiplication_array(self):
-#        # Test of inplace multiplication
-#        (x, y, xm) = self.floatdata
-#        m = xm.mask
-#        a = arange(10, dtype=float)
-#        a[-1] = masked
-#        x *= a
-#        xm *= a
-#        assert_equal(x, y * a)
-#        assert_equal(xm, y * a)
-#        assert_equal(xm.mask, mask_or(m, a.mask))
-
-#    def test_inplace_division_scalar_int(self):
-#        # Test of inplace division
-#        (x, y, xm) = self.intdata
-#        x = arange(10) * 2
-#        xm = arange(10) * 2
-#        xm[2] = masked
-#        x //= 2
-#        assert_equal(x, y)
-#        xm //= 2
-#        assert_equal(xm, y)
-
-#    def test_inplace_division_scalar_float(self):
-#        # Test of inplace division
-#        (x, y, xm) = self.floatdata
-#        x /= 2.0
-#        assert_equal(x, y / 2.0)
-#        xm /= arange(10)
-#        assert_equal(xm, ones((10,)))
-
-#    def test_inplace_division_array_float(self):
-#        # Test of inplace division
-#        (x, y, xm) = self.floatdata
-#        m = xm.mask
-#        a = arange(10, dtype=float)
-#        a[-1] = masked
-#        x /= a
-#        xm /= a
-#        assert_equal(x, y / a)
-#        assert_equal(xm, y / a)
-#        assert_equal(xm.mask, mask_or(mask_or(m, a.mask), (a == 0)))
-
-#    def test_inplace_division_misc(self):
-
-#        x = [1., 1., 1., -2., pi / 2., 4., 5., -10., 10., 1., 2., 3.]
-#        y = [5., 0., 3., 2., -1., -4., 0., -10., 10., 1., 0., 3.]
-#        m1 = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
-#        m2 = [0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1]
-#        xm = MaskedArray(x, mask=m1)
-#        ym = MaskedArray(y, mask=m2)
-
-#        z = xm / ym
-#        assert_equal(z._mask, [1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1])
-#        assert_equal(z._data,
-#                     [1., 1., 1., -1., -pi / 2., 4., 5., 1., 1., 1., 2., 3.])
-
-#        xm = xm.copy()
-#        xm /= ym
-#        assert_equal(xm._mask, [1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1])
-#        assert_equal(z._data,
-#                     [1., 1., 1., -1., -pi / 2., 4., 5., 1., 1., 1., 2., 3.])
-
-#    def test_datafriendly_add(self):
-#        # Test keeping data w/ (inplace) addition
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        # Test add w/ scalar
-#        xx = x + 1
-#        assert_equal(xx.data, [2, 3, 3])
-#        assert_equal(xx.mask, [0, 0, 1])
-#        # Test iadd w/ scalar
-#        x += 1
-#        assert_equal(x.data, [2, 3, 3])
-#        assert_equal(x.mask, [0, 0, 1])
-#        # Test add w/ array
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        xx = x + MaskedArray([1, 2, 3], mask=[1, 0, 0])
-#        assert_equal(xx.data, [1, 4, 3])
-#        assert_equal(xx.mask, [1, 0, 1])
-#        # Test iadd w/ array
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        x += MaskedArray([1, 2, 3], mask=[1, 0, 0])
-#        assert_equal(x.data, [1, 4, 3])
-#        assert_equal(x.mask, [1, 0, 1])
-
-#    def test_datafriendly_sub(self):
-#        # Test keeping data w/ (inplace) subtraction
-#        # Test sub w/ scalar
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        xx = x - 1
-#        assert_equal(xx.data, [0, 1, 3])
-#        assert_equal(xx.mask, [0, 0, 1])
-#        # Test isub w/ scalar
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        x -= 1
-#        assert_equal(x.data, [0, 1, 3])
-#        assert_equal(x.mask, [0, 0, 1])
-#        # Test sub w/ array
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        xx = x - MaskedArray([1, 2, 3], mask=[1, 0, 0])
-#        assert_equal(xx.data, [1, 0, 3])
-#        assert_equal(xx.mask, [1, 0, 1])
-#        # Test isub w/ array
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        x -= MaskedArray([1, 2, 3], mask=[1, 0, 0])
-#        assert_equal(x.data, [1, 0, 3])
-#        assert_equal(x.mask, [1, 0, 1])
-
-#    def test_datafriendly_mul(self):
-#        # Test keeping data w/ (inplace) multiplication
-#        # Test mul w/ scalar
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        xx = x * 2
-#        assert_equal(xx.data, [2, 4, 3])
-#        assert_equal(xx.mask, [0, 0, 1])
-#        # Test imul w/ scalar
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        x *= 2
-#        assert_equal(x.data, [2, 4, 3])
-#        assert_equal(x.mask, [0, 0, 1])
-#        # Test mul w/ array
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        xx = x * MaskedArray([10, 20, 30], mask=[1, 0, 0])
-#        assert_equal(xx.data, [1, 40, 3])
-#        assert_equal(xx.mask, [1, 0, 1])
-#        # Test imul w/ array
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        x *= MaskedArray([10, 20, 30], mask=[1, 0, 0])
-#        assert_equal(x.data, [1, 40, 3])
-#        assert_equal(x.mask, [1, 0, 1])
-
-#    def test_datafriendly_div(self):
-#        # Test keeping data w/ (inplace) division
-#        # Test div on scalar
-#        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
-#        xx = x / 2.
-#        assert_equal(xx.data, [1 / 2., 2 / 2., 3])
-#        assert_equal(xx.mask, [0, 0, 1])
-#        # Test idiv on scalar
-#        x = MaskedArray([1., 2., 3.], mask=[0, 0, 1])
-#        x /= 2.
-#        assert_equal(x.data, [1 / 2., 2 / 2., 3])
-#        assert_equal(x.mask, [0, 0, 1])
-#        # Test div on array
-#        x = MaskedArray([1., 2., 3.], mask=[0, 0, 1])
-#        xx = x / MaskedArray([10., 20., 30.], mask=[1, 0, 0])
-#        assert_equal(xx.data, [1., 2. / 20., 3.])
-#        assert_equal(xx.mask, [1, 0, 1])
-#        # Test idiv on array
-#        x = MaskedArray([1., 2., 3.], mask=[0, 0, 1])
-#        x /= MaskedArray([10., 20., 30.], mask=[1, 0, 0])
-#        assert_equal(x.data, [1., 2 / 20., 3.])
-#        assert_equal(x.mask, [1, 0, 1])
-
-#    def test_datafriendly_pow(self):
-#        # Test keeping data w/ (inplace) power
-#        # Test pow on scalar
-#        x = MaskedArray([1., 2., 3.], mask=[0, 0, 1])
-#        xx = x ** 2.5
-#        assert_equal(xx.data, [1., 2. ** 2.5, 3.])
-#        assert_equal(xx.mask, [0, 0, 1])
-#        # Test ipow on scalar
-#        x **= 2.5
-#        assert_equal(x.data, [1., 2. ** 2.5, 3])
-#        assert_equal(x.mask, [0, 0, 1])
-
-#    def test_datafriendly_add_arrays(self):
-#        a = MaskedArray([[1, 1], [3, 3]])
-#        b = MaskedArray([1, 1], mask=[0, 0])
-#        a += b
-#        assert_equal(a, [[2, 2], [4, 4]])
-#        if a.mask is not nomask:
-#            assert_equal(a.mask, [[0, 0], [0, 0]])
-
-#        a = MaskedArray([[1, 1], [3, 3]])
-#        b = MaskedArray([1, 1], mask=[0, 1])
-#        a += b
-#        assert_equal(a, [[2, 2], [4, 4]])
-#        assert_equal(a.mask, [[0, 1], [0, 1]])
-
-#    def test_datafriendly_sub_arrays(self):
-#        a = MaskedArray([[1, 1], [3, 3]])
-#        b = MaskedArray([1, 1], mask=[0, 0])
-#        a -= b
-#        assert_equal(a, [[0, 0], [2, 2]])
-#        if a.mask is not nomask:
-#            assert_equal(a.mask, [[0, 0], [0, 0]])
-
-#        a = MaskedArray([[1, 1], [3, 3]])
-#        b = MaskedArray([1, 1], mask=[0, 1])
-#        a -= b
-#        assert_equal(a, [[0, 0], [2, 2]])
-#        assert_equal(a.mask, [[0, 1], [0, 1]])
-
-#    def test_datafriendly_mul_arrays(self):
-#        a = MaskedArray([[1, 1], [3, 3]])
-#        b = MaskedArray([1, 1], mask=[0, 0])
-#        a *= b
-#        assert_equal(a, [[1, 1], [3, 3]])
-#        if a.mask is not nomask:
-#            assert_equal(a.mask, [[0, 0], [0, 0]])
-
-#        a = MaskedArray([[1, 1], [3, 3]])
-#        b = MaskedArray([1, 1], mask=[0, 1])
-#        a *= b
-#        assert_equal(a, [[1, 1], [3, 3]])
-#        assert_equal(a.mask, [[0, 1], [0, 1]])
-
-#    def test_inplace_addition_scalar_type(self):
-#        # Test of inplace additions
-#        for t in self.othertypes:
-#            with warnings.catch_warnings(record=True) as w:
-#                warnings.filterwarnings("always")
-#                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
-#                xm[2] = masked
-#                x += t(1)
-#                assert_equal(x, y + t(1))
-#                xm += t(1)
-#                assert_equal(xm, y + t(1))
-
-#                assert_equal(len(w), 0, "Failed on type=%s." % t)
-
-#    def test_inplace_addition_array_type(self):
-#        # Test of inplace additions
-#        for t in self.othertypes:
-#            with warnings.catch_warnings(record=True) as w:
-#                warnings.filterwarnings("always")
-#                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
-#                m = xm.mask
-#                a = arange(10, dtype=t)
-#                a[-1] = masked
-#                x += a
-#                xm += a
-#                assert_equal(x, y + a)
-#                assert_equal(xm, y + a)
-#                assert_equal(xm.mask, mask_or(m, a.mask))
-
-#                assert_equal(len(w), 0, "Failed on type=%s." % t)
-
-#    def test_inplace_subtraction_scalar_type(self):
-#        # Test of inplace subtractions
-#        for t in self.othertypes:
-#            with warnings.catch_warnings(record=True) as w:
-#                warnings.filterwarnings("always")
-#                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
-#                x -= t(1)
-#                assert_equal(x, y - t(1))
-#                xm -= t(1)
-#                assert_equal(xm, y - t(1))
-
-#                assert_equal(len(w), 0, "Failed on type=%s." % t)
-
-#    def test_inplace_subtraction_array_type(self):
-#        # Test of inplace subtractions
-#        for t in self.othertypes:
-#            with warnings.catch_warnings(record=True) as w:
-#                warnings.filterwarnings("always")
-#                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
-#                m = xm.mask
-#                a = arange(10, dtype=t)
-#                a[-1] = masked
-#                x -= a
-#                xm -= a
-#                assert_equal(x, y - a)
-#                assert_equal(xm, y - a)
-#                assert_equal(xm.mask, mask_or(m, a.mask))
-
-#                assert_equal(len(w), 0, "Failed on type=%s." % t)
-
-#    def test_inplace_multiplication_scalar_type(self):
-#        # Test of inplace multiplication
-#        for t in self.othertypes:
-#            with warnings.catch_warnings(record=True) as w:
-#                warnings.filterwarnings("always")
-#                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
-#                x *= t(2)
-#                assert_equal(x, y * t(2))
-#                xm *= t(2)
-#                assert_equal(xm, y * t(2))
-
-#                assert_equal(len(w), 0, "Failed on type=%s." % t)
-
-#    def test_inplace_multiplication_array_type(self):
-#        # Test of inplace multiplication
-#        for t in self.othertypes:
-#            with warnings.catch_warnings(record=True) as w:
-#                warnings.filterwarnings("always")
-#                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
-#                m = xm.mask
-#                a = arange(10, dtype=t)
-#                a[-1] = masked
-#                x *= a
-#                xm *= a
-#                assert_equal(x, y * a)
-#                assert_equal(xm, y * a)
-#                assert_equal(xm.mask, mask_or(m, a.mask))
-
-#                assert_equal(len(w), 0, "Failed on type=%s." % t)
-
-#    def test_inplace_floor_division_scalar_type(self):
-#        # Test of inplace division
-#        for t in self.othertypes:
-#            with warnings.catch_warnings(record=True) as w:
-#                warnings.filterwarnings("always")
-#                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
-#                x = arange(10, dtype=t) * t(2)
-#                xm = arange(10, dtype=t) * t(2)
-#                xm[2] = masked
-#                x //= t(2)
-#                xm //= t(2)
-#                assert_equal(x, y)
-#                assert_equal(xm, y)
-
-#                assert_equal(len(w), 0, "Failed on type=%s." % t)
-
-#    def test_inplace_floor_division_array_type(self):
-#        # Test of inplace division
-#        for t in self.othertypes:
-#            with warnings.catch_warnings(record=True) as w:
-#                warnings.filterwarnings("always")
-#                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
-#                m = xm.mask
-#                a = arange(10, dtype=t)
-#                a[-1] = masked
-#                x //= a
-#                xm //= a
-#                assert_equal(x, y // a)
-#                assert_equal(xm, y // a)
-#                assert_equal(
-#                    xm.mask,
-#                    mask_or(mask_or(m, a.mask), (a == t(0)))
-#                )
-
-#                assert_equal(len(w), 0, "Failed on type=%s." % t)
-
-#    def test_inplace_division_scalar_type(self):
-#        # Test of inplace division
-#        for t in self.othertypes:
-#            with suppress_warnings() as sup:
-#                sup.record(UserWarning)
-
-#                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
-#                x = arange(10, dtype=t) * t(2)
-#                xm = arange(10, dtype=t) * t(2)
-#                xm[2] = masked
-
-#                # May get a DeprecationWarning or a TypeError.
-#                #
-#                # This is a consequence of the fact that this is true divide
-#                # and will require casting to float for calculation and
-#                # casting back to the original type. This will only be raised
-#                # with integers. Whether it is an error or warning is only
-#                # dependent on how stringent the casting rules are.
-#                #
-#                # Will handle the same way.
-#                try:
-#                    x /= t(2)
-#                    assert_equal(x, y)
-#                except (DeprecationWarning, TypeError) as e:
-#                    warnings.warn(str(e), stacklevel=1)
-#                try:
-#                    xm /= t(2)
-#                    assert_equal(xm, y)
-#                except (DeprecationWarning, TypeError) as e:
-#                    warnings.warn(str(e), stacklevel=1)
-
-#                if issubclass(t, np.integer):
-#                    assert_equal(len(sup.log), 2, "Failed on type=%s." % t)
-#                else:
-#                    assert_equal(len(sup.log), 0, "Failed on type=%s." % t)
-
-#    def test_inplace_division_array_type(self):
-#        # Test of inplace division
-#        for t in self.othertypes:
-#            with suppress_warnings() as sup:
-#                sup.record(UserWarning)
-#                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
-#                m = xm.mask
-#                a = arange(10, dtype=t)
-#                a[-1] = masked
-
-#                # May get a DeprecationWarning or a TypeError.
-#                #
-#                # This is a consequence of the fact that this is true divide
-#                # and will require casting to float for calculation and
-#                # casting back to the original type. This will only be raised
-#                # with integers. Whether it is an error or warning is only
-#                # dependent on how stringent the casting rules are.
-#                #
-#                # Will handle the same way.
-#                try:
-#                    x /= a
-#                    assert_equal(x, y / a)
-#                except (DeprecationWarning, TypeError) as e:
-#                    warnings.warn(str(e), stacklevel=1)
-#                try:
-#                    xm /= a
-#                    assert_equal(xm, y / a)
-#                    assert_equal(
-#                        xm.mask,
-#                        mask_or(mask_or(m, a.mask), (a == t(0)))
-#                    )
-#                except (DeprecationWarning, TypeError) as e:
-#                    warnings.warn(str(e), stacklevel=1)
-
-#                if issubclass(t, np.integer):
-#                    assert_equal(len(sup.log), 2, "Failed on type=%s." % t)
-#                else:
-#                    assert_equal(len(sup.log), 0, "Failed on type=%s." % t)
-
-#    def test_inplace_pow_type(self):
-#        # Test keeping data w/ (inplace) power
-#        for t in self.othertypes:
-#            with warnings.catch_warnings(record=True) as w:
-#                warnings.filterwarnings("always")
-#                # Test pow on scalar
-#                x = MaskedArray([1, 2, 3], mask=[0, 0, 1], dtype=t)
-#                xx = x ** t(2)
-#                xx_r = MaskedArray([1, 2 ** 2, 3], mask=[0, 0, 1], dtype=t)
-#                assert_equal(xx.data, xx_r.data)
-#                assert_equal(xx.mask, xx_r.mask)
-#                # Test ipow on scalar
-#                x **= t(2)
-#                assert_equal(x.data, xx_r.data)
-#                assert_equal(x.mask, xx_r.mask)
-
-#                assert_equal(len(w), 0, "Failed on type=%s." % t)
+    def test_reduce(self):
+        # Tests reduce on MaskedArrays.
+        a = self.d[0]
+        assert_(not np.alltrue(a, axis=0).filled())
+        assert_(np.sometrue(a, axis=0).filled())
+        assert_equal(np.sum(a[:3], axis=0).filled(), 0)
+        assert_equal(np.product(a, axis=0).filled(), 0)
+        assert_equal(np.add.reduce(a).filled(), pi)
+
+    def test_minmax(self):
+        # Tests extrema on MaskedArrays.
+        a = np.arange(1, 13).reshape(3, 4)
+        amask = MaskedArray(a, a < 5)
+        assert_equal(amask.max().filled(), a.max())
+        assert_equal(amask.min().filled(), 5)
+        assert_equal(amask.max(0).filled(), a.max(0))
+        assert_equal(amask.min(0).filled(), [5, 6, 7, 8])
+        assert_(amask.max(1)[0].mask)
+        assert_(amask.min(1)[0].mask)
+
+    def test_ndarray_mask(self):
+        # Check that the mask of the result is a ndarray (not a MaskedArray...)
+        a = MaskedArray([-1, 0, 1, 2, 3], mask=[0, 0, 0, 0, 1])
+        test = np.sqrt(a)
+        control = MaskedArray([-1, 0, 1, np.sqrt(2), -1],
+                               mask=[1, 0, 0, 0, 1])
+        assert_equal(test, control)
+        assert_equal(test.mask, control.mask)
+        assert_(not isinstance(test.mask, MaskedArray))
+
+    def test_treatment_of_NotImplemented(self):
+        # Check that NotImplemented is returned at appropriate places
+
+        a = MaskedArray([1., 2.], mask=[1, 0])
+        assert_raises(TypeError, operator.mul, a, "abc")
+        assert_raises(TypeError, operator.truediv, a, "abc")
+
+    def test_no_masked_nan_warnings(self):
+        # check that a nan in masked position does not
+        # cause ufunc warnings
+
+        m = MaskedArray([0.5, np.nan], mask=[0,1])
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("error")
+
+            # test unary and binary ufuncs
+            np.exp(m)
+            np.add(m, 1)
+            m > 0
+
+            # test different unary domains
+            np.sqrt(m)
+            np.log(m)
+            np.tan(m)
+            np.arcsin(m)
+            np.arccos(m)
+            np.arccosh(m)
+
+            # test binary domains
+            np.divide(m, 2)
+
+            # also check that allclose uses ma ufuncs, to avoid warning
+            np.allclose(m, 0.5)
+
+class TestMaskedArrayInPlaceArithmetics(object):
+    # Test MaskedArray Arithmetics
+
+    def setup(self):
+        x = MaskedArray(np.arange(10))
+        y = MaskedArray(np.arange(10))
+        xm = MaskedArray(np.arange(10))
+        xm[2] = X
+        self.intdata = (x, y, xm)
+        self.floatdata = (x.astype(float), y.astype(float), xm.astype(float))
+        self.othertypes = np.typecodes['AllInteger'] + np.typecodes['AllFloat']
+        self.othertypes = [np.dtype(_).type for _ in self.othertypes]
+        self.uint8data = (
+            x.astype(np.uint8),
+            y.astype(np.uint8),
+            xm.astype(np.uint8)
+        )
+
+    def test_inplace_addition_scalar(self):
+        # Test of inplace additions
+        (x, y, xm) = self.intdata
+        x = x.copy()
+        xm = xm.copy()
+
+        xm[2] = X
+        x += 1
+        assert_equal(x, y + 1)
+        xm += 1
+        assert_equal(xm, y + 1)
+
+        (x, _, xm) = self.floatdata
+        x = x.copy()
+        xm = xm.copy()
+
+        id1 = x._data.ctypes._data
+        x += 1.
+        assert_(id1 == x._data.ctypes._data)
+        assert_equal(x, y + 1.)
+
+    def test_inplace_addition_array(self):
+        # Test of inplace additions
+        (x, y, xm) = self.intdata
+        x = x.copy()
+        xm = xm.copy()
+
+        m = xm.mask
+        a = MaskedArray(np.arange(10, dtype=np.int16))
+        a[-1] = X
+        x += a
+        xm += a
+        assert_equal(x, y + a)
+        assert_equal(xm, y + a)
+        assert_equal(xm.mask, m | a.mask)
+
+    def test_inplace_subtraction_scalar(self):
+        # Test of inplace subtractions
+        (x, y, xm) = self.intdata
+        x = x.copy()
+        xm = xm.copy()
+
+        x -= 1
+        assert_equal(x, y - 1)
+        xm -= 1
+        assert_equal(xm, y - 1)
+
+    def test_inplace_subtraction_array(self):
+        # Test of inplace subtractions
+        (x, y, xm) = self.floatdata
+        x = x.copy()
+        xm = xm.copy()
+
+        m = xm.mask
+        a = MaskedArray(np.arange(10, dtype=float))
+        a[-1] = X
+        x -= a
+        xm -= a
+        assert_equal(x, y - a)
+        assert_equal(xm, y - a)
+        assert_equal(xm.mask, m | a.mask)
+
+    def test_inplace_multiplication_scalar(self):
+        # Test of inplace multiplication
+        (x, y, xm) = self.floatdata
+        x = x.copy()
+        xm = xm.copy()
+
+        x *= 2.0
+        assert_equal(x, y * 2)
+        xm *= 2.0
+        assert_equal(xm, y * 2)
+
+    def test_inplace_multiplication_array(self):
+        # Test of inplace multiplication
+        (x, y, xm) = self.floatdata
+        x = x.copy()
+        xm = xm.copy()
+
+        m = xm.mask
+        a = MaskedArray(np.arange(10, dtype=float))
+        a[-1] = X
+        x *= a
+        xm *= a
+        assert_equal(x, y * a)
+        assert_equal(xm, y * a)
+        assert_equal(xm.mask, m | a.mask)
+
+    def test_inplace_division_scalar_int(self):
+        # Test of inplace division
+        (x, y, xm) = self.intdata
+        x = x.copy()
+        xm = xm.copy()
+
+        x = MaskedArray(np.arange(10) * 2)
+        xm = MaskedArray(np.arange(10) * 2)
+        xm[2] = X
+        x //= 2
+        assert_equal(x, y)
+        xm //= 2
+        assert_equal(xm, y)
+
+    def test_inplace_division_scalar_float(self):
+        # Test of inplace division
+        (x, y, xm) = self.floatdata
+        x = x.copy()
+        xm = xm.copy()
+
+        x /= 2.0
+        assert_equal(x, y / 2.0)
+        xm /= np.arange(10)
+        assert_equal(xm, np.ones((10,)))
+
+    def test_inplace_division_array_float(self):
+        # Test of inplace division
+        (x, y, xm) = self.floatdata
+        x = x.copy()
+        xm = xm.copy()
+
+        m = xm.mask
+        a = MaskedArray(np.arange(10, dtype=float))
+        a[-1] = X
+        x /= a
+        xm /= a
+        assert_equal(x, y / a)
+        assert_equal(xm, y / a)
+        assert_equal(xm.mask, m | a.mask | (a == 0))
+
+    def test_inplace_division_misc(self):
+
+        x = [1., 1., 1., -2., pi / 2., 4., 5., -10., 10., 1., 2., 3.]
+        y = [5., 0., 3., 2., -1., -4., 0., -10., 10., 1., 0., 3.]
+        m1 = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+        m2 = [0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1]
+        xm = MaskedArray(x, mask=m1)
+        ym = MaskedArray(y, mask=m2)
+
+        z = xm / ym
+        assert_equal(z._mask, [1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1])
+        assert_equal(z.filled(9),
+                     [9., 9., 9., -1., -pi / 2., 9., 9., 1., 1., 1., 9., 9.])
+
+        xm = xm.copy()
+        xm /= ym
+        assert_equal(xm._mask, [1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1])
+        assert_equal(xm.filled(9),
+                     [9., 9., 9., -1., -pi / 2., 9., 9., 1., 1., 1., 9., 9.])
+
+    def test_add(self):
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        # Test add w/ scalar
+        xx = x + 1
+        assert_equal(xx.filled(9), [2, 3, 9])
+        assert_equal(xx.mask, [0, 0, 1])
+        # Test iadd w/ scalar
+        x += 1
+        assert_equal(x.filled(9), [2, 3, 9])
+        assert_equal(x.mask, [0, 0, 1])
+        # Test add w/ array
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        xx = x + MaskedArray([1, 2, 3], mask=[1, 0, 0])
+        assert_equal(xx.filled(9), [9, 4, 9])
+        assert_equal(xx.mask, [1, 0, 1])
+        # Test iadd w/ array
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        x += MaskedArray([1, 2, 3], mask=[1, 0, 0])
+        assert_equal(x.filled(9), [9, 4, 9])
+        assert_equal(x.mask, [1, 0, 1])
+
+    def test_sub(self):
+        # Test sub w/ scalar
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        xx = x - 1
+        assert_equal(xx.filled(9), [0, 1, 9])
+        assert_equal(xx.mask, [0, 0, 1])
+        # Test isub w/ scalar
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        x -= 1
+        assert_equal(x.filled(9), [0, 1, 9])
+        assert_equal(x.mask, [0, 0, 1])
+        # Test sub w/ array
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        xx = x - MaskedArray([1, 2, 3], mask=[1, 0, 0])
+        assert_equal(xx.filled(9), [9, 0, 9])
+        assert_equal(xx.mask, [1, 0, 1])
+        # Test isub w/ array
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        x -= MaskedArray([1, 2, 3], mask=[1, 0, 0])
+        assert_equal(x.filled(9), [9, 0, 9])
+        assert_equal(x.mask, [1, 0, 1])
+
+    def test_mul(self):
+        # Test mul w/ scalar
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        xx = x * 2
+        assert_equal(xx.filled(9), [2, 4, 9])
+        assert_equal(xx.mask, [0, 0, 1])
+        # Test imul w/ scalar
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        x *= 2
+        assert_equal(x.filled(9), [2, 4, 9])
+        assert_equal(x.mask, [0, 0, 1])
+        # Test mul w/ array
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        xx = x * MaskedArray([10, 20, 30], mask=[1, 0, 0])
+        assert_equal(xx.filled(9), [9, 40, 9])
+        assert_equal(xx.mask, [1, 0, 1])
+        # Test imul w/ array
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        x *= MaskedArray([10, 20, 30], mask=[1, 0, 0])
+        assert_equal(x.filled(9), [9, 40, 9])
+        assert_equal(x.mask, [1, 0, 1])
+
+    def test_div(self):
+        # Test div on scalar
+        x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
+        xx = x / 2.
+        assert_equal(xx.filled(9), [1 / 2., 2 / 2., 9])
+        assert_equal(xx.mask, [0, 0, 1])
+        # Test idiv on scalar
+        x = MaskedArray([1., 2., 3.], mask=[0, 0, 1])
+        x /= 2.
+        assert_equal(x.filled(9), [1 / 2., 2 / 2., 9])
+        assert_equal(x.mask, [0, 0, 1])
+        # Test div on array
+        x = MaskedArray([1., 2., 3.], mask=[0, 0, 1])
+        xx = x / MaskedArray([10., 20., 30.], mask=[1, 0, 0])
+        assert_equal(xx.filled(9), [9., 2. / 20., 9.])
+        assert_equal(xx.mask, [1, 0, 1])
+        # Test idiv on array
+        x = MaskedArray([1., 2., 3.], mask=[0, 0, 1])
+        x /= MaskedArray([10., 20., 30.], mask=[1, 0, 0])
+        assert_equal(x.filled(9), [9., 2 / 20., 9.])
+        assert_equal(x.mask, [1, 0, 1])
+
+    def test_pow(self):
+        # Test keeping filled(9) w/ (inplace) power
+        # Test pow on scalar
+        x = MaskedArray([1., 2., 3.], mask=[0, 0, 1])
+        xx = x ** 2.5
+        assert_equal(xx.filled(9), [1., 2. ** 2.5, 9.])
+        assert_equal(xx.mask, [0, 0, 1])
+        # Test ipow on scalar
+        x **= 2.5
+        assert_equal(x.filled(9), [1., 2. ** 2.5, 9])
+        assert_equal(x.mask, [0, 0, 1])
+
+    def test_add_arrays(self):
+        a = MaskedArray([[1, 1], [3, 3]])
+        b = MaskedArray([1, 1], mask=[0, 0])
+        a += b
+        assert_equal(a, [[2, 2], [4, 4]])
+        assert_equal(a.mask, [[0, 0], [0, 0]])
+
+        a = MaskedArray([[1, 1], [3, 3]])
+        b = MaskedArray([1, 1], mask=[0, 1])
+        a += b
+        assert_equal(a, [[2, 2], [4, 4]])
+        assert_equal(a.mask, [[0, 1], [0, 1]])
+
+    def test_sub_arrays(self):
+        a = MaskedArray([[1, 1], [3, 3]])
+        b = MaskedArray([1, 1], mask=[0, 0])
+        a -= b
+        assert_equal(a, [[0, 0], [2, 2]])
+        assert_equal(a.mask, [[0, 0], [0, 0]])
+
+        a = MaskedArray([[1, 1], [3, 3]])
+        b = MaskedArray([1, 1], mask=[0, 1])
+        a -= b
+        assert_equal(a, [[0, 0], [2, 2]])
+        assert_equal(a.mask, [[0, 1], [0, 1]])
+
+    def test_mul_arrays(self):
+        a = MaskedArray([[1, 1], [3, 3]])
+        b = MaskedArray([1, 1], mask=[0, 0])
+        a *= b
+        assert_equal(a, [[1, 1], [3, 3]])
+        assert_equal(a.mask, [[0, 0], [0, 0]])
+
+        a = MaskedArray([[1, 1], [3, 3]])
+        b = MaskedArray([1, 1], mask=[0, 1])
+        a *= b
+        assert_equal(a, [[1, 1], [3, 3]])
+        assert_equal(a.mask, [[0, 1], [0, 1]])
+
+    def test_inplace_addition_scalar_type(self):
+        # Test of inplace additions
+        for t in self.othertypes:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.filterwarnings("always")
+                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
+                xm[2] = X
+                x += t(1)
+                assert_equal(x, y + t(1))
+                xm += t(1)
+                assert_equal(xm, y + t(1))
+
+                assert_equal(len(w), 0, "Failed on type=%s." % t)
+
+    def test_inplace_addition_array_type(self):
+        # Test of inplace additions
+        for t in self.othertypes:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.filterwarnings("always")
+                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
+                m = xm.mask
+                a = MaskedArray(np.arange(10, dtype=t))
+                a[-1] = X
+                x += a
+                xm += a
+                assert_equal(x, y + a)
+                assert_equal(xm, y + a)
+                assert_equal(xm.mask, m | a.mask)
+
+                assert_equal(len(w), 0, "Failed on type=%s." % t)
+
+    def test_inplace_subtraction_scalar_type(self):
+        # Test of inplace subtractions
+        for t in self.othertypes:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.filterwarnings("always")
+                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
+                x -= t(1)
+                assert_equal(x, y - t(1))
+                xm -= t(1)
+                assert_equal(xm, y - t(1))
+
+                assert_equal(len(w), 0, "Failed on type=%s." % t)
+
+    def test_inplace_subtraction_array_type(self):
+        # Test of inplace subtractions
+        for t in self.othertypes:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.filterwarnings("always")
+                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
+                m = xm.mask
+                a = MaskedArray(np.arange(10, dtype=t))
+                a[-1] = X
+                x -= a
+                xm -= a
+                assert_equal(x, y - a)
+                assert_equal(xm, y - a)
+                assert_equal(xm.mask, m | a.mask)
+
+                assert_equal(len(w), 0, "Failed on type=%s." % t)
+
+    def test_inplace_multiplication_scalar_type(self):
+        # Test of inplace multiplication
+        for t in self.othertypes:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.filterwarnings("always")
+                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
+                x *= t(2)
+                assert_equal(x, y * t(2))
+                xm *= t(2)
+                assert_equal(xm, y * t(2))
+
+                assert_equal(len(w), 0, "Failed on type=%s." % t)
+
+    def test_inplace_multiplication_array_type(self):
+        # Test of inplace multiplication
+        for t in self.othertypes:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.filterwarnings("always")
+                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
+                m = xm.mask
+                a = MaskedArray(np.arange(10, dtype=t))
+                a[-1] = X
+                x *= a
+                xm *= a
+                assert_equal(x, y * a)
+                assert_equal(xm, y * a)
+                assert_equal(xm.mask, m | a.mask)
+
+                assert_equal(len(w), 0, "Failed on type=%s." % t)
+
+    def test_inplace_floor_division_scalar_type(self):
+        # Test of inplace division
+        for t in self.othertypes:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.filterwarnings("always")
+                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
+                x = MaskedArray(np.arange(10, dtype=t)) * t(2)
+                xm = MaskedArray(np.arange(10, dtype=t)) * t(2)
+                xm[2] = X
+                x //= t(2)
+                xm //= t(2)
+                assert_equal(x, y)
+                assert_equal(xm, y)
+
+                assert_equal(len(w), 0, "Failed on type=%s." % t)
+
+    def test_inplace_floor_division_array_type(self):
+        # Test of inplace division
+        for t in self.othertypes:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.filterwarnings("always")
+                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
+                m = xm.mask
+                a = MaskedArray(np.arange(10, dtype=t))
+                a[-1] = X
+                x //= a
+                xm //= a
+                assert_equal(x, y // a)
+                assert_equal(xm, y // a)
+                assert_equal(xm.mask, m | a.mask | (a == t(0)))
+
+                assert_equal(len(w), 0, "Failed on type=%s." % t)
+
+    def test_inplace_division_scalar_type(self):
+        # Test of inplace division
+        for t in self.othertypes:
+            with suppress_warnings() as sup:
+                sup.record(UserWarning)
+
+                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
+                x = MaskedArray(np.arange(10, dtype=t)) * t(2)
+                xm = MaskedArray(np.arange(10, dtype=t)) * t(2)
+                xm[2] = X
+
+                # May get a DeprecationWarning or a TypeError.
+                #
+                # This is a consequence of the fact that this is true divide
+                # and will require casting to float for calculation and
+                # casting back to the original type. This will only be raised
+                # with integers. Whether it is an error or warning is only
+                # dependent on how stringent the casting rules are.
+                #
+                # Will handle the same way.
+                try:
+                    x /= t(2)
+                    assert_equal(x, y)
+                except (DeprecationWarning, TypeError) as e:
+                    warnings.warn(str(e), stacklevel=1)
+                try:
+                    xm /= t(2)
+                    assert_equal(xm, y)
+                except (DeprecationWarning, TypeError) as e:
+                    warnings.warn(str(e), stacklevel=1)
+
+                if issubclass(t, np.integer):
+                    assert_equal(len(sup.log), 2, "Failed on type=%s." % t)
+                else:
+                    assert_equal(len(sup.log), 0, "Failed on type=%s." % t)
+
+    def test_inplace_division_array_type(self):
+        # Test of inplace division
+        for t in self.othertypes:
+            with suppress_warnings() as sup:
+                sup.record(UserWarning)
+                (x, y, xm) = (_.astype(t) for _ in self.uint8data)
+                m = xm.mask
+                a = MaskedArray(np.arange(10, dtype=t))
+                a[-1] = X
+
+                # May get a DeprecationWarning or a TypeError.
+                #
+                # This is a consequence of the fact that this is true divide
+                # and will require casting to float for calculation and
+                # casting back to the original type. This will only be raised
+                # with integers. Whether it is an error or warning is only
+                # dependent on how stringent the casting rules are.
+                #
+                # Will handle the same way.
+                try:
+                    x /= a
+                    assert_equal(x, y / a)
+                except (DeprecationWarning, TypeError) as e:
+                    warnings.warn(str(e), stacklevel=1)
+                try:
+                    xm /= a
+                    assert_equal(xm, y / a)
+                    assert_equal(xm.mask, m | a.mask | (a == t(0)))
+                except (DeprecationWarning, TypeError) as e:
+                    warnings.warn(str(e), stacklevel=1)
+
+                if issubclass(t, np.integer):
+                    assert_equal(len(sup.log), 2, "Failed on type=%s." % t)
+                else:
+                    assert_equal(len(sup.log), 0, "Failed on type=%s." % t)
+
+    def test_inplace_pow_type(self):
+        for t in self.othertypes:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.filterwarnings("always")
+                # Test pow on scalar
+                x = MaskedArray([1, 2, 3], mask=[0, 0, 1], dtype=t)
+                xx = x ** t(2)
+                xx_r = MaskedArray([1, 2 ** 2, 3], mask=[0, 0, 1], dtype=t)
+                assert_equal(xx.filled(9), xx_r.filled(9))
+                assert_equal(xx.mask, xx_r.mask)
+                # Test ipow on scalar
+                x **= t(2)
+                assert_equal(x.filled(9), xx_r.filled(9))
+                assert_equal(x.mask, xx_r.mask)
+
+                assert_equal(len(w), 0, "Failed on type=%s." % t)
 
 
 #class TestMaskedArrayMethods(object):

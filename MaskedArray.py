@@ -2210,13 +2210,14 @@ def setup_ducktype():
 
     @implements(np.isclose)
     def isclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False):
+        a, b = MaskedArray(a), MaskedArray(b)
         result_data = np.isclose(a._data, b._data, rtol, atol, equal_nan)
         result_mask = a._mask | b._mask
         return maskedarray_or_scalar(result_data, result_mask)
 
     @implements(np.allclose)
     def allclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False):
-        return np.all(np.isclose(a, b, rtol, aton, equal_nan))
+        return np.all(np.isclose(a, b, rtol, atol, equal_nan))
         # Note: unlike original func, this doesn't return a bool
 
     @implements(np.array_equal)
