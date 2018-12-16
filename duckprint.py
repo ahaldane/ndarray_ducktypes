@@ -206,10 +206,10 @@ class FloatingFormatter(ElementFormatter):
         # account for nan and inf in pad_left
         if len(nonfinite_vals) != 0:
             nanlen, inflen = 0, 0
-            if any(umath.isinf(nonfinite_vals)):
-                neginf = sign != '-' or any(isneginf(nonfinite_vals))
+            if np.any(umath.isinf(nonfinite_vals)):
+                neginf = sign != '-' or np.any(np.isneginf(nonfinite_vals))
                 inflen = len(infstr) + neginf
-            if any(umath.isnan(elem)):
+            if np.any(umath.isnan(elem)):
                 nanlen = len(nanstr)
             offset = pad_right + 1  # +1 for decimal pt
             pad_left = max(nanlen - offset, inflen - offset, pad_left)

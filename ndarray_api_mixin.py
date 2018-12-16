@@ -29,7 +29,7 @@ class NDArrayAPIMixin:
     def clip(self, a_min, a_max, out=None):
         return np.clip(self, a_min, a_max, out)
 
-    def compress(condition, axis=None, out=None):
+    def compress(self, condition, axis=None, out=None):
         return np.compress(condition, self, axis, out)
 
     def copy(self, order='K'):
@@ -45,7 +45,7 @@ class NDArrayAPIMixin:
         return np.diagonal(self, offset, axis1, axis2)
 
     def dot(self, b, out=None):
-        return np.dot(self, b, out=None)
+        return np.dot(self, b, out)
 
     def max(self, axis=None, out=None, keepdims=False):
         return np.max(self, axis, out, keepdims)
