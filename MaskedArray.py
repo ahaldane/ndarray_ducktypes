@@ -78,7 +78,7 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
 
         return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
 
-    # XXX why is this bad to do for __array_function__?
+    ## XXX why is this bad to do for __array_function__?
     #def __array__(self):
     #    return self.filled() # this returns a (readonly) view. Is that right?
 
@@ -180,7 +180,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         return duck_str(self)
 
     def __repr__(self):
-        return duck_repr(self)
+        return duck_repr(self, showdtype=self._mask.all())
 
     def __getitem__(self, ind):
         if is_string_or_list_of_strings(ind):
@@ -199,8 +199,10 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         ind = tuple(i.filled(False) if
                 (isinstance(i, MaskedArray) and i.dtype.type is np.bool_)
                 else i for i in ind)
-        #XXX do somehting similar for integer array indices? no because
-        #there's no way to preserve shape for n-d index arrays.
+        #XXX do somehting similar for integer array indices? No. The only
+        # sensible behavior would be for masked indices to produce masked values
+        # (since we need to rpeserve shape), but then how would assignment to a
+        # masked fancy index work..
 
         data = self._data[ind]
         mask = self._mask[ind]
@@ -478,6 +480,16 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
             return 'X' #XXX something more?
         return format(self._data, format_spec)
 
+    def __bool__(self):
+        if self._mask:
+            return False
+        return bool(self._data)
+
+    def __hash__(self):
+        if self._mask:
+            return 0
+        return hash(self._data)
+
     def astype(self, dtype, order='K', casting='unsafe', subok=True, copy=True):
         result_data = self._data.astype(dtype, order, casting, subok, copy)
         return MaskedScalar(result_data, self._mask)
@@ -502,7 +514,7 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
 # create a special dummy object which signifies "masked", which users can put
 # in lists to pass to MaskedArray constructor, or can assign to elements of
 # a MaskedArray, to set the mask.
-class Masked:
+class MaskedX:
     def __repr__(self):
         return 'masked_input_X'
     def __str__(self):
@@ -519,7 +531,7 @@ class Masked:
         raise MemoryError("Masked X should only be used in "
                           "MaskedArray assignment or construction")
 
-masked = X = Masked()
+masked = X = MaskedX()
 
 # takes array-like input, replaces masked value by 0 and return filled data &
 # mask. This is more-or-less a reimplementation of PyArray_DTypeFromObject to
@@ -753,10 +765,18 @@ class _Masked_BinOp(_Masked_UFunc):
         Function which returns true for inputs whose output should be masked.
     """
 
-    def __init__(self, ufunc, maskdomain=None, reduce_fill=0):
+    def __init__(self, ufunc, maskdomain=None, reduce_fill=None):
         super().__init__(ufunc)
         self.domain = maskdomain
-        self.reduce_fill = reduce_fill
+
+        if reduce_fill is None:
+            reduce_fill = ufunc.identity
+
+        # XXX messy.. try to clean this behavior up
+        if np.isscalar(reduce_fill) or not callable(reduce_fill):
+            self.reduce_fill = lambda dtype: reduce_fill
+        else:
+            self.reduce_fill = reduce_fill
 
     def __call__(self, a, b, **kwargs):
         da, db = getdata(a), getdata(b)
@@ -797,7 +817,9 @@ class _Masked_BinOp(_Masked_UFunc):
 
     def reduce(self, a, **kwargs):
         if self.domain is not None:
-            raise RuntimeError("domained ufuncs do not support reduce")
+            raise TypeError("domained ufuncs do not support reduce")
+        if self.reduce_fill is None:
+            raise TypeError("reduce not supported for masked {}".format(self.f))
 
         da, ma = getdata(a), getmask(a)
 
@@ -814,11 +836,11 @@ class _Masked_BinOp(_Masked_UFunc):
             mkwargs['out'] = (out[0]._mask,)
 
         initial = kwargs.get('initial', None)
-        if isinstance(initial, (MaskedScalar, Masked)):
+        if isinstance(initial, (MaskedScalar, MaskedX)):
             raise ValueError("initial should not be masked")
 
         if not np.isscalar(da):
-            da[ma] = self.reduce_fill
+            da[ma] = self.reduce_fill(da.dtype)
             # if da is a scalar, we get correct result no matter fill
 
         #with np.errstate(divide='ignore', invalid='ignore'):
@@ -837,6 +859,9 @@ class _Masked_BinOp(_Masked_UFunc):
     def accumulate(self, a, axis=0, dtype=None, out=None):
         if self.domain is not None:
             raise RuntimeError("domained ufuncs do not support reduce")
+        if self.reduce_fill is None:
+            raise TypeError("accumulate not supported for masked {}".format(
+                            self.f))
 
         da, ma = getdata(a), getmask(a)
 
@@ -848,7 +873,7 @@ class _Masked_BinOp(_Masked_UFunc):
             maskout = out[0]._mask
 
         if not np.isscalar(da):
-            da[ma] = self.reduce_fill
+            da[ma] = self.reduce_fill(da.dtype)
         #with np.errstate(divide='ignore', invalid='ignore'):
         result = self.f.accumulate(da, axis, dtype, dataout)
         m = np.logical_and.accumulate(ma, axis, out=maskout)
@@ -865,6 +890,8 @@ class _Masked_BinOp(_Masked_UFunc):
     def outer(self, a, b, **kwargs):
         if self.domain is not None:
             raise RuntimeError("domained ufuncs do not support reduce")
+        if self.reduce_fill is None:
+            raise TypeError("outer not supported for masked {}".format(self.f))
 
         da, db = getdata(a), getdata(b)
         ma, mb = getmask(a), getmask(b)
@@ -887,9 +914,9 @@ class _Masked_BinOp(_Masked_UFunc):
             mkwargs['out'] = (out[0]._mask,)
 
         if not np.isscalar(da):
-            da[ma] = self.reduce_fill
-        if not np.isscalar(da):
-            db[mb] = self.reduce_fill
+            da[ma] = self.reduce_fill(da.dtype)
+        if not np.isscalar(db):
+            db[mb] = self.reduce_fill(db.dtype)
 
         result = self.f.outer(da, db, **kwargs)
         m = np.logical_or.outer(ma, mb, **mkwargs)
@@ -964,14 +991,24 @@ def setup_ufuncs():
                                        # XXX use finfo?
     # XXX should these all be customized for the float size?
 
+    # XXX this fill_value strategy seems a little off. Shouldn't we
+    # instead try to behave a if the masked values were not present at all?
+    # Eg for np.equal.reduce([False, False, True, True]) the result
+    # depends on the exact ordering of the elements.
     # binary ufuncs
     for ufunc in [umath.add, umath.subtract, umath.multiply, umath.power,
                   umath.arctan2, umath.hypot, umath.equal, umath.not_equal,
                   umath.less_equal, umath.greater_equal, umath.less,
                   umath.greater, umath.logical_and, umath.logical_or,
                   umath.logical_xor, umath.bitwise_and, umath.bitwise_or,
-                  umath.bitwise_xor, umath.maximum, umath.minimum]:
+                  umath.bitwise_xor]:
         masked_ufuncs[ufunc] = _Masked_BinOp(ufunc)
+
+    # fill value depends on dtype
+    masked_ufuncs[umath.maximum] = _Masked_BinOp(umath.maximum,
+                                         reduce_fill=lambda dt: _max_filler[dt])
+    masked_ufuncs[umath.minimum] = _Masked_BinOp(umath.minimum,
+                                         reduce_fill=lambda dt: _min_filler[dt])
 
     # domained binary ufuncs
     for ufunc in [umath.true_divide, umath.floor_divide, umath.remainder,

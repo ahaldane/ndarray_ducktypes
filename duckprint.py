@@ -770,7 +770,8 @@ def duck_repr(arr, **options):
         class_name = "array"
 
     skipdtype = False
-    if arr.dtype.type in typelessdata and arr.dtype.names is None:
+    if (options.get('showdtype', False) or 
+            (arr.dtype.type in typelessdata and arr.dtype.names is None)):
         skipdtype = True
 
     prefix = class_name + "("
