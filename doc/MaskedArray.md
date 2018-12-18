@@ -25,7 +25,7 @@ This module should not be confused with NumPy's builtin `np.ma.MaskedArray` clas
 Quickstart
 ==========
 
-This module introduces three main new types on top of `NumPy`'s types: 
+This module introduces three main new types on top of `NumPy`'s types:
  * `MaskedArray`, which behaves like NumPy's `ndarray` type but with masked elements
  * `MaskedScalar`, which behaves like NumPy's scalar types but which can be masked
  * `X`, a special variable representing a masked value for use in `MaskedArray` construction and assignment.
@@ -67,7 +67,7 @@ MaskedArray([[1, X, 3],
 
 `MaskedArray` and `MaskedScalar` support two new attributes relative to `ndarray`:
 
-The `.filled` method  returns a readonly view of the `MaskedArray`s data as a plain `ndarray`, with all masked elements replaced by a fill value, which is 0 by default. The `.filled()` method is the primary way of converting a `MaskedArray` back to an `ndarray`. 
+The `.filled` method  returns a copy of the `MaskedArray`s data as a plain `ndarray`, with all masked elements replaced by a fill value, which is 0 by default. The `.filled()` method is the primary way of converting a `MaskedArray` back to an `ndarray`.
 
 ```python
 >>> a.filled()
@@ -90,7 +90,7 @@ Otherwise `MaskedArray` supports most of the basic attributes of `ndarrays` like
 MaskedScalars and the masked input marker `X`
 ---------------------------------------------
 
-In some situations NumPy ordinarily returns a Numpy scalar object, for instance when indexing an `ndarray` to get a single element. When operating on a `MaskedArray` NumPy will return a `MaskedScalar` object instead. While `MaskedScalar`s support almost all the methods and attributes of NumPy scalars there are some important differences. Notably, `MaskedScalar`s are not part of the NumPy scalar type hierarchy, and so for instance code of the form `isinstance(var, np.inexact)` will fail, and `np.isscalar` will return `False`. In such situations you should use `.filled` first to obtain a NumPy scalar.
+When operating on a `MaskedArray`, NumPy will return a `MaskedScalar` object in  situations which ordinarily return a Numpy scalar object, for instance when indexing an array to get a single element. While `MaskedScalar`s support almost all the methods and attributes of NumPy scalars there are some important differences. Notably, `MaskedScalar`s are not part of the NumPy scalar type hierarchy, and so for instance code of the form `isinstance(var, np.inexact)` will fail, and `np.isscalar` will return `False`. In such situations you should use `.filled` first to obtain a NumPy scalar.
 
 Like NumPy scalars, `MaskedScalar`s are immutable (except for structured scalars) and can be used as dict keys. When a `MaskedScalar` is tested for truth, for instance in if-statements, it will return `False` if masked, or the same as the corresponding numpy scalar if not masked. To get masked values to test as `True`, use `scalar.filled(True)` first.
 
@@ -154,9 +154,9 @@ It is important to understand when a NumPy operation returns a view or a copy, a
 
 During `MaskedArray` construction, when supplying the data and mask as `ndarrays`,  in most cases these are viewed by the `MaskedArray`and will be modified by operations on the `MaskedArray`. This can lead to confusing or undesirable behavior if you subsequently use the data array, particularly as `MaskedArray` may fill the data `ndarray` with nonsense values at masked positions. To avoid this you can use the `copy=True` argument to the `MaskedArray` constructor.
 
-The `.mask`. and `.filled` attributes of a `MaskedArray` return readonly views of its internal mask and data arrays, with rare exceptions. This means that if you obtain a `.filled()` view of a `MaskedArray` and then modify the `MaskedArray`, the filled `ndarray` will be modified and may now have nonsense values at newly masked positions. Use `.copy` on the returned `ndarray` to avoid this. The best practice is to always get a new `.filled` array after you modify the `MaskedArray`.
+The `.mask` attribute of a `MaskedArray` is a readonly view of the internal mask data, and will be updated if the `MaskedArray` is assigned to. The `.filled()` method on the other hand returns a copy of the data by default, but if the `view` argument is set to `True` it will return a view. Use caution with this view, because subsequent assignment to the `MaskedArray` may put nonsense values at masked positions of its internal data array.
 
-Unlike `ndarray`s, `MaskedArray`s do not support a `.base` attribute which is often used to tell if an array is a view. However, it is possible to probe the `.base` attribute of the `ndarray`s returned by `.mask` or `.filled`.
+Unlike `ndarray`s, `MaskedArray`s do not support a `.base` attribute which is often used to tell if an array is a view. However, it is possible to probe the `.base` attribute of the `ndarray`s returned by `.mask`, or `.filled` with `view=True`.
 
 Implementation Details and Cautionary Notes
 -------------------------------------------

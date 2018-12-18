@@ -286,15 +286,15 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
     # rename this to "X" to be shorter, since it is heavily used?
     #   arr.X()  arr.filled()  arr.fillX()  arr.rX()
-    def filled(self, fill_value=np._NoValue, minmax=None):
-        # return a readonly view of data with masked elem filled in,
-        # except if this is already a readonly view, in which case we
-        # first make a copy (accounts for np.diagonal returning readonly view)
-        d = self._data.view()
-        if not d.flags['WRITEABLE']:
-            d = d.copy()
+    def filled(self, fill_value=np._NoValue, minmax=None, view=False):
+        if view and d.flags['WRITEABLE']:
+            d = self._data.view()
+            d[self._mask] = self._get_fill_value(fill_value, minmax)
+            d.flags['WRITEABLE'] = False
+            return d
+
+        d = self._data.copy(order='K')
         d[self._mask] = self._get_fill_value(fill_value, minmax)
-        d.flags['WRITEABLE'] = False
         return d
 
     def count(self, axis=None, keepdims=False):
@@ -481,7 +481,8 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
     def mask(self):
         return self._mask
 
-    def filled(self, fill_value=np._NoValue, minmax=None):
+    def filled(self, fill_value=np._NoValue, minmax=None, view=False):
+        # view is ignored
         fill_value = self._get_fill_value(fill_value, minmax)
 
         if self._mask:

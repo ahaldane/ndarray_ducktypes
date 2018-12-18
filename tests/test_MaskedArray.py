@@ -3191,28 +3191,28 @@ class TestMaskedArrayFunctions(object):
         assert_equal(core, ma.filled())
         assert_equal(core.dtype, ma.dtype)
 
-    def test_choose(self):
-        # Test choose
-        choices = [[0, 1, 2, 3], [10, 11, 12, 13],
-                   [20, 21, 22, 23], [30, 31, 32, 33]]
-        chosen = choose([2, 3, 1, 0], choices)
-        assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
-        chosen = choose([2, 4, 1, 0], choices, mode='clip')
-        assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
-        chosen = choose([2, 4, 1, 0], choices, mode='wrap')
-        assert_equal(chosen, MaskedArray([20, 1, 12, 3]))
-        # Check with some masked indices
-        indices_ = MaskedArray([2, 4, 1, 0], mask=[1, 0, 0, 1])
-        chosen = choose(indices_, choices, mode='wrap')
-        assert_equal(chosen, MaskedArray([99, 1, 12, 99]))
-        assert_equal(chosen.mask, [1, 0, 0, 1])
-        # Check with some masked choices
-        choices = MaskedArray(choices, mask=[[0, 0, 0, 1], [1, 1, 0, 1],
-                                       [1, 0, 0, 0], [0, 0, 0, 0]])
-        indices_ = [2, 3, 1, 0]
-        chosen = choose(indices_, choices, mode='wrap')
-        assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
-        assert_equal(chosen.mask, [1, 0, 0, 1])
+    #def test_choose(self):
+    #    # Test choose
+    #    choices = [[0, 1, 2, 3], [10, 11, 12, 13],
+    #               [20, 21, 22, 23], [30, 31, 32, 33]]
+    #    chosen = np.choose([2, 3, 1, 0], choices)
+    #    assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
+    #    chosen = np.choose([2, 4, 1, 0], choices, mode='clip')
+    #    assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
+    #    chosen = np.choose([2, 4, 1, 0], choices, mode='wrap')
+    #    assert_equal(chosen, MaskedArray([20, 1, 12, 3]))
+    #    # Check with some masked indices
+    #    indices_ = MaskedArray([2, 4, 1, 0], mask=[1, 0, 0, 1])
+    #    chosen = np.choose(indices_, choices, mode='wrap')
+    #    assert_equal(chosen, MaskedArray([99, 1, 12, 99]))
+    #    assert_equal(chosen.mask, [1, 0, 0, 1])
+    #    # Check with some masked choices
+    #    choices = MaskedArray(choices, mask=[[0, 0, 0, 1], [1, 1, 0, 1],
+    #                                   [1, 0, 0, 0], [0, 0, 0, 0]])
+    #    indices_ = [2, 3, 1, 0]
+    #    chosen = np.choose(indices_, choices, mode='wrap')
+    #    assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
+    #    assert_equal(chosen.mask, [1, 0, 0, 1])
 
 #    def test_choose_with_out(self):
 #        # Test choose with an explicit out keyword
