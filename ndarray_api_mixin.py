@@ -152,6 +152,22 @@ class NDArrayAPIMixin:
     def ndim(self):
         return len(self.shape)
 
+    @property
+    def imag(self):
+        return np.imag(self)
+
+    @imag.setter
+    def imag(self, val):
+        np.imag(self)[...] = val
+
+    @property
+    def real(self):
+        return np.real(self)
+
+    @real.setter
+    def real(self, val):
+        np.real(self)[...] = val
+
 # Attributes not implemented:
 #  Basic Attributes:
 #    dtype, shape, strides, flags, base

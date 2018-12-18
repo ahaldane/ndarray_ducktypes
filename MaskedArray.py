@@ -104,22 +104,6 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
         return fill_value
 
     @property
-    def imag(self):
-        return np.imag(self)
-
-    @imag.setter
-    def imag(self, val):
-        self.imag[...] = val
-
-    @property
-    def real(self):
-        return np.real(self)
-
-    @real.setter
-    def real(self, val):
-        self.real[...] = val
-
-    @property
     def flat(self):
         return MaskedIterator(self)
 
@@ -127,7 +111,6 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     def __init__(self, data, mask=None, dtype=None, copy=False,
                 order=None, subok=True, ndmin=0, **options):
 
-        #self._base = None
         if isinstance(data, (MaskedArray, MaskedScalar)):
             self._data = np.array(data._data, copy=copy, order=order,
                                               subok=subok, ndmin=ndmin)
@@ -138,7 +121,6 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
                 #XXX should this override the mask? Or be OR'd in?
                 raise ValueError("don't use mask if passing a maskedarray")
 
-            #self._base = data if data._base is None else data._base
         elif data is X and mask is None:
             # 0d masked array
             if dtype is None:
@@ -152,7 +134,8 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
                 data, mask = replace_X(data, dtype=dtype)
 
                 # replace_X sometimes uses broadcast_to, which returns a
-                # readonly array with funny strides. Make writeable if so.
+                # readonly array with funny strides. Make writeable if so,
+                # since we will end up in the is_ndducktype code-path below.
                 if (isinstance(mask, np.ndarray) and
                         mask.flags['WRITEABLE'] == False):
                     mask = mask.copy()
@@ -199,15 +182,19 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         ind = tuple(i.filled(False) if
                 (isinstance(i, MaskedArray) and i.dtype.type is np.bool_)
                 else i for i in ind)
-        #XXX do somehting similar for integer array indices? No. The only
+        #XXX do somehting similar for integer array indices? The only
         # sensible behavior would be for masked indices to produce masked values
-        # (since we need to rpeserve shape), but then how would assignment to a
-        # masked fancy index work..
+        # (since we need to preserve index shape), but then how would
+        # assignment to a masked fancy index work.. I guess you could ignore
+        # masked elements in assignment.  during assignment the output shape
+        # doesn't matter anyway. Would need to ravel then select unmasked
+        # elem in both index and assigned val. Would be a lot of work to
+        # implement and the use-case is not clear to me.
 
         data = self._data[ind]
         mask = self._mask[ind]
 
-        if np.isscalar(mask): # use mask, not data, to account for obj arrays
+        if np.isscalar(mask): # test mask, not data, to account for obj arrays
             return MaskedScalar(data, mask, dtype=self.dtype)
         return MaskedArray(data, mask)
 
@@ -262,15 +249,6 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     @property
     def strides(self):
         return self._data.strides
-
-    # XXX decisions about how to treat base still to be made
-    @property
-    def base(self):
-        return self._base
-
-    def _set_base(self, base):
-        # private method allowing base to be set by code in this module
-        self.base = base
 
     @property
     def mask(self):
@@ -736,13 +714,14 @@ class _Masked_UniOp(_Masked_UFunc):
 
         d = getdata(a)
 
-        with np.errstate(divide='ignore', invalid='ignore'):
-            result = self.f(d, *args, **kwargs)
-
+        # mask computation before domain, in case domain is inplace
         if self.domain is None:
             m = getmask(a)
         else:
             m = self.domain(d) | getmask(a)
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            result = self.f(d, *args, **kwargs)
 
         if out is not ():
             out[0]._mask[...] = m
@@ -800,14 +779,15 @@ class _Masked_BinOp(_Masked_UFunc):
             kwargs['out'] = (out[0]._data,)
             mkwargs['out'] = (out[0]._mask,)
 
-        with np.errstate(divide='ignore', invalid='ignore'):
-            result = self.f(da, db, **kwargs)
         m = np.logical_or(ma, mb, **mkwargs)
         if self.domain is not None:
             if 'out' not in mkwargs and isinstance(m, np.ndarray):
                 mkwargs['out'] = (m,)
             m = np.logical_or(m, self.domain(da, db), **mkwargs)
             #XXX add test that this gets where right
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            result = self.f(da, db, **kwargs)
 
         if out:
             return out[0]
@@ -942,6 +922,18 @@ def maskdom_divide(a, b):
     # otherwise, for integer types, only 0 is a problem
     return b == 0
 
+def maskdom_power(a, b):
+    out_dtype = np.result_type(a, b)
+    if issubclass(out_dtype.type, np.floating):
+        # non-integer powers of negative floats not allowed
+        # negative powers of 0 not allowed
+        return ((a < 0) & (b != np.rint(b))) | ((a == 0) & (b < 0))
+    if issubclass(out_dtype.type, np.integer):
+        # integers to negative powers not allowed
+        # XXX the binop actually raises a ValueError, so this test is pointless?
+        return b < 0
+    return np.broadcast_to(False, a.shape)
+
 def maskdom_greater_equal(x):
     def maskdom_interval(a):
         with np.errstate(invalid='ignore'):
@@ -996,7 +988,7 @@ def setup_ufuncs():
     # Eg for np.equal.reduce([False, False, True, True]) the result
     # depends on the exact ordering of the elements.
     # binary ufuncs
-    for ufunc in [umath.add, umath.subtract, umath.multiply, umath.power,
+    for ufunc in [umath.add, umath.subtract, umath.multiply,
                   umath.arctan2, umath.hypot, umath.equal, umath.not_equal,
                   umath.less_equal, umath.greater_equal, umath.less,
                   umath.greater, umath.logical_and, umath.logical_or,
@@ -1014,6 +1006,7 @@ def setup_ufuncs():
     for ufunc in [umath.true_divide, umath.floor_divide, umath.remainder,
                   umath.fmod, umath.mod]:
         masked_ufuncs[ufunc] = _Masked_BinOp(ufunc, maskdom_divide)
+    masked_ufuncs[umath.power] = _Masked_BinOp(umath.power, maskdom_power)
 
 setup_ufuncs()
 
@@ -1049,7 +1042,7 @@ def get_maskedout(out):
 
 def _copy_mask(mask, outmask=None):
     if outmask is not None:
-        result_mask = out_mask
+        result_mask = outmask
         result_mask[...] = mask
     else:
         result_mask = mask.copy()
@@ -1790,7 +1783,7 @@ def setup_ducktype():
         result_mask = _copy_mask(a._mask, outmask)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
-    @implements(np.around)
+    @implements(np.round)
     def round(a, decimals=0, out=None):
         return np.around(a, decimals, out)
 
@@ -2081,7 +2074,7 @@ def setup_ducktype():
             x = MaskedArray(x)
 
         if isinstance(condition, (MaskedArray, MaskedScalar)):
-            condition = condition.filled(0)
+            condition = condition.filled(False)
 
         result_data = np.where(condition, *(a._data for a in (x, y)))
         result_mask = np.where(condition, *(a._mask for a in (x, y)))

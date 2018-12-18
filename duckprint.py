@@ -770,7 +770,7 @@ def duck_repr(arr, **options):
         class_name = "array"
 
     skipdtype = False
-    if (options.get('showdtype', False) or 
+    if (not options.get('showdtype', False) and 
             (arr.dtype.type in typelessdata and arr.dtype.names is None)):
         skipdtype = True
 
