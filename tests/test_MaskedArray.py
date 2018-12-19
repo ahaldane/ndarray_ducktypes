@@ -2153,8 +2153,9 @@ class TestMaskedArrayMethods(object):
         assert_equal(a.all(), a.filled().all())
         assert_equal(a.argmax().filled(), a.filled().argmax())
         assert_equal(a.argmin().filled(), a.filled().argmin())
-        assert_equal(a.choose([0, 1, 2, 3, 4]).filled(),
-                     a.filled().choose([0, 1, 2, 3, 4]))
+        #XXX choose doesn't support masked indices
+        #assert_equal(a.choose([0, 1, 2, 3, 4]).filled(),
+        #             a.filled().choose([0, 1, 2, 3, 4]))
         assert_equal(a.compress([1, 0, 1]).filled(),
                      a.filled().compress([1, 0, 1]))
         assert_equal(a.conj().filled(), a.filled().conj())
@@ -3191,458 +3192,106 @@ class TestMaskedArrayFunctions(object):
         assert_equal(core, ma.filled())
         assert_equal(core.dtype, ma.dtype)
 
-    #def test_choose(self):
-    #    # Test choose
-    #    choices = [[0, 1, 2, 3], [10, 11, 12, 13],
-    #               [20, 21, 22, 23], [30, 31, 32, 33]]
-    #    chosen = np.choose([2, 3, 1, 0], choices)
-    #    assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
-    #    chosen = np.choose([2, 4, 1, 0], choices, mode='clip')
-    #    assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
-    #    chosen = np.choose([2, 4, 1, 0], choices, mode='wrap')
-    #    assert_equal(chosen, MaskedArray([20, 1, 12, 3]))
-    #    # Check with some masked indices
-    #    indices_ = MaskedArray([2, 4, 1, 0], mask=[1, 0, 0, 1])
-    #    chosen = np.choose(indices_, choices, mode='wrap')
-    #    assert_equal(chosen, MaskedArray([99, 1, 12, 99]))
-    #    assert_equal(chosen.mask, [1, 0, 0, 1])
-    #    # Check with some masked choices
-    #    choices = MaskedArray(choices, mask=[[0, 0, 0, 1], [1, 1, 0, 1],
-    #                                   [1, 0, 0, 0], [0, 0, 0, 0]])
-    #    indices_ = [2, 3, 1, 0]
-    #    chosen = np.choose(indices_, choices, mode='wrap')
-    #    assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
-    #    assert_equal(chosen.mask, [1, 0, 0, 1])
+    def test_choose(self):
+        # Test choose
+        choices = [[0, 1, 2, 3], [10, 11, 12, 13],
+                   [20, 21, 22, 23], [30, 31, 32, 33]]
+        chosen = np.choose([2, 3, 1, 0], choices)
+        assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
+        chosen = np.choose([2, 4, 1, 0], choices, mode='clip')
+        assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
+        chosen = np.choose([2, 4, 1, 0], choices, mode='wrap')
+        assert_equal(chosen, MaskedArray([20, 1, 12, 3]))
+        # XXX masked indices not supported
+        ## Check with some masked indices
+        #indices_ = MaskedArray([2, 4, 1, 0], mask=[1, 0, 0, 1])
+        #chosen = np.choose(indices_, choices, mode='wrap')
+        #assert_equal(chosen, MaskedArray([99, 1, 12, 99]))
+        #assert_equal(chosen.mask, [1, 0, 0, 1])
+        # Check with some masked choices
+        choices = MaskedArray(choices, mask=[[0, 0, 0, 1], [1, 1, 0, 1],
+                                       [1, 0, 0, 0], [0, 0, 0, 0]])
+        indices_ = [2, 3, 1, 0]
+        chosen = np.choose(indices_, choices, mode='wrap')
+        assert_equal(chosen, MaskedArray([20, 31, 12, 3]))
+        assert_equal(chosen.mask, [1, 0, 0, 1])
 
-#    def test_choose_with_out(self):
-#        # Test choose with an explicit out keyword
-#        choices = [[0, 1, 2, 3], [10, 11, 12, 13],
-#                   [20, 21, 22, 23], [30, 31, 32, 33]]
-#        store = empty(4, dtype=int)
-#        chosen = choose([2, 3, 1, 0], choices, out=store)
-#        assert_equal(store, MaskedArray([20, 31, 12, 3]))
-#        assert_(store is chosen)
-#        # Check with some masked indices + out
-#        store = empty(4, dtype=int)
-#        indices_ = MaskedArray([2, 3, 1, 0], mask=[1, 0, 0, 1])
-#        chosen = choose(indices_, choices, mode='wrap', out=store)
-#        assert_equal(store, MaskedArray([99, 31, 12, 99]))
-#        assert_equal(store.mask, [1, 0, 0, 1])
-#        # Check with some masked choices + out ina ndarray !
-#        choices = MaskedArray(choices, mask=[[0, 0, 0, 1], [1, 1, 0, 1],
-#                                       [1, 0, 0, 0], [0, 0, 0, 0]])
-#        indices_ = [2, 3, 1, 0]
-#        store = empty(4, dtype=int).view(ndarray)
-#        chosen = choose(indices_, choices, mode='wrap', out=store)
-#        assert_equal(store, MaskedArray([999999, 31, 12, 999999]))
+    def test_choose_with_out(self):
+        # Test choose with an explicit out keyword
+        choices = [[0, 1, 2, 3], [10, 11, 12, 13],
+                   [20, 21, 22, 23], [30, 31, 32, 33]]
+        #store = np.empty(4, dtype=int)
+        #chosen = np.choose([2, 3, 1, 0], choices, out=store)
+        #assert_equal(store, MaskedArray([20, 31, 12, 3]))
+        #assert_(store is chosen)
+        # XXX
+        ## Check with some masked indices + out
+        #store = empty(4, dtype=int)
+        #indices_ = MaskedArray([2, 3, 1, 0], mask=[1, 0, 0, 1])
+        #chosen = choose(indices_, choices, mode='wrap', out=store)
+        #assert_equal(store, MaskedArray([99, 31, 12, 99]))
+        #assert_equal(store.mask, [1, 0, 0, 1])
+        # Check with some masked choices + out ina ndarray !
+        choices = MaskedArray(choices, mask=[[0, 0, 0, 1], [1, 1, 0, 1],
+                                       [1, 0, 0, 0], [0, 0, 0, 0]])
+        indices_ = [2, 3, 1, 0]
+        store = MaskedArray(np.empty(4, dtype=int))
+        chosen = np.choose(indices_, choices, mode='wrap', out=store)
+        assert_masked_equal(store, MaskedArray([X, 31, 12, X]))
 
-#    def test_reshape(self):
-#        a = arange(10)
-#        a[0] = masked
-#        # Try the default
-#        b = a.reshape((5, 2))
-#        assert_equal(b.shape, (5, 2))
-#        assert_(b.flags['C'])
-#        # Try w/ arguments as list instead of tuple
-#        b = a.reshape(5, 2)
-#        assert_equal(b.shape, (5, 2))
-#        assert_(b.flags['C'])
-#        # Try w/ order
-#        b = a.reshape((5, 2), order='F')
-#        assert_equal(b.shape, (5, 2))
-#        assert_(b.flags['F'])
-#        # Try w/ order
-#        b = a.reshape(5, 2, order='F')
-#        assert_equal(b.shape, (5, 2))
-#        assert_(b.flags['F'])
+    def test_reshape(self):
+        a = MaskedArray(np.arange(10))
+        a[0] = X
+        # Try the default
+        b = a.reshape((5, 2))
+        assert_equal(b.shape, (5, 2))
+        assert_(b.flags['C'])
+        # Try w/ arguments as list instead of tuple
+        b = a.reshape(5, 2)
+        assert_equal(b.shape, (5, 2))
+        assert_(b.flags['C'])
+        # Try w/ order
+        b = a.reshape((5, 2), order='F')
+        assert_equal(b.shape, (5, 2))
+        assert_(b.flags['F'])
+        # Try w/ order
+        b = a.reshape(5, 2, order='F')
+        assert_equal(b.shape, (5, 2))
+        assert_(b.flags['F'])
 
-#        c = np.reshape(a, (2, 5))
-#        assert_(isinstance(c, MaskedArray))
-#        assert_equal(c.shape, (2, 5))
-#        assert_(c[0, 0] is masked)
-#        assert_(c.flags['C'])
+        c = np.reshape(a, (2, 5))
+        assert_(isinstance(c, MaskedArray))
+        assert_equal(c.shape, (2, 5))
+        assert_(c[0, 0].mask)
+        assert_(c.flags['C'])
 
-#    def test_make_mask_descr(self):
-#        # Flexible
-#        ntype = [('a', float), ('b', float)]
-#        test = make_mask_descr(ntype)
-#        assert_equal(test, [('a', bool), ('b', bool)])
-#        assert_(test is make_mask_descr(test))
+    def test_compress(self):
+        # Test compress function on ndarray and masked array
+        # Address Github #2495.
+        arr = MaskedArray(np.arange(8))
+        arr.shape = 4, 2
+        cond = np.array([True, False, True, True])
+        control = arr[[0, 2, 3]]
+        test = np.compress(cond, arr, axis=0)
+        assert_masked_equal(test, control)
 
-#        # Standard w/ shape
-#        ntype = (float, 2)
-#        test = make_mask_descr(ntype)
-#        assert_equal(test, (bool, 2))
-#        assert_(test is make_mask_descr(test))
+    def test_convolve(self):
+        a = MaskedArray(np.arange(5))
+        a[2] = X
+        b = np.array([1, 1])
+        test = np.convolve(a, b)
+        assert_masked_equal(test, MaskedArray([0, 1, 1, 3, 7, 4]))
 
-#        # Standard standard
-#        ntype = float
-#        test = make_mask_descr(ntype)
-#        assert_equal(test, np.dtype(bool))
-#        assert_(test is make_mask_descr(test))
+        test = np.convolve(MaskedArray([1, 1]), MaskedArray([1, 1, 1]))
+        assert_equal(test, np.array([1, 2, 2, 1]))
 
-#        # Nested
-#        ntype = [('a', float), ('b', [('ba', float), ('bb', float)])]
-#        test = make_mask_descr(ntype)
-#        control = np.dtype([('a', 'b1'), ('b', [('ba', 'b1'), ('bb', 'b1')])])
-#        assert_equal(test, control)
-#        assert_(test is make_mask_descr(test))
-
-#        # Named+ shape
-#        ntype = [('a', (float, 2))]
-#        test = make_mask_descr(ntype)
-#        assert_equal(test, np.dtype([('a', (bool, 2))]))
-#        assert_(test is make_mask_descr(test))
-
-#        # 2 names
-#        ntype = [(('A', 'a'), float)]
-#        test = make_mask_descr(ntype)
-#        assert_equal(test, np.dtype([(('A', 'a'), bool)]))
-#        assert_(test is make_mask_descr(test))
-
-#        # nested boolean types should preserve identity
-#        base_type = np.dtype([('a', int, 3)])
-#        base_mtype = make_mask_descr(base_type)
-#        sub_type = np.dtype([('a', int), ('b', base_mtype)])
-#        test = make_mask_descr(sub_type)
-#        assert_equal(test, np.dtype([('a', bool), ('b', [('a', bool, 3)])]))
-#        assert_(test.fields['b'][0] is base_mtype)
-
-#    def test_make_mask(self):
-#        # Test make_mask
-#        # w/ a list as an input
-#        mask = [0, 1]
-#        test = make_mask(mask)
-#        assert_equal(test.dtype, MaskType)
-#        assert_equal(test, [0, 1])
-#        # w/ a ndarray as an input
-#        mask = np.array([0, 1], dtype=bool)
-#        test = make_mask(mask)
-#        assert_equal(test.dtype, MaskType)
-#        assert_equal(test, [0, 1])
-#        # w/ a flexible-type ndarray as an input - use default
-#        mdtype = [('a', bool), ('b', bool)]
-#        mask = np.array([(0, 0), (0, 1)], dtype=mdtype)
-#        test = make_mask(mask)
-#        assert_equal(test.dtype, MaskType)
-#        assert_equal(test, [1, 1])
-#        # w/ a flexible-type ndarray as an input - use input dtype
-#        mdtype = [('a', bool), ('b', bool)]
-#        mask = np.array([(0, 0), (0, 1)], dtype=mdtype)
-#        test = make_mask(mask, dtype=mask.dtype)
-#        assert_equal(test.dtype, mdtype)
-#        assert_equal(test, mask)
-#        # w/ a flexible-type ndarray as an input - use input dtype
-#        mdtype = [('a', float), ('b', float)]
-#        bdtype = [('a', bool), ('b', bool)]
-#        mask = np.array([(0, 0), (0, 1)], dtype=mdtype)
-#        test = make_mask(mask, dtype=mask.dtype)
-#        assert_equal(test.dtype, bdtype)
-#        assert_equal(test, np.array([(0, 0), (0, 1)], dtype=bdtype))
-#        # Ensure this also works for void
-#        mask = np.array((False, True), dtype='?,?')[()]
-#        assert_(isinstance(mask, np.void))
-#        test = make_mask(mask, dtype=mask.dtype)
-#        assert_equal(test, mask)
-#        assert_(test is not mask)
-#        mask = np.array((0, 1), dtype='i4,i4')[()]
-#        test2 = make_mask(mask, dtype=mask.dtype)
-#        assert_equal(test2, test)
-#        # test that nomask is returned when m is nomask.
-#        bools = [True, False]
-#        dtypes = [MaskType, float]
-#        msgformat = 'copy=%s, shrink=%s, dtype=%s'
-#        for cpy, shr, dt in itertools.product(bools, bools, dtypes):
-#            res = make_mask(nomask, copy=cpy, shrink=shr, dtype=dt)
-#            assert_(res is nomask, msgformat % (cpy, shr, dt))
-
-#    def test_mask_or(self):
-#        # Initialize
-#        mtype = [('a', bool), ('b', bool)]
-#        mask = np.array([(0, 0), (0, 1), (1, 0), (0, 0)], dtype=mtype)
-#        # Test using nomask as input
-#        test = mask_or(mask, nomask)
-#        assert_equal(test, mask)
-#        test = mask_or(nomask, mask)
-#        assert_equal(test, mask)
-#        # Using False as input
-#        test = mask_or(mask, False)
-#        assert_equal(test, mask)
-#        # Using another array w / the same dtype
-#        other = np.array([(0, 1), (0, 1), (0, 1), (0, 1)], dtype=mtype)
-#        test = mask_or(mask, other)
-#        control = np.array([(0, 1), (0, 1), (1, 1), (0, 1)], dtype=mtype)
-#        assert_equal(test, control)
-#        # Using another array w / a different dtype
-#        othertype = [('A', bool), ('B', bool)]
-#        other = np.array([(0, 1), (0, 1), (0, 1), (0, 1)], dtype=othertype)
-#        try:
-#            test = mask_or(mask, other)
-#        except ValueError:
-#            pass
-#        # Using nested arrays
-#        dtype = [('a', bool), ('b', [('ba', bool), ('bb', bool)])]
-#        amask = np.array([(0, (1, 0)), (0, (1, 0))], dtype=dtype)
-#        bmask = np.array([(1, (0, 1)), (0, (0, 0))], dtype=dtype)
-#        cntrl = np.array([(1, (1, 1)), (0, (1, 0))], dtype=dtype)
-#        assert_equal(mask_or(amask, bmask), cntrl)
-
-#    def test_flatten_mask(self):
-#        # Tests flatten mask
-#        # Standard dtype
-#        mask = np.array([0, 0, 1], dtype=bool)
-#        assert_equal(flatten_mask(mask), mask)
-#        # Flexible dtype
-#        mask = np.array([(0, 0), (0, 1)], dtype=[('a', bool), ('b', bool)])
-#        test = flatten_mask(mask)
-#        control = np.array([0, 0, 0, 1], dtype=bool)
-#        assert_equal(test, control)
-
-#        mdtype = [('a', bool), ('b', [('ba', bool), ('bb', bool)])]
-#        data = [(0, (0, 0)), (0, (0, 1))]
-#        mask = np.array(data, dtype=mdtype)
-#        test = flatten_mask(mask)
-#        control = np.array([0, 0, 0, 0, 0, 1], dtype=bool)
-#        assert_equal(test, control)
-
-#    def test_on_ndarray(self):
-#        # Test functions on ndarrays
-#        a = np.array([1, 2, 3, 4])
-#        m = MaskedArray(a, mask=False)
-#        test = anom(a)
-#        assert_equal(test, m.anom())
-#        test = reshape(a, (2, 2))
-#        assert_equal(test, m.reshape(2, 2))
-
-#    def test_compress(self):
-#        # Test compress function on ndarray and masked array
-#        # Address Github #2495.
-#        arr = np.arange(8)
-#        arr.shape = 4, 2
-#        cond = np.array([True, False, True, True])
-#        control = arr[[0, 2, 3]]
-#        test = np.ma.compress(cond, arr, axis=0)
-#        assert_equal(test, control)
-#        marr = np.ma.array(arr)
-#        test = np.ma.compress(cond, marr, axis=0)
-#        assert_equal(test, control)
-
-#    def test_compressed(self):
-#        # Test ma.compressed function.
-#        # Address gh-4026
-#        a = np.ma.array([1, 2])
-#        test = np.ma.compressed(a)
-#        assert_(type(test) is np.ndarray)
-
-#        # Test case when input data is ndarray subclass
-#        class A(np.ndarray):
-#            pass
-
-#        a = np.ma.array(A(shape=0))
-#        test = np.ma.compressed(a)
-#        assert_(type(test) is A)
-
-#        # Test that compress flattens
-#        test = np.ma.compressed([[1],[2]])
-#        assert_equal(test.ndim, 1)
-#        test = np.ma.compressed([[[[[1]]]]])
-#        assert_equal(test.ndim, 1)
-
-#        # Test case when input is MaskedArray subclass
-#        class M(MaskedArray):
-#            pass
-
-#        test = np.ma.compressed(M(shape=(0,1,2)))
-#        assert_equal(test.ndim, 1)
-
-#        # with .compressed() overridden
-#        class M(MaskedArray):
-#            def compressed(self):
-#                return 42
-
-#        test = np.ma.compressed(M(shape=(0,1,2)))
-#        assert_equal(test, 42)
-
-#    def test_convolve(self):
-#        a = masked_equal(np.arange(5), 2)
-#        b = np.array([1, 1])
-#        test = np.ma.convolve(a, b)
-#        assert_equal(test, masked_equal([0, 1, -1, -1, 7, 4], -1))
-
-#        test = np.ma.convolve(a, b, propagate_mask=False)
-#        assert_equal(test, masked_equal([0, 1, 1, 3, 7, 4], -1))
-
-#        test = np.ma.convolve([1, 1], [1, 1, 1])
-#        assert_equal(test, masked_equal([1, 2, 2, 1], -1))
-
-#        a = [1, 1]
-#        b = masked_equal([1, -1, -1, 1], -1)
-#        test = np.ma.convolve(a, b, propagate_mask=False)
-#        assert_equal(test, masked_equal([1, 1, -1, 1, 1], -1))
-#        test = np.ma.convolve(a, b, propagate_mask=True)
-#        assert_equal(test, masked_equal([-1, -1, -1, -1, -1], -1))
-
-
-#class TestMaskedFields(object):
-
-#    def setup(self):
-#        ilist = [1, 2, 3, 4, 5]
-#        flist = [1.1, 2.2, 3.3, 4.4, 5.5]
-#        slist = ['one', 'two', 'three', 'four', 'five']
-#        ddtype = [('a', int), ('b', float), ('c', '|S8')]
-#        mdtype = [('a', bool), ('b', bool), ('c', bool)]
-#        mask = [0, 1, 0, 0, 1]
-#        base = MaskedArray(list(zip(ilist, flist, slist)), mask=mask, dtype=ddtype)
-#        self.data = dict(base=base, mask=mask, ddtype=ddtype, mdtype=mdtype)
-
-#    def test_set_records_masks(self):
-#        base = self.data['base']
-#        mdtype = self.data['mdtype']
-#        # Set w/ nomask or masked
-#        base.mask = nomask
-#        assert_equal_records(base._mask, np.zeros(base.shape, dtype=mdtype))
-#        base.mask = masked
-#        assert_equal_records(base._mask, np.ones(base.shape, dtype=mdtype))
-#        # Set w/ simple boolean
-#        base.mask = False
-#        assert_equal_records(base._mask, np.zeros(base.shape, dtype=mdtype))
-#        base.mask = True
-#        assert_equal_records(base._mask, np.ones(base.shape, dtype=mdtype))
-#        # Set w/ list
-#        base.mask = [0, 0, 0, 1, 1]
-#        assert_equal_records(base._mask,
-#                             np.array([(x, x, x) for x in [0, 0, 0, 1, 1]],
-#                                      dtype=mdtype))
-
-#    def test_set_record_element(self):
-#        # Check setting an element of a record)
-#        base = self.data['base']
-#        (base_a, base_b, base_c) = (base['a'], base['b'], base['c'])
-#        base[0] = (pi, pi, 'pi')
-
-#        assert_equal(base_a.dtype, int)
-#        assert_equal(base_a._data, [3, 2, 3, 4, 5])
-
-#        assert_equal(base_b.dtype, float)
-#        assert_equal(base_b._data, [pi, 2.2, 3.3, 4.4, 5.5])
-
-#        assert_equal(base_c.dtype, '|S8')
-#        assert_equal(base_c._data,
-#                     [b'pi', b'two', b'three', b'four', b'five'])
-
-#    def test_set_record_slice(self):
-#        base = self.data['base']
-#        (base_a, base_b, base_c) = (base['a'], base['b'], base['c'])
-#        base[:3] = (pi, pi, 'pi')
-
-#        assert_equal(base_a.dtype, int)
-#        assert_equal(base_a._data, [3, 3, 3, 4, 5])
-
-#        assert_equal(base_b.dtype, float)
-#        assert_equal(base_b._data, [pi, pi, pi, 4.4, 5.5])
-
-#        assert_equal(base_c.dtype, '|S8')
-#        assert_equal(base_c._data,
-#                     [b'pi', b'pi', b'pi', b'four', b'five'])
-
-#    def test_mask_element(self):
-#        "Check record access"
-#        base = self.data['base']
-#        base[0] = masked
-
-#        for n in ('a', 'b', 'c'):
-#            assert_equal(base[n].mask, [1, 1, 0, 0, 1])
-#            assert_equal(base[n]._data, base._data[n])
-
-#    def test_getmaskarray(self):
-#        # Test getmaskarray on flexible dtype
-#        ndtype = [('a', int), ('b', float)]
-#        test = empty(3, dtype=ndtype)
-#        assert_equal(getmaskarray(test),
-#                     np.array([(0, 0), (0, 0), (0, 0)],
-#                              dtype=[('a', '|b1'), ('b', '|b1')]))
-#        test[:] = masked
-#        assert_equal(getmaskarray(test),
-#                     np.array([(1, 1), (1, 1), (1, 1)],
-#                              dtype=[('a', '|b1'), ('b', '|b1')]))
-
-#    def test_view(self):
-#        # Test view w/ flexible dtype
-#        iterator = list(zip(np.arange(10), np.random.rand(10)))
-#        data = np.array(iterator)
-#        a = MaskedArray(iterator, dtype=[('a', float), ('b', float)])
-#        a.mask[0] = (1, 0)
-#        controlmask = np.array([1] + 19 * [0], dtype=bool)
-#        # Transform globally to simple dtype
-#        test = a.view(float)
-#        assert_equal(test, data.ravel())
-#        assert_equal(test.mask, controlmask)
-#        # Transform globally to dty
-#        test = a.view((float, 2))
-#        assert_equal(test, data)
-#        assert_equal(test.mask, controlmask.reshape(-1, 2))
-
-#    def test_getitem(self):
-#        ndtype = [('a', float), ('b', float)]
-#        a = MaskedArray(list(zip(np.random.rand(10), np.arange(10))), dtype=ndtype)
-#        a.mask = np.array(list(zip([0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-#                                   [1, 0, 0, 0, 0, 0, 0, 0, 1, 0])),
-#                          dtype=[('a', bool), ('b', bool)])
-
-#        def _test_index(i):
-#            assert_equal(type(a[i]), mvoid)
-#            assert_equal_records(a[i]._data, a._data[i])
-#            assert_equal_records(a[i]._mask, a._mask[i])
-
-#            assert_equal(type(a[i, ...]), MaskedArray)
-#            assert_equal_records(a[i,...]._data, a._data[i,...])
-#            assert_equal_records(a[i,...]._mask, a._mask[i,...])
-
-#        _test_index(1)   # No mask
-#        _test_index(0)   # One element masked
-#        _test_index(-2)  # All element masked
-
-#    def test_setitem(self):
-#        # Issue 4866: check that one can set individual items in [record][col]
-#        # and [col][record] order
-#        ndtype = np.dtype([('a', float), ('b', int)])
-#        ma = np.ma.MaskedArray([(1.0, 1), (2.0, 2)], dtype=ndtype)
-#        ma['a'][1] = 3.0
-#        assert_equal(ma['a'], np.array([1.0, 3.0]))
-#        ma[1]['a'] = 4.0
-#        assert_equal(ma['a'], np.array([1.0, 4.0]))
-#        # Issue 2403
-#        mdtype = np.dtype([('a', bool), ('b', bool)])
-#        # soft mask
-#        control = np.array([(False, True), (True, True)], dtype=mdtype)
-#        a = np.ma.masked_all((2,), dtype=ndtype)
-#        a['a'][0] = 2
-#        assert_equal(a.mask, control)
-#        a = np.ma.masked_all((2,), dtype=ndtype)
-#        a[0]['a'] = 2
-#        assert_equal(a.mask, control)
-#        # hard mask
-#        control = np.array([(True, True), (True, True)], dtype=mdtype)
-#        a = np.ma.masked_all((2,), dtype=ndtype)
-#        a.harden_mask()
-#        a['a'][0] = 2
-#        assert_equal(a.mask, control)
-#        a = np.ma.masked_all((2,), dtype=ndtype)
-#        a.harden_mask()
-#        a[0]['a'] = 2
-#        assert_equal(a.mask, control)
-
-#    def test_setitem_scalar(self):
-#        # 8510
-#        mask_0d = np.ma.MaskedArray(1, mask=True)
-#        arr = np.ma.arange(3)
-#        arr[0] = mask_0d
-#        assert_array_equal(arr.mask, [True, False, False])
-
-#    def test_element_len(self):
-#        # check that len() works for mvoid (Github issue #576)
-#        for rec in self.data['base']:
-#            assert_equal(len(rec), len(self.data['ddtype']))
+        # XXX implement propagate_mask?
+        #a = [1, 1]
+        #b = MaskedArray([1, X, X, 1])
+        #test = np.ma.convolve(a, b, propagate_mask=False)
+        #assert_equal(test, masked_equal([1, 1, -1, 1, 1], -1))
+        #test = np.ma.convolve(a, b, propagate_mask=True)
+        #assert_equal(test, masked_equal([-1, -1, -1, -1, -1], -1))
 
 
 #class TestMaskedObjectArray(object):

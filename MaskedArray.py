@@ -179,7 +179,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         # If a boolean MaskedArray is provided as an ind, treat masked vals as
         # False. Allows code like "a[a>0]", which is then the same as
         # "a[np.nonzero(a>0)]"
-        ind = tuple(i.filled(False) if
+        ind = tuple(i.filled(False, view=1) if
                 (isinstance(i, MaskedArray) and i.dtype.type is np.bool_)
                 else i for i in ind)
         #XXX do somehting similar for integer array indices? The only
@@ -204,7 +204,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
         # If a boolean MaskedArray is provided as an ind, treat masked vals as
         # False. Allows code like "a[a>0] = X"
-        ind = tuple(i.filled(False) if
+        ind = tuple(i.filled(False, view=1) if
                 (isinstance(i, MaskedArray) and i.dtype.type is np.bool_)
                 else i for i in ind)
 
@@ -287,7 +287,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     # rename this to "X" to be shorter, since it is heavily used?
     #   arr.X()  arr.filled()  arr.fillX()  arr.rX()
     def filled(self, fill_value=np._NoValue, minmax=None, view=False):
-        if view and d.flags['WRITEABLE']:
+        if view and self._data.flags['WRITEABLE']:
             d = self._data.view()
             d[self._mask] = self._get_fill_value(fill_value, minmax)
             d.flags['WRITEABLE'] = False
@@ -1070,27 +1070,27 @@ def setup_ducktype():
     @implements(np.all)
     def all(a, axis=None, out=None, keepdims=np._NoValue):
         if isinstance(out, MaskedArray):
-            np.all(a.filled(True), axis, out._data, keepdims)
+            np.all(a.filled(True, view=1), axis, out._data, keepdims)
             out._mask[...] = False
             return out
-        return np.all(a.filled(True), axis, out, keepdims)
+        return np.all(a.filled(True, view=1), axis, out, keepdims)
         # Note: returns boolean, not MaskedArray. If case of fully masked,
         # return True, like np.all([]).
 
     @implements(np.any)
     def any(a, axis=None, out=None, keepdims=np._NoValue):
         if isinstance(out, MaskedArray):
-            np.any(a.filled(False), axis, out._data, keepdims)
+            np.any(a.filled(False, view=1), axis, out._data, keepdims)
             out._mask[...] = False
             return out
-        return np.any(a.filled(False), axis, out, keepdims)
+        return np.any(a.filled(False, view=1), axis, out, keepdims)
         # Note: returns boolean, not MaskedArray. If case of fully masked,
         # return False, like np.any([])
 
     @implements(np.max)
     def max(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue):
         outdata, outmask = get_maskedout(out)
-        filled = a.filled(minmax='max')
+        filled = a.filled(minmax='max', view=1)
         result_data = np.max(filled, axis, outdata, keepdims, initial)
         result_mask = np.all(a._mask, axis, outmask, keepdims)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -1098,7 +1098,7 @@ def setup_ducktype():
     @implements(np.argmax)
     def argmax(a, axis=None, out=None):
         outdata, outmask = get_maskedout(out)
-        filled = a.filled(minmax='max')
+        filled = a.filled(minmax='max', view=1)
         result_data = np.argmax(filled, axis, outdata)
         result_mask = np.all(a._mask, axis, outmask)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -1106,7 +1106,7 @@ def setup_ducktype():
     @implements(np.min)
     def min(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue):
         outdata, outmask = get_maskedout(out)
-        filled = a.filled(minmax='min')
+        filled = a.filled(minmax='min', view=1)
         result_data = np.min(filled, axis, outdata, keepdims, initial)
         result_mask = np.all(a._mask, axis, outmask, keepdims)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -1114,7 +1114,7 @@ def setup_ducktype():
     @implements(np.argmin)
     def argmin(a, axis=None, out=None):
         outdata, outmask = get_maskedout(out)
-        filled = a.filled(minmax='min')
+        filled = a.filled(minmax='min', view=1)
         result_data = np.argmin(filled, axis, outdata)
         result_mask = np.all(a._mask, axis, outmask)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -1128,7 +1128,7 @@ def setup_ducktype():
         # of the axis, we can sort the mask too and everything works out. The
         # mask-sort only swaps the mask between min_val and masked positions
         # which have the same underlying data.
-        result_data = np.sort(a.filled(minmax='min'), axis, kind, order)
+        result_data = np.sort(a.filled(minmax='min', view=1), axis, kind, order)
         result_mask = np.sort(a._mask, axis, kind)  #or partition for speed?
         return maskedarray_or_scalar(result_data, result_mask)
         # Note: lexsort may be faster, but doesn't provide kind or order kwd
@@ -1141,7 +1141,7 @@ def setup_ducktype():
         # argsorted again to get back the sort indices. However, here we
         # modify the rank based on the mask before inverting back to indices.
         # Uses two argsorts plus a temp array. Further speedups?
-        inds = np.argsort(a.filled(minmax='min'), axis, kind, order)
+        inds = np.argsort(a.filled(minmax='min', view=1), axis, kind, order)
         # next two lines "reverse" the argsort (same as double-argsort)
         ranks = np.empty(inds.shape, dtype=inds.dtype)
         np.put_along_axis(ranks, inds, np.arange(a.shape[axis]), axis)
@@ -1152,7 +1152,7 @@ def setup_ducktype():
     @implements(np.argpartition)
     def argpartition(a, kth, axis=-1, kind='introselect', order=None):
         # see argsort for explanation
-        filled = a.filled(minmax='min')
+        filled = a.filled(minmax='min', view=1)
         inds = np.argpartition(filled, kth, axis, kind, order)
         ranks = np.empty(inds.shape, dtype=inds.dtype)
         np.put_along_axis(ranks, inds, np.arange(a.shape[axis]), axis)
@@ -1161,8 +1161,8 @@ def setup_ducktype():
 
     @implements(np.searchsorted)
     def searchsorted(a, v, side='left', sorter=None):
-        inds = np.searchsorted(a.filled(minmax='min'), v.filled(minmax='min'),
-                               side, sorter)
+        inds = np.searchsorted(a.filled(minmax='min', view=1),
+                               v.filled(minmax='min', view=1), side, sorter)
 
         # Line above treats mask and minval as the same, we need to fix it up
         maskleft = len(a) - np.sum(a._mask)
@@ -1253,7 +1253,8 @@ def setup_ducktype():
                 dtype = np.dtype('f4')
                 is_float16_result = True
 
-        ret = np.sum(a.filled(0), axis=axis, out=outdata, dtype=dtype, **kwargs)
+        ret = np.sum(a.filled(0, view=1), axis=axis, out=outdata, dtype=dtype,
+                     **kwargs)
         retmask = np.all(a._mask, axis=axis, out=outmask, **kwargs)
 
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -1317,7 +1318,7 @@ def setup_ducktype():
             x = np.multiply(x, np.conjugate(x), out=x).real
         else:
             x = np.multiply(x, x, out=x)
-        ret = x.filled(0).sum(axis, dtype, out=outdata, **kwargs)
+        ret = x.filled(0, view=1).sum(axis, dtype, out=outdata, **kwargs)
 
         # Compute degrees of freedom and make sure it is not negative.
         rcount = a.count(axis=axis, **kwargs)
@@ -1424,7 +1425,7 @@ def setup_ducktype():
     @implements(np.compress)
     def compress(condition, a, axis=None, out=None):
         outdata, outmask = get_maskedout(out)
-        cond = MaskedArray(condition).filled(False)
+        cond = MaskedArray(condition).filled(False, view=1)
         a = MaskedArray(a)
         result_data = np.compress(cond, a._data, axis, outdata)
         result_mask = np.compress(cond, a._mask, axis, outmask)
@@ -1440,8 +1441,8 @@ def setup_ducktype():
     @implements(np.prod)
     def prod(a, axis=None, dtype=None, out=None, keepdims=False):
         outdata, outmask = get_maskedout(out)
-        result_data = np.prod(a.filled(1), axis=axis, dtype=dtype, out=outdata,
-                                           keepdims=keepdims)
+        result_data = np.prod(a.filled(1, view=1), axis=axis, dtype=dtype,
+                              out=outdata, keepdims=keepdims)
         result_mask = np.all(a._mask, axis=axis, out=outmask, keepdims=keepdims)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
@@ -1452,7 +1453,8 @@ def setup_ducktype():
     @implements(np.cumprod)
     def cumprod(a, axis=None, dtype=None, out=None):
         outdata, outmask = get_maskedout(out)
-        result_data = np.cumprod(a.filled(1), axis, dtype=dtype, out=outdata)
+        result_data = np.cumprod(a.filled(1, view=1), axis, dtype=dtype,
+                                 out=outdata)
         result_mask = np.logical_or.accumulate(~a._mask, axis, out=outmask)
         result_mask =_inplace_not(result_mask)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -1464,14 +1466,16 @@ def setup_ducktype():
     @implements(np.sum)
     def sum(a, axis=None, dtype=None, out=None, keepdims=False):
         outdata, outmask = get_maskedout(out)
-        result_data = np.sum(a.filled(0), axis, dtype=dtype, out=outdata)
+        result_data = np.sum(a.filled(0, view=1), axis, dtype=dtype,
+                             out=outdata)
         result_mask = np.all(a._mask, axis, out=outmask)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.cumsum)
     def cumsum(a, axis=None, dtype=None, out=None):
         outdata, outmask = get_maskedout(out)
-        result_data = np.cumsum(a.filled(0), axis, dtype=dtype, out=outdata)
+        result_data = np.cumsum(a.filled(0, view=1), axis, dtype=dtype,
+                                out=outdata)
         result_mask = np.logical_or.accumulate(~a._mask, axis, out=outmask)
         result_mask =_inplace_not(result_mask)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -1518,8 +1522,8 @@ def setup_ducktype():
     @implements(np.trace)
     def trace(a, offset=0, axis1=0, axis2=1, dtype=None, out=None):
         outdata, outmask = get_maskedout(out)
-        result = np.trace(a.filled(0), offset=offset, axis1=axis1, axis2=axis2,
-                                       dtype=dtype, out=outdata)
+        result = np.trace(a.filled(0, view=1), offset=offset, axis1=axis1,
+                          axis2=axis2, dtype=dtype, out=outdata)
         mask_trace = np.trace(~a._mask, offset=offset, axis1=axis1, axis2=axis2,
                                         dtype=dtype, out=outdata)
         result_mask = mask_trace == 0
@@ -1529,7 +1533,8 @@ def setup_ducktype():
     def dot(a, b, out=None):
         outdata, outmask = get_maskedout(out)
         a, b = MaskedArray(a), MaskedArray(b)
-        result_data = np.dot(a.filled(0), b.filled(0), out=outdata)
+        result_data = np.dot(a.filled(0, view=1), b.filled(0, view=1),
+                             out=outdata)
         result_mask = np.dot(~a._mask, ~b._mask, out=outmask)
         result_mask = _inplace_not(result_mask)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -1537,7 +1542,7 @@ def setup_ducktype():
     @implements(np.vdot)
     def vdot(a, b):
         a, b = MaskedArray(a), MaskedArray(b)
-        result_data = np.vdot(a.filled(0), b.filled(0))
+        result_data = np.vdot(a.filled(0, view=1), b.filled(0, view=1))
         result_mask = np.vdot(~a._mask, ~b._mask)
         result_mask = _inplace_not(result_mask)
         return maskedarray_or_scalar(result_data, result_mask)
@@ -1545,8 +1550,8 @@ def setup_ducktype():
     @implements(np.cross)
     def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
         a, b = MaskedArray(a), MaskedArray(b)
-        result_data = np.cross(a.filled(0), b.filled(0), axisa, axisb, axisc,
-                               axis)
+        result_data = np.cross(a.filled(0, view=1), b.filled(0, view=1), axisa,
+                               axisb, axisc, axis)
         result_mask = np.cross(~a._mask, ~b._mask, axisa, axisb, axisc, axis)
         result_mask = _inplace_not(result_mask)
         return maskedarray_or_scalar(result_data, result_mask)
@@ -1554,7 +1559,7 @@ def setup_ducktype():
     @implements(np.inner)
     def inner(a, b):
         a, b = MaskedArray(a), MaskedArray(b)
-        result_data = np.inner(a.filled(0), b.filled(0))
+        result_data = np.inner(a.filled(0, view=1), b.filled(0, view=1))
         result_mask = np.inner(~a._mask, ~b._mask)
         result_mask = _inplace_not(result_mask)
         return maskedarray_or_scalar(result_data, result_mask)
@@ -1563,7 +1568,8 @@ def setup_ducktype():
     def outer(a, b, out=None):
         outdata, outmask = get_maskedout(out)
         a, b = MaskedArray(a), MaskedArray(b)
-        result_data = np.outer(a.filled(0), b.filled(0), out=outdata)
+        result_data = np.outer(a.filled(0, view=1), b.filled(0, view=1),
+                               out=outdata)
         result_mask = np.outer(~a._mask, ~b._mask, out=outmask)
         result_mask = _inplace_not(result_mask)
         return maskedarray_or_scalar(result_data, result_mask, out)
@@ -1665,14 +1671,15 @@ def setup_ducktype():
 
     @implements(np.correlate)
     def correlate(a, v, mode='valid'):
-        result_data = np.correlate(a.filled(0), v.filled(0), mode)
+        result_data = np.correlate(a.filled(view=1), v.filled(view=1), mode)
         result_mask = ~np.correlate(~a._mask, v._mask, mode)
         return maskedarray_or_scalar(result_data, result_mask)
 
     @implements(np.convolve)
     def convolve(a, v, mode='full'):
-        result_data = np.convolve(a.filled(0), v.filled(0), mode)
-        result_mask = ~np.convolve(~a._mask, v._mask, mode)
+        a, v = MaskedArray(a), MaskedArray(v)
+        result_data = np.convolve(a.filled(view=1), v.filled(view=1), mode)
+        result_mask = ~np.convolve(~a._mask, ~v._mask, mode)
         return maskedarray_or_scalar(result_data, result_mask)
 
     @implements(np.real)
@@ -2075,7 +2082,7 @@ def setup_ducktype():
             x = MaskedArray(x)
 
         if isinstance(condition, (MaskedArray, MaskedScalar)):
-            condition = condition.filled(False)
+            condition = condition.filled(False, view=1)
 
         result_data = np.where(condition, *(a._data for a in (x, y)))
         result_mask = np.where(condition, *(a._mask for a in (x, y)))
@@ -2086,11 +2093,14 @@ def setup_ducktype():
     def argwhere(a):
         return np.transpose(np.nonzero(a))
 
-    @implements(np.choose)
+    @implements(np.choose, checked_args=(1,))
     def choose(a, choices, out=None, mode='raise'):
+        if isinstance(a, (MaskedArray, MaskedScalar)):
+            raise TypeError("choice indices should not be masked")
+
         outdata, outmask = get_maskedout(out)
-        result_data = np.choose(a._data, choices, outdata, mode)
-        result_mask = np.choose(a._mask, choices, outmask, mode)
+        result_data = np.choose(a, choices._data, outdata, mode)
+        result_mask = np.choose(a, choices._mask, outmask, mode)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
     #@implements(np.piecewise)
@@ -2132,11 +2142,11 @@ def setup_ducktype():
 
     @implements(np.count_nonzero)
     def count_nonzero(a, axis=None):
-        return np.count_nonzero(a.filled(0), axis)
+        return np.count_nonzero(a.filled(0, view=1), axis)
 
     @implements(np.nonzero)
     def nonzero(a):
-        return np.nonzero(a.filled(0))  # not MaskedArray since is for indexing
+        return np.nonzero(a.filled(0, view=1))
 
     @implements(np.flatnonzero)
     def flatnonzero(a):
@@ -2329,7 +2339,7 @@ def setup_ducktype():
 
     @implements(np.sinc)
     def sinc(x):
-        y = np.pi * np.where((x == 0).filled(False), 1.0e-20, x)
+        y = np.pi * np.where((x == 0).filled(False, view=1), 1.0e-20, x)
         return np.sin(y)/y
 
     #@implements(np.unwrap)
