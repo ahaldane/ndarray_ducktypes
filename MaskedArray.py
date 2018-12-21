@@ -1467,8 +1467,8 @@ def setup_ducktype():
     def sum(a, axis=None, dtype=None, out=None, keepdims=False):
         outdata, outmask = get_maskedout(out)
         result_data = np.sum(a.filled(0, view=1), axis, dtype=dtype,
-                             out=outdata)
-        result_mask = np.all(a._mask, axis, out=outmask)
+                             out=outdata, keepdims=keepdims)
+        result_mask = np.all(a._mask, axis, out=outmask, keepdims=keepdims)
         return maskedarray_or_scalar(result_data, result_mask, out)
 
     @implements(np.cumsum)
@@ -2001,18 +2001,19 @@ def setup_ducktype():
 
     @implements(np.delete)
     def delete(arr, obj, axis=None):
-        return MaskedArray(np.delete(a._data, obj, axis),
-                           np.delete(a._mask, obj, axis))
+        return MaskedArray(np.delete(arr._data, obj, axis),
+                           np.delete(arr._mask, obj, axis))
 
     @implements(np.insert)
     def insert(arr, obj, values, axis=None):
-        return MaskedArray(np.insert(a._data, obj, values, axis),
-                           np.insert(a._mask, obj, values, axis))
+        return MaskedArray(np.insert(arr._data, obj, values, axis),
+                           np.insert(arr._mask, obj, values, axis))
 
     @implements(np.append)
     def append(arr, values, axis=None):
-        return MaskedArray(np.append(a._data, values, axis),
-                           np.append(a._mask, values, axis))
+        arr, values = MaskedArray(arr), MaskedArray(values)
+        return MaskedArray(np.append(arr._data, values._data, axis),
+                           np.append(arr._mask, values._mask, axis))
 
     @implements(np.extract)
     def extract(condition, arr):
@@ -2028,8 +2029,8 @@ def setup_ducktype():
 
     @implements(np.broadcast_to)
     def broadcast_to(array, shape):
-        return MaskedArray(np.broadcast_to(a._data, shape),
-                           np.broadcast_to(a._mask, shape))
+        return MaskedArray(np.broadcast_to(array._data, shape),
+                           np.broadcast_to(array._mask, shape))
 
     @implements(np.broadcast_arrays)
     def broadcast_arrays(*args, **kwargs):
