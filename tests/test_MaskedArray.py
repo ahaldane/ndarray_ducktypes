@@ -6,7 +6,8 @@ from numpy.testing import (
 import numpy as np
 import numpy
 from numpy.core.numeric import pickle
-from MaskedArray import MaskedArray, MaskedScalar, X
+from MaskedArray import (MaskedArray, MaskedScalar, X, HANDLED_FUNCTIONS,
+                         replace_X)
 from functools import reduce
 import textwrap
 import operator
@@ -60,7 +61,7 @@ def assert_masked_equal(actual, desired, err_msg='', anymask=False):
             assert_equal(dx, dy, err_msg)
             assert_equal(mx, my, err_msg)
 
-class TestMaskedArray(object):
+class TestMaskedArray:
     # Base test class for MaskedArrays.
 
     def setup(self):
@@ -397,6 +398,13 @@ class TestMaskedArray(object):
         assert_equal(copied.mask, [0, 0, 0])
         assert_equal(a.mask, [0, 1, 0])
 
+    def test_mask_readonly_view(self):
+        a = MaskedArray([[1,X,3], [X,4,X], [1,X,6]], dtype='u4')
+        m = a.mask
+        assert_raises(ValueError, m.__setitem__, (0,0), 1)
+        a[0,0] = X
+        assert_equal(m[0,0], True)
+
     def test_str_repr(self):
         a = MaskedArray([0, 1, 2], mask=[False, True, False])
         assert_equal(str(a), '[0 X 2]')
@@ -711,7 +719,7 @@ class TestMaskedArray(object):
         assert_(mx1[0].filled() == 0.)
 
 
-class TestMaskedArrayArithmetic(object):
+class TestMaskedArrayArithmetic:
     # Base test class for MaskedArrays.
 
     def setup(self):
@@ -1431,7 +1439,7 @@ class TestMaskedArrayArithmetic(object):
         assert_equal(a.mask, [0, 0, 0, 0, 1])
 
 
-class TestMaskedArrayAttributes(object):
+class TestMaskedArrayAttributes:
     #def test_flat(self):
     #    # Test that flat can return all types of items [#4585, #4615]
     #    # test 2-D record array
@@ -1485,7 +1493,7 @@ class TestMaskedArrayAttributes(object):
         assert_equal(b._mask, a._mask)
 
 
-class TestFillingValues(object):
+class TestFillingValues:
     def test_extremum_fill_value(self):
         # Tests extremum fill values for flexible type.
         a = MaskedArray([(1, (2, 3)), (4, (5, 6))],
@@ -1493,7 +1501,7 @@ class TestFillingValues(object):
                         dtype=[('A', int), ('B', [('BA', int), ('BB', int)])])
         assert_raises(ValueError, a.filled, minmax='min')
 
-class TestUfuncs(object):
+class TestUfuncs:
     # Test class for the application of ufuncs on MaskedArrays.
 
     def setup(self):
@@ -1594,7 +1602,7 @@ class TestUfuncs(object):
             # also check that allclose uses ma ufuncs, to avoid warning
             np.allclose(m, 0.5)
 
-class TestMaskedArrayInPlaceArithmetics(object):
+class TestMaskedArrayInPlaceArithmetics:
     # Test MaskedArray Arithmetics
 
     def setup(self):
@@ -2112,7 +2120,7 @@ class TestMaskedArrayInPlaceArithmetics(object):
                 assert_equal(len(w), 0, "Failed on type=%s." % t)
 
 
-class TestMaskedArrayMethods(object):
+class TestMaskedArrayMethods:
     # Test class for miscellaneous MaskedArrays methods.
     def setup(self):
         # Base data definition.
@@ -2151,8 +2159,8 @@ class TestMaskedArrayMethods(object):
         a = MaskedArray([1, 3, 2])
         assert_equal(a.any(), a.filled().any())
         assert_equal(a.all(), a.filled().all())
-        assert_equal(a.argmax().filled(), a.filled().argmax())
-        assert_equal(a.argmin().filled(), a.filled().argmin())
+        assert_equal(a.argmax(), a.filled().argmax())
+        assert_equal(a.argmin(), a.filled().argmin())
         #XXX choose doesn't support masked indices
         #assert_equal(a.choose([0, 1, 2, 3, 4]).filled(),
         #             a.filled().choose([0, 1, 2, 3, 4]))
@@ -2239,24 +2247,29 @@ class TestMaskedArrayMethods(object):
         # Tests argmin & argmax on MaskedArrays.
         (x, x2, x4, m, mx, mx2, mx4, m2x, m2x2, m2x4) = self.d
 
-        assert_equal(mx.argmin().filled(), 35)
-        assert_equal(mx2.argmin().filled(), 35)
-        assert_equal(m2x.argmin().filled(), 4)
-        assert_equal(m2x2.argmin().filled(), 4)
-        assert_equal(mx.argmax().filled(), 28)
-        assert_equal(mx2.argmax().filled(), 28)
-        assert_equal(m2x.argmax().filled(), 31)
-        assert_equal(m2x2.argmax().filled(), 31)
+        assert_equal(mx.argmin(), 35)
+        assert_equal(mx2.argmin(), 35)
+        assert_equal(m2x.argmin(), 4)
+        assert_equal(m2x2.argmin(), 4)
+        assert_equal(mx.argmax(), 28)
+        assert_equal(mx2.argmax(), 28)
+        assert_equal(m2x.argmax(), 31)
+        assert_equal(m2x2.argmax(), 31)
 
-        assert_equal(mx2.argmin(0).filled(), [2, 2, 2, 5, 0, 5])
-        assert_equal(m2x2.argmin(0).filled(), [2, 2, 4, 5, 0, 4])
-        assert_equal(mx2.argmax(0).filled(), [0, 5, 0, 5, 4, 0])
-        assert_equal(m2x2.argmax(0).filled(), [5, 5, 0, 5, 1, 0])
+        assert_equal(mx2.argmin(0), [2, 2, 2, 5, 0, 5])
+        assert_equal(m2x2.argmin(0), [2, 2, 4, 5, 0, 4])
+        assert_equal(mx2.argmax(0), [0, 5, 0, 5, 4, 0])
+        assert_equal(m2x2.argmax(0), [5, 5, 0, 5, 1, 0])
 
-        assert_equal(mx2.argmin(1).filled(), [4, 1, 0, 0, 5, 5, ])
-        assert_equal(m2x2.argmin(1).filled(), [4, 4, 0, 0, 5, 3])
-        assert_equal(mx2.argmax(1).filled(), [2, 4, 1, 1, 4, 1])
-        assert_equal(m2x2.argmax(1).filled(), [2, 4, 1, 1, 1, 1])
+        assert_equal(mx2.argmin(1), [4, 1, 0, 0, 5, 5, ])
+        assert_equal(m2x2.argmin(1), [4, 4, 0, 0, 5, 3])
+        assert_equal(mx2.argmax(1), [2, 4, 1, 1, 4, 1])
+        assert_equal(m2x2.argmax(1), [2, 4, 1, 1, 1, 1])
+        
+        # test all masked
+        a = MaskedArray([X, X, X], dtype='f')
+        assert_(a[np.argmax(a)].mask)
+        assert_(a[np.argmin(a)].mask)
 
     def test_clip(self):
         # Tests clip on MaskedArrays.
@@ -2462,6 +2475,18 @@ class TestMaskedArrayMethods(object):
         an.sort(2)
         assert_equal(am.filled(99), an)
 
+    def test_mask_sorting(self):
+        # -1 gets converted to unsigned max val
+        a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]], dtype='u4')
+        b = np.take_along_axis(a, np.argsort(a, axis=1), axis=1)
+        ctrl = MaskedArray([[1, 3, X], [-1, X, X], [1, -1, X]], dtype='u4')
+        assert_masked_equal(b, ctrl)
+        c = a.copy()
+        c.sort(axis=1)
+        assert_masked_equal(b, c)
+        assert_equal(np.lexsort((a,), axis=1), np.argsort(a, axis=1))
+
+
 #    def test_sort_flexible(self):
 #        # Test sort on structured dtype.
 #        a = MaskedArray(
@@ -2638,7 +2663,7 @@ class TestMaskedArrayMethods(object):
         assert_equal(xd.filled(), x.diagonal().filled())
 
 
-class TestMaskedArrayMathMethods(object):
+class TestMaskedArrayMathMethods:
 
     def setup(self):
         # Base data definition.
@@ -2912,7 +2937,7 @@ class TestMaskedArrayMathMethods(object):
         assert_equal(a.max(1), [3, 6])
 
 
-class TestMaskedArrayMathMethodsComplex(object):
+class TestMaskedArrayMathMethodsComplex:
     # Test class for miscellaneous MaskedArrays methods.
     def setup(self):
         # Base data definition.
@@ -2965,7 +2990,7 @@ class TestMaskedArrayMathMethodsComplex(object):
                                 mx2[:,k][~mx2[:,k].mask].std())
 
 
-class TestMaskedArrayFunctions(object):
+class TestMaskedArrayFunctions:
     # Test class for miscellaneous functions.
 
     def setup(self):
@@ -3294,7 +3319,7 @@ class TestMaskedArrayFunctions(object):
         #assert_equal(test, masked_equal([-1, -1, -1, -1, -1], -1))
 
 
-class TestMaskedObjectArray(object):
+class TestMaskedObjectArray:
 
     def test_getitem(self):
         arr = MaskedArray([None, None])
@@ -3343,7 +3368,7 @@ class TestMaskedObjectArray(object):
     #    assert_(arr[0].mask)
 
 
-#class TestMaskedView(object):
+#class TestMaskedView:
 
 #    def setup(self):
 #        iterator = list(zip(np.arange(10), np.random.rand(10)))
@@ -3421,7 +3446,7 @@ class TestMaskedObjectArray(object):
 #        assert_(not isinstance(test, MaskedArray))
 
 
-class TestOptionalArgs(object):
+class TestOptionalArgs:
     def test_ndarrayfuncs(self):
         # test axis arg behaves the same as ndarray (including multiple axes)
 
@@ -3505,7 +3530,7 @@ class TestOptionalArgs(object):
 #        assert_raises(np.AxisError, count, np.ma.array(1), axis=1)
 
 
-#class TestMaskedConstant(object):
+#class TestMaskedConstant:
 #    def _do_add_test(self, add):
 #        # sanity check
 #        assert_(add(np.ma.masked, 1) is np.ma.masked)
@@ -3622,7 +3647,7 @@ class TestOptionalArgs(object):
 #        assert_raises(AttributeError, setattr, np.ma.masked, 'dtype', np.int64)
 
 
-#class TestMaskedWhereAliases(object):
+#class TestMaskedWhereAliases:
 
 #    # TODO: Test masked_object, masked_equal, ...
 
@@ -3768,3 +3793,197 @@ def test_fieldless_void():
     mx = MaskedArray(x, mask=[1,1,0,0])
     assert_equal(mx.dtype, x.dtype)
     assert_equal(mx.shape, x.shape)
+
+class Test_ReplaceX:
+    def test_allX(self):
+        assert_raises(ValueError, MaskedArray, [[X, X, X], [X, X, X]])
+        arru1 = MaskedArray([[X, X, X], [X, X, X]], dtype='u1')
+        assert_equal(repr(arru1), textwrap.dedent('''\
+                        MaskedArray([[X, X, X],
+                                     [X, X, X]], dtype=uint8)'''))
+        arr = MaskedArray([[X, X, X], [X, X, X]], dtype=float)
+
+        # dtype gets shown, even for dtypes usually omitted
+        assert_equal(repr(arr), textwrap.dedent('''\
+                        MaskedArray([[X, X, X],
+                                     [X, X, X]], dtype=float64)'''))
+        # also test case where one sub-list is all X
+        arr2 = MaskedArray([[X, X, X], [X, X, X('f8')]])
+        assert_masked_equal(arr, arr2)
+
+        data, mask = replace_X([[X, X, X], [X, X, X]], dtype='u1')
+        assert_equal(arru1, MaskedArray(data, mask))
+
+    def test_mixedndarray(self):
+        arr = MaskedArray([np.array([1,2,3], dtype='i1'), [3, X, 5]])
+        assert_masked_equal(arr, MaskedArray([[1,2,3],[3,X,5]], dtype='i1'))
+
+################################################################################
+#                            basic testing code
+################################################################################
+
+# See discussion here:
+# https://docs.scipy.org/doc/numpy-1.13.0/neps/missing-data.html
+#
+# Main features of MaskedArray we want to have here:
+#  1. We use "Ignore/skip" mask propagation
+#  1. invalid domain ufunc calls (div by 0 etc) get converted to masks
+#  1. MaskedArray has freedom to set the data at masked elem (for optimization)
+#
+# Far-out ideas for making these choice configurable: Since the mask is stored
+# as a byte anyway, maybe we could have two kinds of masked values: Sticky and
+# nonsticky masks? So the mask would be stored as 'u1', 0=unmasked, 1=unsticky,
+# 2=sticky. For the invalid domain conversions, someone might also want for
+# this not to happen. Maybe instead we should implement these choices as
+# subclasses, so we would have a subclass without invalid domin conversion.
+
+if __name__ == '__main__':
+    A = MaskedArray(np.arange(12), np.arange(12)%2).reshape((4,3))
+    print(hasattr(A, '__array_function__'))
+    print(A)
+    print(repr(A))
+    print(A[1:3])
+    print("")
+
+    A = MaskedArray(np.arange(12)).reshape((4,3))
+    B = MaskedArray(np.arange(12) % 2).reshape((4,3))
+    print(A)
+    print(B)
+    C = A/B
+    print(C)
+    print(C.T)
+    print(np.max(C, axis=1))
+    print(np.sin(C))
+    print(np.sin(C)*np.full(3, 100))
+
+    print(repr(MaskedArray([[X, X, 3], [1, X, 1]])))
+    try:
+        print(repr(MaskedArray([[X, X, X], [X, X, X]])))
+    except ValueError as v:
+        print("Got Exception: ", v)
+    print(repr(MaskedArray([[X, X, X], [X, X, X]], dtype='u1')))
+
+    a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]], dtype='u4')
+    b = np.take_along_axis(a, np.argsort(a, axis=1), axis=1)
+    print(repr(b))
+    c = a.copy()
+    c.sort(axis=1)
+    print(repr(c))
+
+    a = MaskedArray([[1,X,3], [X,4,X], [1,X,6]], dtype='u4')
+    print(np.lexsort((a,), axis=1))
+    print(np.argsort(a, axis=1))
+    print(repr(np.block([[a,a],[a,a]])))
+    print(repr(a == a))
+    print(repr(a == X))
+
+    m = a.mask
+    try:
+        m[0,0] = 1
+    except ValueError:
+        pass
+    a[0,0] = X
+    print(m[0,0] == True)
+
+    # temporary code to figure out our api coverage
+    api = ['np.empty_like', 'np.concatenate', 'np.inner', 'np.where',
+    'np.lexsort', 'np.can_cast', 'np.min_scalar_type', 'np.result_type',
+    'np.dot', 'np.vdot', 'np.bincount', 'np.ravel_multi_index',
+    'np.unravel_index', 'np.copyto', 'np.putmask', 'np.packbits',
+    'np.unpackbits', 'np.shares_memory', 'np.may_share_memory', 'np.is_busday',
+    'np.busday_offset', 'np.busday_count', 'np.datetime_as_string',
+    'np.zeros_like', 'np.ones_like', 'np.full_like', 'np.count_nonzero',
+    'np.argwhere', 'np.flatnonzero', 'np.correlate', 'np.convolve', 'np.outer',
+    'np.tensordot', 'np.roll', 'np.rollaxis', 'np.moveaxis', 'np.cross',
+    'np.allclose', 'np.isclose', 'np.array_equal', 'np.array_equiv', 'np.take',
+    'np.reshape', 'np.choose', 'np.repeat', 'np.put', 'np.swapaxes',
+    'np.transpose', 'np.partition', 'np.argpartition', 'np.sort', 'np.argsort',
+    'np.argmax', 'np.argmin', 'np.searchsorted', 'np.resize', 'np.squeeze',
+    'np.diagonal', 'np.trace', 'np.ravel', 'np.nonzero', 'np.shape',
+    'np.compress', 'np.clip', 'np.sum', 'np.any', 'np.all', 'np.cumsum',
+    'np.ptp', 'np.amax', 'np.amin', 'np.alen', 'np.prod', 'np.cumprod',
+    'np.ndim', 'np.size', 'np.around', 'np.mean', 'np.std', 'np.var',
+    'np.round_', 'np.product', 'np.cumproduct', 'np.sometrue', 'np.alltrue',
+    'np.rank', 'np.array2string', 'np.array_repr', 'np.array_str',
+    'np.char.equal', 'np.char.not_equal', 'np.char.greater_equal',
+    'np.char.less_equal', 'np.char.greater', 'np.char.less', 'np.char.str_len',
+    'np.char.add', 'np.char.multiply', 'np.char.mod', 'np.char.capitalize',
+    'np.char.center', 'np.char.count', 'np.char.decode', 'np.char.encode',
+    'np.char.endswith', 'np.char.expandtabs', 'np.char.find', 'np.char.index',
+    'np.char.isalnum', 'np.char.isalpha', 'np.char.isdigit', 'np.char.islower',
+    'np.char.isspace', 'np.char.istitle', 'np.char.isupper', 'np.char.join',
+    'np.char.ljust', 'np.char.lower', 'np.char.lstrip', 'np.char.partition',
+    'np.char.replace', 'np.char.rfind', 'np.char.rindex', 'np.char.rjust',
+    'np.char.rpartition', 'np.char.rsplit', 'np.char.rstrip', 'np.char.split',
+    'np.char.splitlines', 'np.char.startswith', 'np.char.strip',
+    'np.char.swapcase', 'np.char.title', 'np.char.translate', 'np.char.upper',
+    'np.char.zfill', 'np.char.isnumeric', 'np.char.isdecimal', 'np.atleast_1d',
+    'np.atleast_2d', 'np.atleast_3d', 'np.vstack', 'np.hstack', 'np.stack',
+    'np.block', 'np.einsum_path', 'np.einsum', 'np.fix', 'np.isposinf',
+    'np.isneginf', 'np.asfarray', 'np.real', 'np.imag', 'np.iscomplex',
+    'np.isreal', 'np.iscomplexobj', 'np.isrealobj', 'np.nan_to_num',
+    'np.real_if_close', 'np.asscalar', 'np.common_type', 'np.fliplr',
+    'np.flipud', 'np.diag', 'np.diagflat', 'np.tril', 'np.triu', 'np.vander',
+    'np.histogram2d', 'np.tril_indices_from', 'np.triu_indices_from',
+    'np.linalg.tensorsolve', 'np.linalg.solve', 'np.linalg.tensorinv',
+    'np.linalg.inv', 'np.linalg.matrix_power', 'np.linalg.cholesky',
+    'np.linalg.qr', 'np.linalg.eigvals', 'np.linalg.eigvalsh', 'np.linalg.eig',
+    'np.linalg.eigh', 'np.linalg.svd', 'np.linalg.cond',
+    'np.linalg.matrix_rank', 'np.linalg.pinv', 'np.linalg.slogdet',
+    'np.linalg.det', 'np.linalg.lstsq', 'np.linalg.norm',
+    'np.linalg.multi_dot', 'np.histogram_bin_edges', 'np.histogram',
+    'np.histogramdd', 'np.rot90', 'np.flip', 'np.average', 'np.piecewise',
+    'np.select', 'np.copy', 'np.gradient', 'np.diff', 'np.interp', 'np.angle',
+    'np.unwrap', 'np.sort_complex', 'np.trim_zeros', 'np.extract', 'np.place',
+    'np.cov', 'np.corrcoef', 'np.i0', 'np.sinc', 'np.msort', 'np.median',
+    'np.percentile', 'np.quantile', 'np.trapz', 'np.meshgrid', 'np.delete',
+    'np.insert', 'np.append', 'np.digitize', 'np.broadcast_to',
+    'np.broadcast_arrays', 'np.ix_', 'np.fill_diagonal',
+    'np.diag_indices_from', 'np.nanmin', 'np.nanmax', 'np.nanargmin',
+    'np.nanargmax', 'np.nansum', 'np.nanprod', 'np.nancumsum', 'np.nancumprod',
+    'np.nanmean', 'np.nanmedian', 'np.nanpercentile', 'np.nanquantile',
+    'np.nanvar', 'np.nanstd', 'np.take_along_axis', 'np.put_along_axis',
+    'np.apply_along_axis', 'np.apply_over_axes', 'np.expand_dims',
+    'np.column_stack', 'np.dstack', 'np.array_split', 'np.split', 'np.hsplit',
+    'np.vsplit', 'np.dsplit', 'np.kron', 'np.tile', 'np.lib.scimath.sqrt',
+    'np.lib.scimath.log', 'np.lib.scimath.log10', 'np.lib.scimath.logn',
+    'np.lib.scimath.log2', 'np.lib.scimath.power', 'np.lib.scimath.arccos',
+    'np.lib.scimath.arcsin', 'np.lib.scimath.arctanh', 'np.poly', 'np.roots',
+    'np.polyint', 'np.polyder', 'np.polyfit', 'np.polyval', 'np.polyadd',
+    'np.polysub', 'np.polymul', 'np.polydiv', 'np.ediff1d', 'np.unique',
+    'np.intersect1d', 'np.setxor1d', 'np.in1d', 'np.isin', 'np.union1d',
+    'np.setdiff1d', 'np.save', 'np.savez', 'np.savez_compressed', 'np.savetxt',
+    'np.fv', 'np.pmt', 'np.nper', 'np.ipmt', 'np.ppmt', 'np.pv', 'np.rate',
+    'np.irr', 'np.npv', 'np.mirr', 'np.pad', 'np.fft.fftshift',
+    'np.fft.ifftshift', 'np.fft.fft', 'np.fft.ifft', 'np.fft.rfft',
+    'np.fft.irfft', 'np.fft.hfft', 'np.fft.ihfft', 'np.fft.fftn',
+    'np.fft.ifftn', 'np.fft.fft2', 'np.fft.ifft2', 'np.fft.rfftn',
+    'np.fft.rfft2', 'np.fft.irfftn', 'np.fft.irfft2']
+
+    n_implemented, n_skipped, n_missing = 0, 0, 0
+    for a in api:
+        if a.startswith('np.char.'):
+            n_skipped += 1
+            continue
+        if a.startswith('np.fft.'):
+            n_skipped += 1
+            continue
+
+        parts = a.split('.')[1:]
+        f = np
+        while parts and f:
+            f = getattr(f, parts.pop(0), None)
+        if f is None:
+            print("Missing", a)
+            continue
+        if f not in HANDLED_FUNCTIONS:
+            n_missing += 1
+            #print(a)
+            pass
+        else:
+            n_implemented += 1
+        #    print("Have", a)
+    #print("Total api:   ", len(api))
+    #print("Skipped:     ", n_skipped)
+    #print("Implemented: ", n_implemented)
+    #print("Missing:     ", n_missing)

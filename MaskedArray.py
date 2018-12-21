@@ -523,7 +523,7 @@ def replace_X(data, dtype=None):
     def get_dtype(data, cur_dtype=X):
         if isinstance(data, (list, tuple)):
             dtypes = (get_dtype(d, cur_dtype) for d in data)
-            dtypes = [dt for dt in dtypes  if dt is not X]
+            dtypes = [dt for dt in dtypes if dt is not X]
             if not dtypes:
                 return cur_dtype
 
@@ -629,7 +629,10 @@ def as_masked_fmt(formattercls):
             # only get fmt_func based on non-masked values
             # (we take care of masked elements ourselves)
             unmasked = elem._data[~elem._mask]
-            default_fmt = super().get_format_func(unmasked, **options)
+            if unmasked.size == 0:
+                default_fmt = lambda x: ''
+            else:
+                default_fmt = super().get_format_func(unmasked, **options)
 
             # default_fmt should always give back same str length.
             # Figure out what this is with a test call.
@@ -749,11 +752,13 @@ class _Masked_BinOp(_Masked_UFunc):
         super().__init__(ufunc)
         self.domain = maskdomain
 
+        # XXX messy.. try to clean this behavior up
+
         if reduce_fill is None:
             reduce_fill = ufunc.identity
 
-        # XXX messy.. try to clean this behavior up
-        if np.isscalar(reduce_fill) or not callable(reduce_fill):
+        if (reduce_fill is not None and 
+                (np.isscalar(reduce_fill) or not callable(reduce_fill))):
             self.reduce_fill = lambda dtype: reduce_fill
         else:
             self.reduce_fill = reduce_fill
@@ -1097,11 +1102,11 @@ def setup_ducktype():
 
     @implements(np.argmax)
     def argmax(a, axis=None, out=None):
-        outdata, outmask = get_maskedout(out)
+        if isinstance(out, MaskedArray):
+            raise TypeError("out argument of argmax should be an ndarray")
         filled = a.filled(minmax='max', view=1)
-        result_data = np.argmax(filled, axis, outdata)
-        result_mask = np.all(a._mask, axis, outmask)
-        return maskedarray_or_scalar(result_data, result_mask, out)
+        result_data = np.argmax(filled, axis, out)
+        return result_data
 
     @implements(np.min)
     def min(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue):
@@ -1113,11 +1118,11 @@ def setup_ducktype():
 
     @implements(np.argmin)
     def argmin(a, axis=None, out=None):
-        outdata, outmask = get_maskedout(out)
+        if isinstance(out, MaskedArray):
+            raise TypeError("out argument of argmax should be an ndarray")
         filled = a.filled(minmax='min', view=1)
-        result_data = np.argmin(filled, axis, outdata)
-        result_mask = np.all(a._mask, axis, outmask)
-        return maskedarray_or_scalar(result_data, result_mask, out)
+        result_data = np.argmin(filled, axis, out)
+        return result_data
 
     @implements(np.sort)
     def sort(a, axis=-1, kind='quicksort', order=None):
@@ -2424,174 +2429,4 @@ def setup_ducktype():
     #@implements(np.savez_compressed)
     #@implements(np.savetxt)
 
-
 setup_ducktype()
-
-
-# temporary code to figure out our api coverage
-api = ['np.empty_like', 'np.concatenate', 'np.inner', 'np.where', 'np.lexsort',
-'np.can_cast', 'np.min_scalar_type', 'np.result_type', 'np.dot', 'np.vdot',
-'np.bincount', 'np.ravel_multi_index', 'np.unravel_index', 'np.copyto',
-'np.putmask', 'np.packbits', 'np.unpackbits', 'np.shares_memory',
-'np.may_share_memory', 'np.is_busday', 'np.busday_offset', 'np.busday_count',
-'np.datetime_as_string', 'np.zeros_like', 'np.ones_like', 'np.full_like',
-'np.count_nonzero', 'np.argwhere', 'np.flatnonzero', 'np.correlate',
-'np.convolve', 'np.outer', 'np.tensordot', 'np.roll', 'np.rollaxis',
-'np.moveaxis', 'np.cross', 'np.allclose', 'np.isclose', 'np.array_equal',
-'np.array_equiv', 'np.take', 'np.reshape', 'np.choose', 'np.repeat', 'np.put',
-'np.swapaxes', 'np.transpose', 'np.partition', 'np.argpartition', 'np.sort',
-'np.argsort', 'np.argmax', 'np.argmin', 'np.searchsorted', 'np.resize',
-'np.squeeze', 'np.diagonal', 'np.trace', 'np.ravel', 'np.nonzero', 'np.shape',
-'np.compress', 'np.clip', 'np.sum', 'np.any', 'np.all', 'np.cumsum', 'np.ptp',
-'np.amax', 'np.amin', 'np.alen', 'np.prod', 'np.cumprod', 'np.ndim', 'np.size',
-'np.around', 'np.mean', 'np.std', 'np.var', 'np.round_', 'np.product',
-'np.cumproduct', 'np.sometrue', 'np.alltrue', 'np.rank', 'np.array2string',
-'np.array_repr', 'np.array_str', 'np.char.equal', 'np.char.not_equal',
-'np.char.greater_equal', 'np.char.less_equal', 'np.char.greater',
-'np.char.less', 'np.char.str_len', 'np.char.add', 'np.char.multiply',
-'np.char.mod', 'np.char.capitalize', 'np.char.center', 'np.char.count',
-'np.char.decode', 'np.char.encode', 'np.char.endswith', 'np.char.expandtabs',
-'np.char.find', 'np.char.index', 'np.char.isalnum', 'np.char.isalpha',
-'np.char.isdigit', 'np.char.islower', 'np.char.isspace', 'np.char.istitle',
-'np.char.isupper', 'np.char.join', 'np.char.ljust', 'np.char.lower',
-'np.char.lstrip', 'np.char.partition', 'np.char.replace', 'np.char.rfind',
-'np.char.rindex', 'np.char.rjust', 'np.char.rpartition', 'np.char.rsplit',
-'np.char.rstrip', 'np.char.split', 'np.char.splitlines', 'np.char.startswith',
-'np.char.strip', 'np.char.swapcase', 'np.char.title', 'np.char.translate',
-'np.char.upper', 'np.char.zfill', 'np.char.isnumeric', 'np.char.isdecimal',
-'np.atleast_1d', 'np.atleast_2d', 'np.atleast_3d', 'np.vstack', 'np.hstack',
-'np.stack', 'np.block', 'np.einsum_path', 'np.einsum', 'np.fix', 'np.isposinf',
-'np.isneginf', 'np.asfarray', 'np.real', 'np.imag', 'np.iscomplex',
-'np.isreal', 'np.iscomplexobj', 'np.isrealobj', 'np.nan_to_num',
-'np.real_if_close', 'np.asscalar', 'np.common_type', 'np.fliplr', 'np.flipud',
-'np.diag', 'np.diagflat', 'np.tril', 'np.triu', 'np.vander', 'np.histogram2d',
-'np.tril_indices_from', 'np.triu_indices_from', 'np.linalg.tensorsolve',
-'np.linalg.solve', 'np.linalg.tensorinv', 'np.linalg.inv',
-'np.linalg.matrix_power', 'np.linalg.cholesky', 'np.linalg.qr',
-'np.linalg.eigvals', 'np.linalg.eigvalsh', 'np.linalg.eig', 'np.linalg.eigh',
-'np.linalg.svd', 'np.linalg.cond', 'np.linalg.matrix_rank', 'np.linalg.pinv',
-'np.linalg.slogdet', 'np.linalg.det', 'np.linalg.lstsq', 'np.linalg.norm',
-'np.linalg.multi_dot', 'np.histogram_bin_edges', 'np.histogram',
-'np.histogramdd', 'np.rot90', 'np.flip', 'np.average', 'np.piecewise',
-'np.select', 'np.copy', 'np.gradient', 'np.diff', 'np.interp', 'np.angle',
-'np.unwrap', 'np.sort_complex', 'np.trim_zeros', 'np.extract', 'np.place',
-'np.cov', 'np.corrcoef', 'np.i0', 'np.sinc', 'np.msort', 'np.median',
-'np.percentile', 'np.quantile', 'np.trapz', 'np.meshgrid', 'np.delete',
-'np.insert', 'np.append', 'np.digitize', 'np.broadcast_to',
-'np.broadcast_arrays', 'np.ix_', 'np.fill_diagonal', 'np.diag_indices_from',
-'np.nanmin', 'np.nanmax', 'np.nanargmin', 'np.nanargmax', 'np.nansum',
-'np.nanprod', 'np.nancumsum', 'np.nancumprod', 'np.nanmean', 'np.nanmedian',
-'np.nanpercentile', 'np.nanquantile', 'np.nanvar', 'np.nanstd',
-'np.take_along_axis', 'np.put_along_axis', 'np.apply_along_axis',
-'np.apply_over_axes', 'np.expand_dims', 'np.column_stack', 'np.dstack',
-'np.array_split', 'np.split', 'np.hsplit', 'np.vsplit', 'np.dsplit', 'np.kron',
-'np.tile', 'np.lib.scimath.sqrt', 'np.lib.scimath.log', 'np.lib.scimath.log10',
-'np.lib.scimath.logn', 'np.lib.scimath.log2', 'np.lib.scimath.power',
-'np.lib.scimath.arccos', 'np.lib.scimath.arcsin', 'np.lib.scimath.arctanh',
-'np.poly', 'np.roots', 'np.polyint', 'np.polyder', 'np.polyfit', 'np.polyval',
-'np.polyadd', 'np.polysub', 'np.polymul', 'np.polydiv', 'np.ediff1d',
-'np.unique', 'np.intersect1d', 'np.setxor1d', 'np.in1d', 'np.isin',
-'np.union1d', 'np.setdiff1d', 'np.save', 'np.savez', 'np.savez_compressed',
-'np.savetxt', 'np.fv', 'np.pmt', 'np.nper', 'np.ipmt', 'np.ppmt', 'np.pv',
-'np.rate', 'np.irr', 'np.npv', 'np.mirr', 'np.pad', 'np.fft.fftshift',
-'np.fft.ifftshift', 'np.fft.fft', 'np.fft.ifft', 'np.fft.rfft', 'np.fft.irfft',
-'np.fft.hfft', 'np.fft.ihfft', 'np.fft.fftn', 'np.fft.ifftn', 'np.fft.fft2',
-'np.fft.ifft2', 'np.fft.rfftn', 'np.fft.rfft2', 'np.fft.irfftn',
-'np.fft.irfft2']
-
-n_implemented, n_skipped, n_missing = 0, 0, 0
-for a in api:
-    if a.startswith('np.char.'):
-        n_skipped += 1
-        continue
-    if a.startswith('np.fft.'):
-        n_skipped += 1
-        continue
-
-    parts = a.split('.')[1:]
-    f = np
-    while parts and f:
-        f = getattr(f, parts.pop(0), None)
-    if f is None:
-        print("Missing", a)
-        continue
-    if f not in HANDLED_FUNCTIONS:
-        n_missing += 1
-        #print(a)
-        pass
-    else:
-        n_implemented += 1
-    #    print("Have", a)
-#print("Total api:   ", len(api))
-#print("Skipped:     ", n_skipped)
-#print("Implemented: ", n_implemented)
-#print("Missing:     ", n_missing)
-
-
-################################################################################
-#                               testing code
-################################################################################
-
-# See discussion here:
-# https://docs.scipy.org/doc/numpy-1.13.0/neps/missing-data.html
-#
-# Main features of MaskedArray we want to have here:
-#  1. We use "Ignore/skip" mask propagation
-#  1. invalid domain ufunc calls (div by 0 etc) get converted to masks
-#  1. MaskedArray has freedom to set the data at masked elem (for optimization)
-#
-# Far-out ideas for making these choice configurable: Since the mask is stored
-# as a byte anyway, maybe we could have two kinds of masked values: Sticky and
-# nonsticky masks? So the mask would be stored as 'u1', 0=unmasked, 1=unsticky,
-# 2=sticky. For the invalid domain conversions, someone might also want for
-# this not to happen. Maybe instead we should implement these choices as
-# subclasses, so we would have a subclass without invalid domin conversion.
-
-if __name__ == '__main__':
-    A = MaskedArray(np.arange(12), np.arange(12)%2).reshape((4,3))
-    print(hasattr(A, '__array_function__'))
-    print(A)
-    print(repr(A))
-    print(A[1:3])
-    print("")
-
-    A = MaskedArray(np.arange(12)).reshape((4,3))
-    B = MaskedArray(np.arange(12) % 2).reshape((4,3))
-    print(A)
-    print(B)
-    C = A/B
-    print(C)
-    print(C.T)
-    print(np.max(C, axis=1))
-    print(np.sin(C))
-    print(np.sin(C)*np.full(3, 100))
-
-    print(repr(MaskedArray([[X, X, 3], [1, X, 1]])))
-    try:
-        print(repr(MaskedArray([[X, X, X], [X, X, X]])))
-    except ValueError as v:
-        print("Got Exception: ", v)
-    print(repr(MaskedArray([[X, X, X], [X, X, X]], dtype='u1')))
-
-    a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]], dtype='u4')
-    b = np.take_along_axis(a, np.argsort(a, axis=1), axis=1)
-    print(repr(b))
-    c = a.copy()
-    c.sort(axis=1)
-    print(repr(c))
-
-    a = MaskedArray([[1,X,3], [X,4,X], [1,X,6]], dtype='u4')
-    print(np.lexsort((a,), axis=1))
-    print(np.argsort(a, axis=1))
-    print(repr(np.block([[a,a],[a,a]])))
-    print(repr(a == a))
-    print(repr(a == X))
-
-    m = a.mask
-    try:
-        m[0,0] = 1
-    except ValueError:
-        pass
-    a[0,0] = X
-    print(m[0,0] == True)
-
