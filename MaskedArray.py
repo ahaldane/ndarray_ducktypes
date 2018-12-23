@@ -108,8 +108,68 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
         return MaskedIterator(self)
 
 class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
+    "An ndarray ducktype allowing array elements to be masked"
+
     def __init__(self, data, mask=None, dtype=None, copy=False,
                 order=None, subok=True, ndmin=0, **options):
+        """
+        Constructs a MaskedArray given data and optional mask.
+
+        Parameters
+        ----------
+        data : array-like
+            Any object convertible to an `ndarray`, but also allowing
+            the masked signifier `X` to mark masked elements. See Notes below.
+        mask : array-like
+            Any object convertible to a boolean `ndarray` of the same
+            shape as data, where true elements are masked. If omitted, defaults
+            to all `False`. See Notes below.
+        dtype : data-type, optional
+            The desired data-type for the array. See `np.array` argument.
+        copy : cool, optional
+            If false (default), the MaskedArray will view the data and mask
+            if they are ndarrays with the right properties. Otherwise
+            a they will be copied.
+        order : {'K', 'A', 'C', 'F'}, optional
+            Memory layout of the array. See `np.array` argument.
+        subok : bool, optional
+            Not yet fully supported.
+        ndmin : int, optional
+            Specifies the minimum number of dimensions the resulting array
+            should have. See `np.array` argument.
+        
+        Returns
+        -------
+        out : MaskedArray
+            The resulting MaskedArray.
+
+        Notes
+        -----
+        This MaskedArray constructor supports a few different ways to mark
+        masked elements, which are sometimes exclusive.
+
+        First, `data` may be a MaskedArray, in which case `mask` should not
+        be supplied.
+        
+        If `mask` is not supplied, then masked elements may be marked in the
+        `data` using the masked input element `X`. That is, `data` can be a
+        list-of-lists containing numerical scalars and `ndarray`s,
+        similar to that accepted by `np.array`, but additionally allowing
+        some elements to be replaced with `X`. The dtype will be inferred 
+        based on the converted dtype of the non-masked elements. If all
+        elements are `X`, the `dtype` argument of `MaskedArray` must be
+        supplied:
+
+            >>> a = MaskedArray([[1, X, 3], np.arange(3)])
+            >>> b = MaskedArray([X, X, X], dtype='f8')
+
+        If `mask` is supplied, `X` should not be used in the `data. `mask`
+        should be any object convertible to bool datatype and broadcastable
+        to the shape of the data. If `mask` is already a bool ndarray
+        of the same shape as `data`, it will be viewed, otherwise it will
+        be copied.
+
+        """
 
         if isinstance(data, (MaskedArray, MaskedScalar)):
             self._data = np.array(data._data, copy=copy, order=order,
@@ -124,7 +184,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         elif data is X and mask is None:
             # 0d masked array
             if dtype is None:
-                raise ValueError("must supply dtype if all elements are masked")
+                raise ValueError("must supply dtype if all elements are X")
             self._data = np.array(dtype.type(0))
             self._mask = np.array(True)
         else:
@@ -167,11 +227,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
     def __getitem__(self, ind):
         if is_string_or_list_of_strings(ind):
-            data = self._data[ind]
-            mask = self._mask
-            #XXX unclear if mask should be view or copy
-            #XXX also, what happens for subarrays. Is mask broadcast?
-            return MaskedArray(data, mask)
+            return MaskedArray(self._data[ind], self._mask.copy())
 
         if not isinstance(ind, tuple):
             ind = (ind,)
@@ -199,6 +255,11 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         return MaskedArray(data, mask)
 
     def __setitem__(self, ind, val):
+        if is_string_or_list_of_strings(ind):
+            view = MaskedArray(self._data[ind], self._mask.copy())
+            view[...] = val
+            return
+
         if not isinstance(ind, tuple):
             ind = (ind,)
 
@@ -388,7 +449,29 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 # Question: What should happen when you fancy-index using a masked integer
 # array? Probably it should fail - you should use filled first.
 class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
+    "An ndarray scalar ducktype allowing the value to be masked"
+
     def __init__(self, data, mask=None, dtype=None):
+        """
+        Construct  masked scalar given a data value and mask value.
+
+        Parameters
+        ----------
+        data : numpy scalar, MaskedScalar, or X
+            The value of the scalar. If `X` is given, `dtype` must be supplied.
+        mask : bool
+            If true, the scalar is masked. Default is false.
+        dtype : numpy dtype
+            dtype to convert to the data to
+
+        Notes
+        -----
+        To construct a masked MaskedScalar of a certain dtype, it may be
+        preferrable to use ``X(dtype)``.
+
+        If `data` is a MaskedScalar, do not supply a `mask`.
+
+        """
         if isinstance(data, MaskedScalar):
             self._data = data._data
             self._mask = data._mask
@@ -546,7 +629,7 @@ def replace_X(data, dtype=None):
     if dtype is None:
         dtype = get_dtype(data)
         if dtype is X:
-            raise ValueError("must supply dtype if all elements are masked")
+            raise ValueError("must supply dtype if all elements are X")
     else:
         dtype = np.dtype(dtype)
 
@@ -1690,7 +1773,7 @@ def setup_ducktype():
     @implements(np.real)
     def real(a):
         result_data = np.real(a._data)
-        result_mask = a._mask
+        result_mask = a._mask.copy()
         return maskedarray_or_scalar(result_data, result_mask)
         # XXX not clear if mask should be copied or viewed: If we unmask
         # the imag part, should be real part be unmasked too?
@@ -1698,7 +1781,7 @@ def setup_ducktype():
     @implements(np.imag)
     def imag(a):
         result_data = np.imag(a._data)
-        result_mask = a._mask
+        result_mask = a._mask.copy()
         return maskedarray_or_scalar(result_data, result_mask)
         # XXX not clear if mask should be copied or viewed: If we unmask
         # the imag part, should be real part be unmasked too? If we

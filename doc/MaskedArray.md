@@ -15,7 +15,7 @@ MaskedArray([0, X, X, 3])
 MaskedScalar(3)
 ```
 
-`MaskedArray` is implemented as an `ndarray` ducktype, and so `MaskedArrays` can be substituted into almost any NumPy expression, for instance involving `np.sum`, `np.mean`, `np.concatenate`, and many others. `MaskedArray` supports most of NumPy's API methods and vectorized mathematical operations.
+`MaskedArray` is implemented as an `ndarray` ducktype, and so `MaskedArrays` can be substituted into almost any NumPy expression, for instance involving `np.sum`, `np.mean`, `np.concatenate`, and many others. `MaskedArray` supports most of NumPy's API methods and vectorized mathematical operations, known as "ufuncs".
 
 Historical Relationship to NumPy's `MaskedArray`s
 -------------------------------------------------
@@ -46,7 +46,7 @@ MaskedArray([[1, X, 3],
              [X, 4, 1]])
 ```
 
-Another way is by specifying separate `data` and `mask` objects as the first two arguments of the constructor. The mask can be any object which numpy can cast to a boolean array and broadcast to the same shape as the data:
+Another way is by specifying separate `data` and `mask` objects as the first two arguments of the constructor. The mask can be any object which NumPy can cast to a boolean array and broadcast to the same shape as the data:
 
 ```python
 >>> MaskedArray(np.ones(4), [0, 1, 0, 1])
@@ -108,7 +108,7 @@ X(float64), MaskedScalar
 General Principles of Behavior
 ==============================
 
-This module follows some general principles useful for understanding the behavior of particlar NumPy operations on `MaskedArray`s.
+NumPy operations on `MaskedArray`s follow a few general principles of behavior.
 
 Unary and Binary operations
 ---------------------------
@@ -116,7 +116,7 @@ Unary and Binary operations
 For simple unary and binary operations, such as addition of two arrays, output elements will be masked at positions where either input element is masked:
 
 ```python
->>> a = MaskedArray([1, X, 3])
+>>> a = MaskedArray([1, X, X])
 >>> b = MaskedArray([1, 2, X])
 >>> a + b
 MaskedArray([2, X, X])
@@ -148,7 +148,7 @@ A relevant detail is that `MaskedArray` reductions are implemented by replacing 
 Truthiness of Masked Values
 ----------------------------
 
- When a `MaskedScalar` is tested for truth, for instance in if-statements, it will return `False` if masked, or the same as the corresponding numpy scalar if not masked. To get masked values to test as `True`, use `scalar.filled(True)` first.
+ When a `MaskedScalar` is tested for truth, for instance in if-statements, it will return `False` if masked, or the same as the corresponding NumPy scalar if not masked. To get masked values to test as `True`, use `scalar.filled(True)` first.
 
 `np.nonzero` and `np.where` will similarly treat masked values as `False` or zero-like, and so do not return the indices of masked values.
 
@@ -171,14 +171,14 @@ Unlike most other NumPy API functions, NumPy functions which perform indexing-li
 `out` arguments
 ---------------
 
-For NumPy functions which takes an `out` argument, such as `np.sum` or `np.add`, if a `MaskedArray` is one of the inputs and the out argument is given it must also be a `MaskedArray`, with exceptions for index-like operations. This is to prevent situations in which the mask is lost and uninitialized data is exposed to the user. 
+For NumPy functions which takes an `out` argument, such as `np.sum` or `np.add`, if a `MaskedArray` is one of the inputs and the out argument must also be a `MaskedArray` if given, with exceptions for index-like operations. This is to prevent situations in which the mask is lost and uninitialized data is exposed to the user. 
 
 Sorting masked values
 ---------------------
 
-In sorting operations such as `np.sort`, `np.lexsort`, `np.argsort`, masked elements will be treated as greater than the largest representable value of the `MaskedArray`'s dtype. In other words they will sort to the "end" of the sorted array.
+In sorting operations such as `np.sort`, `np.lexsort`, `np.argsort`, masked elements will be treated as greater than the greatest value of the `MaskedArray`'s dtype. In other words they will sort to the "end" of the sorted array.
 
-For `np.max`, `np.min`, `np.argmin`, and `np.argmax`, non-masked values are returned before any masked value. In other words, these will only return a masked value, or index of a masked value, if all input values were masked. Note that the `arg*` methods will return `ndarrays`, following the discussion of indexing-like operations above.
+For `np.max`, `np.min`, `np.argmin`, and `np.argmax`, non-masked values are returned before any masked value. In other words, these will only return a masked value, or index of a masked value, if all input values were masked. Note that the `arg*` methods will return `ndarrays` or `int` scalars, following the discussion of indexing-like operations above.
 
 Views and Copies
 ----------------
@@ -194,18 +194,13 @@ Unlike `ndarray`s, `MaskedArray`s do not support a `.base` attribute which can b
 Complex Values 
 --------------
 
- * for complex datatypes, the masks of .real and .imag behave in a certain way. Sugest using nanmethod if heavy use of complex types.
+`MaskedArray`s of complex `dtype` have `.real` and `.imag` attributes, like `ndarrays`, which can also be obtained using `np.real` and `np.imag`. These return `MaskedArray`s whose data is a view of the original `MaskedArray`s real or imag part, similarly to `ndarray`s, but importantly the mask is a copy of the original `MaskedArray`s mask, and not a view. This means that operations which modify the mask of the `.real` or `.imag` part of a `MaskedArray` will not modify the original mask. Significantly, if you try to assign masked values to the real or imag part at locations which are unmasked in the original array, this may cause nonsense masked values to be visible from the original array. [TODO: Is it possible to avoid this without lots of complications?]
 
+If you wish to make extensive use of masked complex values, or wish to mask the real and complex parts separately, it may be preferable to use plain `ndarray` instead of `MaskedArray` aand use `nan` in place of a mask. You can then use the `np.nan*` functions which ignore `nan` elements similarly to how `MaskedArray`s ignore masked elements.
 
+Structured dtypes
+-----------------
 
-`MaskedArray` Reference
-=======================
+`MaskedArray` does not support masking individual fields of a structured datatype, instead each structured element as a whole can be masked. If you wish to mask individual fields, as an alternative consider using the `MaskedArrayCollection` class which behaves similarly to structured arrays but allows the user to sepaately mask each named array in the collection.
 
-Construction
-------------
-
-Indexing
---------
-
-Ufuncs
-------
+Similarly to complex types, if you index a `MaskedArray` of structured dtype with a field name or names, the resulting `MaskedArray`s data is a view of the original `MaskedArray`s data, but the mask is a copy.

@@ -16,17 +16,18 @@ class ArrayCollection:
     as named axes.
 
     Tip: One can use `np.broadcast_to` to broadcast the input arrays to the
-    same shape in a memory-efficient way. Some caution is needed when writing
-    to an ArrayCollection created this way though. See the `np.broadcast_to`
-    docstring for details.
+    same shape in a memory-saving way, though this makes the arrays readonly.
+    See the `np.broadcast_to` docstring for details.
 
-    Parameters
-    ----------
-    data : tuple of (str, arraylike) pairs, structured ndarray,
-           or Arraycollection
-        Set of data to make a collection from.
     """
     def __init__(self, data, skip_validation=False):
+        """
+        Parameters
+        ----------
+        data : tuple of (str, arraylike) pairs, structured ndarray,
+               or Arraycollection
+            Set of data to make a collection from.
+        """
         # if data is a list of (name, arr) tuples:
         if isinstance(data, list):
             self.names, arrays = zip(*data)
