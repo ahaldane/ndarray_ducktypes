@@ -15,7 +15,7 @@ MaskedArray([0, X, X, 3])
 MaskedScalar(3)
 ```
 
-`MaskedArray` is implemented as an `ndarray` ducktype, and so `MaskedArrays` can be substituted into almost any NumPy expression, for instance involving `np.sum`, `np.mean`, `np.concatenate`, and many others. `MaskedArray` supports most of NumPy's API methods and vectorized mathematical operations, known as "ufuncs".
+`MaskedArray` is implemented as an `ndarray` ducktype, and so `MaskedArrays` can be substituted into almost any NumPy expression, for instance involving `np.sum`, `np.mean`, `np.concatenate`, and many others. `MaskedArray` supports most of NumPy's API methods and vectorized mathematical operations.
 
 Historical Relationship to NumPy's `MaskedArray`s
 -------------------------------------------------
@@ -76,7 +76,7 @@ array([[1, 0, 3],
        [0, 4, 1]])
 ```
 
-The `.mask` attribute gives a readonly view of the boolean ndarray representing which elements are masked.
+The `.mask` attribute gives a readonly view of the boolean `ndarray` representing which elements are masked.
 
 ```python
 >>> a.mask
@@ -152,7 +152,7 @@ Truthiness of Masked Values
 
 `np.nonzero` and `np.where` will similarly treat masked values as `False` or zero-like, and so do not return the indices of masked values.
 
-`np.any` treats masked values as `False` (since it is implemented as `np.logical_or.reduce`, whose identity value is `False`), and `np.all` treats masked values as `True`. Use `np.any(arr.filled(...))` to get different behaviors, replacing `...` by `True` or `False` as desired.
+`np.any` treats masked values as `False` (since it is implemented as `np.logical_or.reduce`, whose identity value is `False`), and `np.all` treats masked values as `True`. Use `.filled` to get different behaviors.
 
 Fancy Indexing
 --------------
@@ -171,7 +171,7 @@ Unlike most other NumPy API functions, NumPy functions which perform indexing-li
 `out` arguments
 ---------------
 
-For NumPy functions which takes an `out` argument, such as `np.sum` or `np.add`, if a `MaskedArray` is one of the inputs and the out argument must also be a `MaskedArray` if given, with exceptions for index-like operations. This is to prevent situations in which the mask is lost and uninitialized data is exposed to the user. 
+For NumPy functions which takes an `out` argument, such as `np.sum` or `np.add`, if a `MaskedArray` is one of the inputs then the out argument must also be a `MaskedArray` if given, with exceptions for index-like operations. This is to prevent situations in which the mask is lost and uninitialized data is exposed to the user. 
 
 Sorting masked values
 ---------------------
@@ -196,11 +196,11 @@ Complex Values
 
 `MaskedArray`s of complex `dtype` have `.real` and `.imag` attributes, like `ndarrays`, which can also be obtained using `np.real` and `np.imag`. These return `MaskedArray`s whose data is a view of the original `MaskedArray`s real or imag part, similarly to `ndarray`s, but importantly the mask is a copy of the original `MaskedArray`s mask, and not a view. This means that operations which modify the mask of the `.real` or `.imag` part of a `MaskedArray` will not modify the original mask. Significantly, if you try to assign masked values to the real or imag part at locations which are unmasked in the original array, this may cause nonsense masked values to be visible from the original array. [TODO: Is it possible to avoid this without lots of complications?]
 
-If you wish to make extensive use of masked complex values, or wish to mask the real and complex parts separately, it may be preferable to use plain `ndarray` instead of `MaskedArray` aand use `nan` in place of a mask. You can then use the `np.nan*` functions which ignore `nan` elements similarly to how `MaskedArray`s ignore masked elements.
+If you wish to make extensive use of masked complex values, or wish to mask the real and complex parts separately, it may be preferable to use plain `ndarray` instead of `MaskedArray` and use `nan` in place of a mask. You can then use the `np.nan*` functions which ignore `nan` elements similarly to how `MaskedArray`s ignore masked elements.
 
 Structured dtypes
 -----------------
 
-`MaskedArray` does not support masking individual fields of a structured datatype, instead each structured element as a whole can be masked. If you wish to mask individual fields, as an alternative consider using the `MaskedArrayCollection` class which behaves similarly to structured arrays but allows the user to sepaately mask each named array in the collection.
+`MaskedArray` does not support masking individual fields of a structured datatype, instead each structured element as a whole can be masked. If you wish to mask individual fields, as an alternative consider using the `MaskedArrayCollection` class which behaves similarly to structured arrays but allows the user to separately mask each named array in the collection.
 
 Similarly to complex types, if you index a `MaskedArray` of structured dtype with a field name or names, the resulting `MaskedArray`s data is a view of the original `MaskedArray`s data, but the mask is a copy.
