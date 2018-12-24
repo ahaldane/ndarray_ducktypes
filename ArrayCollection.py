@@ -27,12 +27,12 @@ class ArrayCollection:
     See the `np.broadcast_to` docstring for details.
 
     """
-    def __init__(self, data, skip_validation=False):
+    def __init__(self, data, dtype=None, skip_validation=False):
         """
         Parameters
         ----------
-        data : tuple of (str, arraylike) pairs, structured ndarray,
-               or Arraycollection
+        data : dict of (str, arraylike) pairs, structured ndarray, 
+               or Arraycollection, or list of tuples with dtype
             Set of data to make a collection from. For the tuple
             of pairs, the arrays are viewed. For structured ndarray, each
             field is copied. For an ArrayCollection, a view is made.
@@ -40,13 +40,19 @@ class ArrayCollection:
             If False, check that the arrays have the same shape.
         """
         # if data is a list of (name, arr) tuples:
-        if isinstance(data, list):
-            arrays = dict(data)
-
+        if isinstance(data, dict):
+            arrays = data
+        elif isinstance(data, list):
+            # XXX auto-detect dtype?
+            if dtype is None:
+                raise ValueError("dtype must be supplied when suing tuple "
+                                 "construction")
+            dts = (dtype.fields[n][0] for n in dtype.names)
+            arrays = dict((name, np.ndarray(ai, dtype=dt)) for name, ai, dt in
+                          zip(dtype.names, zip(*data), dts))
         # if data is a structured array
         elif isinstance(data, np.ndarray) and data.dtype.names is not None:
             # unpack a structured array
-            self.names = data.dtype.names
             arrays = {}
             for n in data.dtype.names:
                 if data[n].dtype.names is not None:
@@ -133,7 +139,7 @@ class ArrayCollection:
 
         # for a list of field names return an arraycollection (view)
         if is_list_of_strings(ind):
-            return ArrayCollection([(n, self.arrays[n]) for n in ind],
+            return ArrayCollection({n: self.arrays[n] for n in ind},
                                    skip_validation=True)
 
         # single integers get converted to tuple
@@ -141,11 +147,11 @@ class ArrayCollection:
             ind = (ind,)
 
         # fall through: Use ndarray indexing
-        out = [(n, a[ind]) for n, a in self._arrays.items()]
+        out = {n: a[ind] for n, a in self._arrays.items()}
 
         # scalars get returned as a CollectionScalar
-        if out[0][1].shape == ():
-            return CollectionScalar(tuple(a for n,a in out), self._dtype)
+        if next(iter(out.values())).shape == ():
+            return CollectionScalar(tuple(out.values()), self._dtype)
 
         return ArrayCollection(out)
 
@@ -191,7 +197,10 @@ class ArrayCollection:
         return duck_repr(self)
 
     def __len__(self):
-        return len(self.arrays[self.names[0]])
+        try:
+            return len(next(iter(self._arrays.values())))
+        except StopIteration:
+            return 0
 
     def astype(self, dtype, order='K', casting='unsafe', subok=True, copy=True):
         kwds = {'order': order, 'casting': casting, 'subok': subok,
@@ -199,11 +208,11 @@ class ArrayCollection:
 
         dtype = np.dtype(dtype)
         types = [(n, dtype.fields[n][0]) for n in dtype.names]
-        if len(types) != len(self.names):
+        if len(types) != len(self._arrays):
             raise Exception("Cannot change number of fields")
 
         # force a copy if the names changed
-        if self.names != [n for n,dt in types]:
+        if list(self._arrays.keys()) != [n for n,dt in types]:
             copy = True
 
         mapping = [(n, arr, arr.astype(dt, *kwds))
@@ -217,7 +226,7 @@ class ArrayCollection:
             mapping = [((n, ai, ao.copy() if ai is ao else ao)
                        for (n, ai, ao) in mapping)]
 
-        return ArrayCollection([(n, ao) for (n, ai, ao) in mapping])
+        return ArrayCollection({n: ao for (n, ai, ao) in mapping})
 
     def view(dtype=None):
         # note: "type" kwd of ndarrays is not yet supported: How to mix
@@ -225,17 +234,17 @@ class ArrayCollection:
 
         dtype = np.dtype(dtype)
         newtypes = [(n, dtype.fields[n][0]) for n in dtype.names]
-        if len(newtypes) != len(self.names):
+        if len(newtypes) != len(self._arrays):
             raise Exception("Cannot change number of fields")
 
-        out = [(n, arr.view(dt))
-               for arr,(n,dt) in zip(self._arrays.values(), types)]
+        out = {n: arr.view(dt)
+               for arr,(n,dt) in zip(self._arrays.values(), types)}
 
         return ArrayCollection(out)
 
     def copy(self, order='C'):
-        return ArrayCollection([(n, a.copy(order=order))
-                                for n, a in self._arrays.items()])
+        return ArrayCollection({n: a.copy(order=order)
+                                for n, a in self._arrays.items()})
 
     # unlike np.reshape, allows shape to be passed as separate args
     def reshape(self, *shape, **kwargs):
@@ -262,7 +271,7 @@ class ArrayCollection:
 
     @property
     def T(self):
-        return self.transpose()
+        return np.transpose(self)
 
     @T.setter
     def T(self, val):
@@ -280,7 +289,7 @@ class ArrayCollection:
     #        self.arrays[n] = np.take(self.arrays[n], inds, axis=axis)
 
     def fill(self, value):
-        self[:] = value
+        self[...] = value
 
     def ravel(self, order='C'):
         return np.ravel(self, order)
@@ -294,11 +303,25 @@ class ArrayCollection:
 # an integer.
 class CollectionScalar:
     def __init__(self, vals, dtype=None):
-        self._data = vals
-        self._dtype = np.dtype(dtype)
-        self._shape = ()
-        self._size = 1
-        self._ndim = 0
+        if isinstance(vals, tuple):
+            self._data = vals
+            self._dtype = np.dtype(dtype)
+    
+    @property
+    def dtype(self):
+        return self._dtype
+
+    @property
+    def shape(self):
+        return ()
+
+    @property
+    def ndim(self):
+        return 0
+
+    @property
+    def size(self):
+        return 1
 
     def __getitem__(self, ind):
         # for a single field name, return the bare ndarray
@@ -332,14 +355,14 @@ def is_list_of_strings(val):
 def empty_collection(shape, dtype, order='C'):
     dtype = np.dtype(dtype)
 
-    arrays = []
+    arrays = {}
     for n in dtype.names:
         dt = dtype.fields[n][0]
         nshape = shape + dt.shape
         if dt.names:
-            arrays.append((n, empty_collection(nshape, dt, order=order)))
+            arrays[n] = empty_collection(nshape, dt, order=order)
         else:
-            arrays.append((n, np.empty(nshape, dt, order=order)))
+            arrays[n] = np.empty(nshape, dt, order=order)
 
     return ArrayCollection(arrays)
 
@@ -408,38 +431,38 @@ def setup_ducktype():
 
     @implements(np.copy)
     def copy(a, order='K'):
-        return ArrayCollection([(name, np.copy(ai, order))
-                                for name, ai in a._arrays.items()()])
+        return ArrayCollection({name: np.copy(ai, order)
+                                for name, ai in a._arrays.items()()})
 
     @implements(np.diagonal)
     def diagonal(a, offset=0, axis1=0, axis2=1):
-        return ArrayCollection([(name, np.diagonal(ai, offset, axis1, axis2))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.diagonal(ai, offset, axis1, axis2)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.diag)
     def diag(v, k=0):
-        return ArrayCollection([(name, np.diag(ai, k))
-                                for name, ai in v._arrays.items()])
+        return ArrayCollection({name: np.diag(ai, k)
+                                for name, ai in v._arrays.items()})
 
     @implements(np.diagflat)
     def diagflat(v, k=0):
-        return ArrayCollection([(name, np.diagflat(ai, k))
-                                for name, ai in v._arrays.items()])
+        return ArrayCollection({name: np.diagflat(ai, k)
+                                for name, ai in v._arrays.items()})
 
     @implements(np.tril)
     def tril(m, k=0):
-        return ArrayCollection([(name, np.tril(ai, k))
-                                for name, ai in m._arrays.items()])
+        return ArrayCollection({name: np.tril(ai, k)
+                                for name, ai in m._arrays.items()})
 
     @implements(np.triu)
     def triu(m, k=0):
-        return ArrayCollection([(name, np.triu(ai, k))
-                                for name, ai in m._arrays.items()])
+        return ArrayCollection({name: np.triu(ai, k)
+                                for name, ai in m._arrays.items()})
 
     @implements(np.take, checked_args=(0,))
     def take(a, indices, axis=None, out=None, mode='raise'):
-        arrs = [(name, np.take(ai, indices, axis, o, mode)) for (name, ai), o
-                in zip(a._arrays.items(), check_out(out, a.dtype))]
+        arrs = {name: np.take(ai, indices, axis, o, mode) for (name, ai), o
+                in zip(a._arrays.items(), check_out(out, a.dtype))}
         return out if out is not None else ArrayCollection(arrs)
 
     @implements(np.put, checked_args=(0,))
@@ -450,8 +473,8 @@ def setup_ducktype():
 
     @implements(np.take_along_axis, checked_args=(0,))
     def take_along_axis(arr, indices, axis):
-        return ArrayCollection([(name, np.take_along_axis(ai, indices, axis))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.take_along_axis(ai, indices, axis)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.put_along_axis, checked_args=(0,))
     def put_along_axis(arr, indices, values, axis):
@@ -461,69 +484,69 @@ def setup_ducktype():
 
     @implements(np.ravel)
     def ravel(a, order='C'):
-        return ArrayCollection([(name, np.ravel(ai, order))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.ravel(ai, order)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.repeat)
     def repeat(a, repeats, axis=None):
-        return ArrayCollection([(name, np.repeat(ai, repeats, axis))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.repeat(ai, repeats, axis)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.reshape)
     def reshape(a, newshape, order='C'):
-        return ArrayCollection([(name, np.reshape(ai, newshape, order))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.reshape(ai, newshape, order)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.resize)
     def resize(a, new_shape):
-        return ArrayCollection([(name, np.resize(ai, new_shape))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.resize(ai, new_shape)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.squeeze)
     def squeeze(a, axis=None):
-        return ArrayCollection([(name, np.squeeze(ai, axis))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.squeeze(ai, axis)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.swapaxes)
     def swapaxes(a, axis1, axis2):
-        return ArrayCollection([(name, np.swapaxes(ai, axis1, axis2))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.swapaxes(ai, axis1, axis2)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.transpose)
     def transpose(a, axes=None):
-        return ArrayCollection([(name, np.transpose(ai, axes))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.transpose(ai, axes)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.roll)
     def roll(a, shift, axis=None):
-        return ArrayCollection([(name, np.roll(ai, shift, axis))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.roll(ai, shift, axis)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.rollaxis)
     def rollaxis(a, axis, start=0):
-        return ArrayCollection([(name, np.rollaxis(ai, axis, start))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.rollaxis(ai, axis, start)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.moveaxis)
     def moveaxis(a, source, destination):
-        return ArrayCollection([(name, np.moveaxis(ai, source, destination))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.moveaxis(ai, source, destination)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.flip)
     def flip(m, axis=None):
-        return ArrayCollection([(name, np.flip(ai, axis))
-                                for name, ai in m._arrays.items()])
+        return ArrayCollection({name: np.flip(ai, axis)
+                                for name, ai in m._arrays.items()})
 
     @implements(np.expand_dims)
     def expand_dims(a, axis):
-        return ArrayCollection([(name, np.expand_dims(ai, axis))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.expand_dims(ai, axis)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.concatenate)
     def concatenate(arrays, axis=0, out=None):
         arrays, dtype = check_common_dtype(arrays)
-        arrs = [(name, np.concatenate([ai[name] for ai in arrays], axis, o))
-                for name, o in zip(dtype.names, check_out(out, dtype))]
+        arrs = {name: np.concatenate([ai[name] for ai in arrays], axis, o)
+                for name, o in zip(dtype.names, check_out(out, dtype))}
         return out if out is not None else ArrayCollection(arrs)
 
     @implements(np.block)
@@ -535,68 +558,68 @@ def setup_ducktype():
     def column_stack(tup):
         arrays, dtype = check_common_dtype(tup)
         fields = zip(*(a._arrays.values() for a in tup))
-        return ArrayCollection([(name, np.column_stack(ai))
-                               for name,ai in zip(dtype.names, fields)])
+        return ArrayCollection({name: np.column_stack(ai)
+                               for name,ai in zip(dtype.names, fields)})
 
     @implements(np.dstack)
     def dstack(tup):
         arrays, dtype = check_common_dtype(tup)
         fields = zip(*(a._arrays.values() for a in tup))
-        return ArrayCollection([(name, np.dstack(ai))
-                               for name,ai in zip(dtype.names, fields)])
+        return ArrayCollection({name: np.dstack(ai)
+                               for name,ai in zip(dtype.names, fields)})
 
     @implements(np.vstack)
     def vstack(tup):
         arrays, dtype = check_common_dtype(tup)
         fields = zip(*(a._arrays.values() for a in tup))
-        return ArrayCollection([(name, np.vstack(ai))
-                               for name,ai in zip(dtype.names, fields)])
+        return ArrayCollection({name: np.vstack(ai)
+                               for name,ai in zip(dtype.names, fields)})
 
     @implements(np.hstack)
     def hstack(tup):
         arrays, dtype = check_common_dtype(tup)
         fields = zip(*(a._arrays.values() for a in tup))
-        return ArrayCollection([(name, np.hstack(ai))
-                               for name,ai in zip(dtype.names, fields)])
+        return ArrayCollection({name: np.hstack(ai)
+                               for name,ai in zip(dtype.names, fields)})
 
     @implements(np.stack)
     def stack(arrays, axis=0, out=None):
         arrays, dtype = check_common_dtype(tup)
         fields = zip(*(a._arrays.values() for a in arrays))
-        arrs = [(name, np.stack(ai, axis, o)) for name, ai, o in
-                zip(dtype.names, fields, check_out(out, dtype))]
+        arrs = {name: np.stack(ai, axis, o) for name, ai, o in
+                zip(dtype.names, fields, check_out(out, dtype))}
         return out if out is not None else ArrayCollection(arrs)
 
     @implements(np.array_split, checked_args=(0,))
     def array_split(ary, indices_or_sections, axis=0):
         ios = indices_or_sections
-        return ArrayCollection([(name, np.array_split(ai, ios, axis))
-                                for name, ai in ary._arrays.items()])
+        return ArrayCollection({name: np.array_split(ai, ios, axis)
+                                for name, ai in ary._arrays.items()})
 
     @implements(np.split, checked_args=(0,))
     def split(ary, indices_or_sections, axis=0):
-        return ArrayCollection([(name, np.split(ai, indices_or_sections, axis))
-                                for name, ai in ary._arrays.items()])
+        return ArrayCollection({name: np.split(ai, indices_or_sections, axis)
+                                for name, ai in ary._arrays.items()})
 
     @implements(np.hsplit)
     def hsplit(ary, indices_or_sections):
-        return ArrayCollection([(name, np.hsplit(ai, indices_or_sections))
-                                for name, ai in ary._arrays.items()])
+        return ArrayCollection({name: np.hsplit(ai, indices_or_sections)
+                                for name, ai in ary._arrays.items()})
 
     @implements(np.vsplit)
     def vsplit(ary, indices_or_sections):
-        return ArrayCollection([(name, np.vsplit(ai, indices_or_sections))
-                                for name, ai in ary._arrays.items()])
+        return ArrayCollection({name: np.vsplit(ai, indices_or_sections)
+                                for name, ai in ary._arrays.items()})
 
     @implements(np.dsplit)
     def dsplit(ary, indices_or_sections):
-        return ArrayCollection([(name, np.dsplit(ai, indices_or_sections))
-                                for name, ai in ary._arrays.items()])
+        return ArrayCollection({name: np.dsplit(ai, indices_or_sections)
+                                for name, ai in ary._arrays.items()})
 
     @implements(np.tile)
     def tile(ary, reps):
-        return ArrayCollection([(name, np.tile(ai, reps))
-                                for name, ai in ary._arrays.items()])
+        return ArrayCollection({name: np.tile(ai, reps)
+                                for name, ai in ary._arrays.items()})
 
     @implements(np.atleast_1d)
     def atleast_1d(*arys):
@@ -651,25 +674,25 @@ def setup_ducktype():
 
     @implements(np.delete)
     def delete(arr, obj, axis=None):
-        return ArrayCollection([(name, np.delete(ai, obj, axis))
-                                for name, ai in arr._arrays.items()])
+        return ArrayCollection({name: np.delete(ai, obj, axis)
+                                for name, ai in arr._arrays.items()})
 
     @implements(np.insert)
     def insert(arr, obj, values, axis=None):
         vals = ArrayCollection(values, dtype=arr.dtype)
-        return ArrayCollection([(name, np.insert(ai, obj, vals[name], axis))
-                                for name, ai in arr._arrays.items()])
+        return ArrayCollection({name: np.insert(ai, obj, vals[name], axis)
+                                for name, ai in arr._arrays.items()})
 
     @implements(np.append)
     def append(arr, values, axis=None):
         vals = ArrayCollection(values, dtype=arr.dtype)
-        return ArrayCollection([(name, np.append(ai, obj, vals[name], axis))
-                                for name, ai in arr._arrays.items()])
+        return ArrayCollection({name: np.append(ai, obj, vals[name], axis)
+                                for name, ai in arr._arrays.items()})
 
     @implements(np.extract, checked_args=(1,))
     def extract(condition, arr):
-        return ArrayCollection([(name, np.extract(condition, ai))
-                                for name, ai in arr._arrays.items()])
+        return ArrayCollection({name: np.extract(condition, ai)
+                                for name, ai in arr._arrays.items()})
 
     @implements(np.place, checked_args=(0,))
     def place(arr, mask, vals):
@@ -679,13 +702,13 @@ def setup_ducktype():
 
     @implements(np.pad)
     def pad(array, pad_width, mode, **kwargs):
-        return ArrayCollection([(name, np.pad(ai, pad_width, mode, **kwargs))
-                                for name, ai in array._arrays.items()])
+        return ArrayCollection({name: np.pad(ai, pad_width, mode, **kwargs)
+                                for name, ai in array._arrays.items()})
 
     @implements(np.broadcast_to)
     def broadcast_to(array, shape, subok=False):
-        return ArrayCollection([(name, np.broadcast_to(ai, shape, subok))
-                                for name, ai in a._arrays.items()])
+        return ArrayCollection({name: np.broadcast_to(ai, shape, subok)
+                                for name, ai in a._arrays.items()})
 
     @implements(np.broadcast_arrays)
     def broadcast_arrays(*args, **kwargs):
@@ -731,8 +754,8 @@ def setup_ducktype():
                              'ArrayCollection. Supply x and y.')
         (x, y), dtype = check_common_dtype((x, y))
         fields = zip(dtype.names, x._arrays.values(), y._arrays.values())
-        return ArrayCollection([(name, np.where(condition, xi, yi))
-                                for name, xi, yi in fields])
+        return ArrayCollection({name: np.where(condition, xi, yi)
+                                for name, xi, yi in fields})
 
     @implements(np.choose, checked_args=(1,)) #XXX checkedargs doesn't work here
     def choose(a, choices, out=None, mode='raise'):
@@ -767,7 +790,7 @@ setup_ducktype()
 if __name__ == '__main__':
     a = np.arange(4, dtype='u2')
     b = np.arange(4, 8, dtype='f8')
-    A = ArrayCollection([('a', a), ('b', b)])
+    A = ArrayCollection({'a': a, 'b': b})
 
     print(A[0])
     print(repr(A))
