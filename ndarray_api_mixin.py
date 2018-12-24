@@ -83,9 +83,6 @@ class NDArrayAPIMixin:
             shape = (shape,)
         return np.reshape(self, *shape, **kwargs)
 
-    def resize(self, new_shape, refcheck=True): #XXX what is this refcheck?
-        return np.resize(self, new_shape)
-
     def round(self, decimals=0, out=None):
         return np.round(self, decimals, out)
 
@@ -134,7 +131,11 @@ class NDArrayAPIMixin:
 
     @property
     def T(self):
-        return self.transpose()
+        return np.transpose(self)
+
+    @T.setter
+    def T(self, val):
+        np.transpose(self)[...] = val
 
     @property
     def itemsize(self):
@@ -172,7 +173,7 @@ class NDArrayAPIMixin:
 #  Basic Attributes:
 #    dtype, shape, strides, flags, base
 #  Basic methods:
-#    astype, view, item
+#    astype, view, item, resize (needs to be inplace)
 #  Misc:
 #   byteswap, ctypes, data, dump, dumps, flat, getfield,  itemset, itemsize,
 #   newbyteorder, setfield, setflags, tobytes, tofile, tolist, tostring

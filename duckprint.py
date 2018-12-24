@@ -28,6 +28,9 @@ if (NumpyVersion(np.__version__) < '1.15.10' or
     os.environ.get('NUMPY_EXPERIMENTAL_ARRAY_FUNCTION', 0) == 0):
     raise Exception("numpy __array_function__ must be enabled")
 
+def is_ndducktype(val):
+    return hasattr(val, '__array_function__')
+
 # WIP: Notes.
 #
 # The get/set_printoptions functionality is temporarily removed and being

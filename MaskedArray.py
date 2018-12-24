@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 import numpy as np
 from duckprint import (duck_str, duck_repr, duck_array2string, typelessdata,
-    default_duckprint_options, default_duckprint_formatters, FormatDispatcher)
+    default_duckprint_options, default_duckprint_formatters, FormatDispatcher,
+    is_ndducktype)
 import builtins
 import numpy.core.umath as umath
 from numpy.lib.mixins import NDArrayOperatorsMixin
@@ -1112,9 +1113,6 @@ def implements(numpy_function, checked_args=None):
         return func
     return decorator
 
-def is_ndducktype(val):
-    return hasattr(val, '__array_function__')
-
 def maskedarray_or_scalar(data, mask, out=None):
     if out is not None:
         return out
@@ -1858,7 +1856,6 @@ def setup_ducktype():
         # XXX set base
         return MaskedArray(np.reshape(a._data, shape, order=order),
                            np.reshape(a._mask, shape, order=order))
-
 
     @implements(np.resize)
     def resize(a, new_shape):
