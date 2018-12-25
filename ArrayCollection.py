@@ -31,7 +31,7 @@ class ArrayCollection:
         """
         Parameters
         ----------
-        data : dict of (str, arraylike) pairs, structured ndarray, 
+        data : dict of (str, arraylike) pairs, structured ndarray,
                or Arraycollection, or list of tuples with dtype
             Set of data to make a collection from. For the tuple
             of pairs, the arrays are viewed. For structured ndarray, each
@@ -41,15 +41,15 @@ class ArrayCollection:
         """
         # if data is a list of (name, arr) tuples:
         if isinstance(data, dict):
-            arrays = data
+            arrays = {k: self._asarraylike(v) for k, v in data.items()}
         elif isinstance(data, list):
             # XXX auto-detect dtype?
             if dtype is None:
                 raise ValueError("dtype must be supplied when suing tuple "
                                  "construction")
             dts = (dtype.fields[n][0] for n in dtype.names)
-            arrays = dict((name, np.ndarray(ai, dtype=dt)) for name, ai, dt in
-                          zip(dtype.names, zip(*data), dts))
+            arrays = {name: self._asarraylike(ai, dtype=dt)
+                      for name, ai, dt in zip(dtype.names, zip(*data), dts)}
         # if data is a structured array
         elif isinstance(data, np.ndarray) and data.dtype.names is not None:
             # unpack a structured array
@@ -57,7 +57,7 @@ class ArrayCollection:
             for n in data.dtype.names:
                 if data[n].dtype.names is not None:
                     # unpack nested types recursively
-                    arrays[n] = ArrayCollection(data[n])
+                    arrays[n] = type(self)(data[n])
                 else:
                     arrays[n] = data[n].copy()
                     # note that this folds in dims of subarrays
@@ -84,6 +84,11 @@ class ArrayCollection:
         self._arrays = arrays
         # for now, hijack structured dtypes to represent our dtype
         self._dtype = np.dtype([(n, a.dtype) for n, a in arrays.items()])
+
+    def _asarraylike(self, val, dtype=None):
+        if dtype is None and is_ndducktype(val):
+            return val
+        return np.array(val, dtype=dtype)
 
     @property
     def dtype(self):
@@ -153,7 +158,7 @@ class ArrayCollection:
         if next(iter(out.values())).shape == ():
             return CollectionScalar(tuple(out.values()), self._dtype)
 
-        return ArrayCollection(out)
+        return type(self)(out)
 
     def __setitem__(self, ind, val):
         # for a single field name, assign to that array
@@ -306,7 +311,7 @@ class CollectionScalar:
         if isinstance(vals, tuple):
             self._data = vals
             self._dtype = np.dtype(dtype)
-    
+
     @property
     def dtype(self):
         return self._dtype
@@ -786,19 +791,3 @@ def setup_ducktype():
         pass
 
 setup_ducktype()
-
-if __name__ == '__main__':
-    a = np.arange(4, dtype='u2')
-    b = np.arange(4, 8, dtype='f8')
-    A = ArrayCollection({'a': a, 'b': b})
-
-    print(A[0])
-    print(repr(A))
-
-    B = ArrayCollection(np.ones((2,3), dtype='u1,S3'))
-    print(repr(B.reshape((3,2))))
-    print(repr(empty_collection((3,4), 'f4,u1,u1')))
-
-    # does not work yet
-    #print("Concatenate:")
-    print(np.concatenate([A, A]))
