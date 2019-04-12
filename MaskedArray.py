@@ -909,14 +909,27 @@ class _Masked_BinOp(_Masked_UFunc):
         if isinstance(initial, (MaskedScalar, MaskedX)):
             raise ValueError("initial should not be masked")
         
-        wheremask = ~ma
-        if 'where' in kwargs:
-            wheremask |= kwargs['where']
-        kwargs['where'] = wheremask
-        kwargs['initial'] = self.reduce_fill(da.dtype)
+        if 0: # two different implementations, investigate performance
+            wheremask = ~ma
+            if 'where' in kwargs:
+                wheremask |= kwargs['where']
+            kwargs['where'] = wheremask
+            if 'initial' not in kwargs:
+                kwargs['initial'] = self.reduce_fill(da.dtype)
 
-        result = self.f.reduce(da, **kwargs)
-        m = np.logical_and.reduce(ma, **mkwargs)
+            result = self.f.reduce(da, **kwargs)
+            m = np.logical_and.reduce(ma, **mkwargs)
+        else:
+            if not np.isscalar(da):
+                da[ma] = self.reduce_fill(da.dtype)
+                # if da is a scalar, we get correct result no matter fill
+
+            #with np.errstate(divide='ignore', invalid='ignore'):
+            result = self.f.reduce(da, **kwargs)
+            m = np.logical_and.reduce(ma, **mkwargs)
+            #if self.domain is not None:
+            #    m = np.logical_or(ma, dom, **mkwargs)
+            # XXX can reduceat work instead?
 
         if out:
             return out[0]
