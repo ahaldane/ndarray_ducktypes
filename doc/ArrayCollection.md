@@ -21,8 +21,9 @@ Comparison with similar Python types
 ------------------------------------
 
 An ArrayCollection behaves very similarly to a NumPy structured `ndarray`, but
-is more extensible, has additional features, and will often have better
-performance because it uses a different memory layout. While NumPy's structured arrays are designed for lowlevel manipulation of binary blobs and for interfacing with C programs, in contrast `ArrayCollection` is meant for simple manipulation of multidimensional, multi-datatype datasets. In other words, `ArrayCollection` can be used as a "lite" version of Pandas `DataFrame` or Xarray `Dataset`. You are encouraged to consider using these other projects as they provide additional high-level features useful for tabular data analysis, such as named axes, which `ArrayCollection` lacks as it is only meant as a simple wrapper around a set of `ndarray`s.
+NumPy's structured arrays are designed for lowlevel manipulation of binary blobs and for interfacing with C programs while in contrast `ArrayCollection` is meant for simple manipulation of multidimensional, multi-datatype datasets. In other words, `ArrayCollection` can be used as a "lite" version of Pandas `DataFrame` or Xarray `Dataset`. You are encouraged to consider using these other projects as they provide additional high-level features useful for tabular data analysis, such as named axes, which `ArrayCollection` lacks as it is only meant to be a simple wrapper around a set of `ndarray`s.
+
+By using an `ArrayCollection` instead of a structured array, you no longer have to wory about memory layout issues such as padding bytes, and the memory ordering will be more cache-friendly since the data is stored internally as a set of arrays instead of a single array of structures.
 
 Quickstart
 ==========

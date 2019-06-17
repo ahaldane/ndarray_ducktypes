@@ -198,9 +198,24 @@ Complex Values
 
 If you wish to make extensive use of masked complex values, or wish to mask the real and complex parts separately, it may be preferable to use plain `ndarray` instead of `MaskedArray` and use `nan` in place of a mask. You can then use the `np.nan*` functions which ignore `nan` elements similarly to how `MaskedArray`s ignore masked elements.
 
+[TODO: Perhaps it would be better to make `.real` and `.imag` readonly views? That would break code that tries to modify them, but such code would often be broken anyway in the current implementation]
+
 Structured dtypes
 -----------------
 
 `MaskedArray` does not support masking individual fields of a structured datatype, instead each structured element as a whole can be masked. If you wish to mask individual fields, as an alternative consider using the `MaskedArrayCollection` class which behaves similarly to structured arrays but allows the user to separately mask each named array in the collection.
 
 Similarly to complex types, if you index a `MaskedArray` of structured dtype with a field name or names, the resulting `MaskedArray`s data is a view of the original `MaskedArray`s data, but the mask is a copy.
+
+Appendix: Behavior Changes relative to np.ma.MaskedArray
+========================================================
+
+ * No support for masking individual fields of structured dtypes. Use an `ArrayCollection` of `MaskedArray`s instead, or (better) use `MaskedArrayCollection`.
+ * No more `nomask`: the mask is always stored as a full ndarray.
+ * No more returned `masked` singleton: Instead scalar values are returned as MaskedScalar instances. See comments in MaskedArray.py for discussion. A special masked singleton called `X` with no dtype exists for array construction purposes only.
+ * No more `fill_value` stored with instances: You must always supply the desired fill as an argument to `filled()`
+ * No more attempt to preserve the hidden data behind masked values. MaskedArray is free to modify these elements arbitrarily.
+ * Features preserved from numpy's maskedarray: 1. The mask is not "sticky", it behaves as the "ignore" or "skipna" style described in the MaskedArray NEP. "na" style will not be supported. 2. Ufuncs replace out-of-domain inputs with mask.
+ * out arguments to ufuncs/methods must be MaskedArrays too
+ * more careful preservation of dtype (old MA would often cast to float64)
+ * np.sort now doesn't mix maxval and masked vals up.
