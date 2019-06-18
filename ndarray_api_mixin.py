@@ -76,7 +76,7 @@ class NDArrayAPIMixin:
 
     def repeat(self, repeats, axis=None):
         return np.repeat(self, repeats, axis)
-    
+
     # unlike np.reshape, allows shape to be passed as separate args
     def reshape(self, *shape, **kwargs):
         if len(shape) > 1:

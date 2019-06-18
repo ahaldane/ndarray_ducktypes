@@ -2,7 +2,7 @@
 import numpy as np
 from duckprint import (duck_str, duck_repr, duck_array2string, typelessdata,
     default_duckprint_options, default_duckprint_formatters, FormatDispatcher,
-    is_ndducktype)
+    is_ndducktype, is_duckscalar)
 import builtins
 import numpy.core.umath as umath
 from numpy.lib.mixins import NDArrayOperatorsMixin
@@ -108,6 +108,19 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
     def flat(self):
         return MaskedIterator(self)
 
+def duck_require(data, dtype=None, copy=True, order='K', subok=False, ndmin=0):
+    # this function takes an nd-ducktype (data) and makes sure all the
+    # other arguments normally supplied to np.array are satisfied.
+
+    if copy or (dtype is not None and dtype != data.dtype):
+        data = data.astype(dtype, order=order)
+    # XXX deal with order and subok
+    if ndmin is not None and data.ndim < ndmin:
+        nd = ndmin - data.ndim
+        data = data[(None,)*nd + (Ellipsis,)]
+
+    return data
+
 class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     "An ndarray ducktype allowing array elements to be masked"
 
@@ -173,7 +186,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         """
 
         if isinstance(data, (MaskedArray, MaskedScalar)):
-            self._data = np.array(data._data, copy=copy, order=order,
+            self._data = duck_require(data._data, copy=copy, order=order,
                                               subok=subok, ndmin=ndmin)
             self._mask = np.array(data._mask, copy=copy, order=order,
                                               subok=subok, ndmin=ndmin)
@@ -200,8 +213,12 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
                         mask.flags['WRITEABLE'] == False):
                     mask = mask.copy()
 
-            self._data = np.array(data, dtype=dtype, copy=copy, order=order,
-                                  subok=subok, ndmin=ndmin)
+            if is_ndducktype(data):
+                self._data = duck_require(data, copy=copy, order=order,
+                                          subok=subok, ndmin=ndmin)
+            else:
+                self._data = np.array(data, dtype=dtype, copy=copy, order=order,
+                                      subok=subok, ndmin=ndmin)
 
             # XXX need to make sure mask order is same as data?
             if mask is None:
@@ -484,9 +501,15 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
                 dtype = np.dtype(dtype)
 
             if dtype is None or dtype.type is not np.object_:
-                self._data = np.array(data, dtype=dtype)[()]
+                if is_ndducktype(data) or is_duckscalar(data):
+                    if dtype is not None and data.dtype != dtype:
+                        data = data.astype(dtype, copy=False)[()]
+                    self._data = data
+                else:
+                    self._data = np.array(data, dtype=dtype)[()]
+
                 self._mask = np.bool_(mask)
-                if not np.isscalar(self._data) or not np.isscalar(self._mask):
+                if not is_duckscalar(self._data) or not np.isscalar(self._mask):
                     raise ValueError("MaskedScalar must be called with scalars")
                 self._dtype = self._data.dtype
             else:
@@ -511,6 +534,10 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
             mask = self._mask
             #XXX unclear if mask should be view or copy. See .real/.imag
             return MaskedArray(data, mask)
+
+        if ind is ():
+            return self
+
         raise IndexError("invalid index to scalar variable")
 
     def __str__(self):
@@ -562,8 +589,14 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
         fill_value = self._get_fill_value(fill_value, minmax)
 
         if self._mask:
-            # next line is more complicated that desired due to struct types
-            return np.array(fill_value, dtype=self.dtype)[()]
+            if self.dtype.names:
+                # next line is more complicated than desired due to struct types,
+                # which numpy does not have a constructor for
+                return np.array(fill_value, dtype=self.dtype)[()]
+                # XXX this will need to be modified to support structured duck-scalars.
+                # In particular, need a way to construct arbitrary scalars "like"
+                # the data scalar (same dtype and any other properties)
+            return type(self._data)(fill_value)
         return self._data
 
 # create a special dummy object which signifies "masked", which users can put
@@ -702,21 +735,23 @@ def as_masked_fmt(formattercls):
                 default_fmt = super().get_format_func(elem._data, **options)
                 return lambda x: default_fmt(x._data)
 
+            masked_str = options['masked_str']
+
             # only get fmt_func based on non-masked values
             # (we take care of masked elements ourselves)
             unmasked = elem._data[~elem._mask]
             if unmasked.size == 0:
                 default_fmt = lambda x: ''
+                reslen = len(masked_str)
             else:
                 default_fmt = super().get_format_func(unmasked, **options)
 
-            # default_fmt should always give back same str length.
-            # Figure out what this is with a test call.
-            # This is a bit complicated to account for struct types.
-            example_elem = np.array(0, dtype=elem._data.dtype)[()]
-            example_str = default_fmt(example_elem)
-            masked_str = options['masked_str']
-            reslen = builtins.max(len(example_str), len(masked_str))
+                # default_fmt should always give back same str length.
+                # Figure out what this is with a test call.
+                # This is a bit complicated to account for struct types.
+                example_elem = elem._data.ravel()[0]
+                example_str = default_fmt(example_elem)
+                reslen = builtins.max(len(example_str), len(masked_str))
 
             # pad the columns to align when including the masked string
             if issubclass(elem.dtype.type, np.floating) and unmasked.size > 0:
@@ -807,7 +842,7 @@ class _Masked_UniOp(_Masked_UFunc):
             out[0]._mask[...] = m
             return out[0]
 
-        if np.isscalar(result):
+        if is_duckscalar(result):
             return MaskedScalar(result, m)
 
         return MaskedArray(result, m)
@@ -837,7 +872,7 @@ class _Masked_BinOp(_Masked_UFunc):
             reduce_fill = ufunc.identity
 
         if (reduce_fill is not None and
-                (np.isscalar(reduce_fill) or not callable(reduce_fill))):
+                (is_duckscalar(reduce_fill) or not callable(reduce_fill))):
             self.reduce_fill = lambda dtype: reduce_fill
         else:
             self.reduce_fill = reduce_fill
@@ -876,7 +911,7 @@ class _Masked_BinOp(_Masked_UFunc):
 
         if out:
             return out[0]
-        if np.isscalar(result):
+        if is_duckscalar(result):
             return MaskedScalar(result, m)
         return MaskedArray(result, m)
 
@@ -904,12 +939,23 @@ class _Masked_BinOp(_Masked_UFunc):
         if isinstance(initial, (MaskedScalar, MaskedX)):
             raise ValueError("initial should not be masked")
 
-        if not np.isscalar(da):
-            da[ma] = self.reduce_fill(da.dtype)
-            # if da is a scalar, we get correct result no matter fill
+        if 0: # two different implementations, investigate performance
+            wheremask = ~ma
+            if 'where' in kwargs:
+                wheremask &= kwargs['where']
+            kwargs['where'] = wheremask
+            if 'initial' not in kwargs:
+                kwargs['initial'] = self.reduce_fill(da.dtype)
 
-        result = self.f.reduce(da, **kwargs)
-        m = np.logical_and.reduce(ma, **mkwargs)
+            result = self.f.reduce(da, **kwargs)
+            m = np.logical_and.reduce(ma, **mkwargs)
+        else:
+            if not is_duckscalar(da):
+                da[ma] = self.reduce_fill(da.dtype)
+                # if da is a scalar, we get correct result no matter fill
+
+            result = self.f.reduce(da, **kwargs)
+            m = np.logical_and.reduce(ma, **mkwargs)
 
         ## Code that might be used to support domained ufuncs. WIP
         #with np.errstate(divide='ignore', invalid='ignore'):
@@ -920,7 +966,7 @@ class _Masked_BinOp(_Masked_UFunc):
 
         if out:
             return out[0]
-        if np.isscalar(result):
+        if is_duckscalar(result):
             return MaskedScalar(result, m)
         return MaskedArray(result, m)
 
@@ -940,7 +986,7 @@ class _Masked_BinOp(_Masked_UFunc):
             dataout = out[0]._data
             maskout = out[0]._mask
 
-        if not np.isscalar(da):
+        if not is_duckscalar(da):
             da[ma] = self.reduce_fill(da.dtype)
         result = self.f.accumulate(da, axis, dtype, dataout)
         m = np.logical_and.accumulate(ma, axis, out=maskout)
@@ -955,7 +1001,7 @@ class _Masked_BinOp(_Masked_UFunc):
 
         if out:
             return out[0]
-        if np.isscalar(result):
+        if is_duckscalar(result):
             return MaskedScalar(result, m)
         return MaskedArray(result, m)
 
@@ -985,9 +1031,9 @@ class _Masked_BinOp(_Masked_UFunc):
             kwargs['out'] = (out[0]._data,)
             mkwargs['out'] = (out[0]._mask,)
 
-        if not np.isscalar(da):
+        if not is_duckscalar(da):
             da[ma] = self.reduce_fill(da.dtype)
-        if not np.isscalar(db):
+        if not is_duckscalar(db):
             db[mb] = self.reduce_fill(db.dtype)
 
         result = self.f.outer(da, db, **kwargs)
@@ -995,7 +1041,7 @@ class _Masked_BinOp(_Masked_UFunc):
 
         if out:
             return out[0]
-        if np.isscalar(result):
+        if is_duckscalar(result):
             return MaskedScalar(result, m)
         return MaskedArray(result, m)
 
@@ -1023,7 +1069,7 @@ class _Masked_BinOp(_Masked_UFunc):
         if isinstance(initial, (MaskedScalar, MaskedX)):
             raise ValueError("initial should not be masked")
 
-        if not np.isscalar(da):
+        if not is_duckscalar(da):
             da[ma] = self.reduce_fill(da.dtype)
             # if da is a scalar, we get correct result no matter fill
 
@@ -1032,7 +1078,7 @@ class _Masked_BinOp(_Masked_UFunc):
 
         if out:
             return out[0]
-        if np.isscalar(result):
+        if is_duckscalar(result):
             return MaskedScalar(result, m)
         return MaskedArray(result, m)
 
@@ -1164,7 +1210,7 @@ def implements(numpy_function, checked_args=None):
 def maskedarray_or_scalar(data, mask, out=None):
     if out is not None:
         return out
-    if np.isscalar(data):
+    if is_duckscalar(data):
         return MaskedScalar(data, mask)
     return MaskedArray(data, mask)
 

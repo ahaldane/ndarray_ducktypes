@@ -2,6 +2,7 @@
 import numpy as np
 import warnings
 from duckprint import duck_repr, duck_str, is_ndducktype
+from ndarray_api_mixin import NDArrayAPIMixin
 import sys
 import operator
 from functools import reduce
@@ -10,7 +11,26 @@ from functools import reduce
 if sys.version_info < (3,7):
     raise RuntimeError("ArrayCollection requires Python 3.7+")
 
-class ArrayCollection:
+class CollectionMixin(NDArrayAPIMixin):
+    def __array_function__(self, func, types, args, kwargs):
+        if func not in HANDLED_FUNCTIONS:
+            return NotImplemented
+        impl, checked_args = HANDLED_FUNCTIONS[func]
+
+        if checked_args is not None:
+            types = (type(a) for n,a in enumerate(args) if n in checked_args)
+
+        #types are allowed to be Masked* or plain ndarrays
+        if not all((issubclass(t, (ArrayCollection, CollectionScalar)) or
+                    t is np.ndarray) for t in types):
+            return NotImplemented
+
+        return impl(*args, **kwargs)
+
+    #def __array_ufunc__():
+    #    # TODO: ArrayCollection supports only one ufunc: np.equal
+
+class ArrayCollection(CollectionMixin):
     """
     NDarray-like type which stores a set of named arrays with a common shape
     but which may be different dtypes. Allows numpy-style indexing of them as a
@@ -108,34 +128,8 @@ class ArrayCollection:
             a.shape = val
 
     @property
-    def size(self):
-        return reduce(operator.mul, self.shape, 1)
-
-    @property
-    def ndim(self):
-        return len(self.shape)
-
-    @property
     def strides(self):
         return None
-
-    def __array_function__(self, func, types, args, kwargs):
-        if func not in HANDLED_FUNCTIONS:
-            return NotImplemented
-        impl, checked_args = HANDLED_FUNCTIONS[func]
-
-        if checked_args is not None:
-            types = (type(a) for n,a in enumerate(args) if n in checked_args)
-
-        #types are allowed to be Masked* or plain ndarrays
-        if not all((issubclass(t, (ArrayCollection, CollectionScalar)) or
-                    t is np.ndarray) for t in types):
-            return NotImplemented
-
-        return impl(*args, **kwargs)
-
-    #def __array_ufunc__():
-    #    # TODO: ArrayCollection supports only one ufunc: np.equal
 
     def __getitem__(self, ind):
         # for a single field name, return the bare ndarray (view)
@@ -201,11 +195,11 @@ class ArrayCollection:
     def __repr__(self):
         return duck_repr(self)
 
-    def __len__(self):
-        try:
-            return len(next(iter(self._arrays.values())))
-        except StopIteration:
-            return 0
+    #def __len__(self):
+    #    try:
+    #        return len(next(iter(self._arrays.values())))
+    #    except StopIteration:
+    #        return 0
 
     def astype(self, dtype, order='K', casting='unsafe', subok=True, copy=True):
         kwds = {'order': order, 'casting': casting, 'subok': subok,
@@ -262,43 +256,6 @@ class ArrayCollection:
         for a in self._arrays.values():
             a.resize(new_shape, refcheck)
 
-    def squeeze(self, axis=None):
-        return np.squeeze(self, axis)
-
-    def swapaxes(self, axis1, axis2):
-        return np.swapaxes(self, axis1, axis2)
-
-    def transpose(self, *axes):
-        return np.transpose(self, *axes)
-
-    def take(self, indices, axis=None, out=None, mode='raise'):
-        return np.take(self, indices, axis, out, mode)
-
-    @property
-    def T(self):
-        return np.transpose(self)
-
-    @T.setter
-    def T(self, val):
-        np.transpose(self)[...] = val
-
-    #def argsort(self, axis=-1, order=None):
-    #    if order is None:
-    #        order = self.names
-
-    #    return np.lexsort([self.arrays[n] for n in order], axis=axis)
-
-    #def sort(self, axis=-1, order=None):
-    #    inds = self.argsort(axis=axis, order=order)
-    #    for n in self.names:
-    #        self.arrays[n] = np.take(self.arrays[n], inds, axis=axis)
-
-    def fill(self, value):
-        self[...] = value
-
-    def ravel(self, order='C'):
-        return np.ravel(self, order)
-
 
 # Interesting Fact: The numpy arrayprint machinery (for one) depends on having
 # a separate scalar type associated with any new ducktype (or subclass). This
@@ -306,7 +263,7 @@ class ArrayCollection:
 # types. I don't currently see a way to avoid this: All ducktypes will need
 # to create a scalar type, and return it (and not a 0d array) when indexed with
 # an integer.
-class CollectionScalar:
+class CollectionScalar(CollectionMixin):
     def __init__(self, vals, dtype=None):
         if isinstance(vals, tuple):
             self._data = vals
@@ -320,14 +277,6 @@ class CollectionScalar:
     def shape(self):
         return ()
 
-    @property
-    def ndim(self):
-        return 0
-
-    @property
-    def size(self):
-        return 1
-
     def __getitem__(self, ind):
         # for a single field name, return the bare ndarray
         if isinstance(ind, str):
@@ -338,6 +287,9 @@ class CollectionScalar:
             new_dtype = np.dtype([(n, self._dtype.fields[n][0]) for n in ind])
             new_data = (self._data[self._dtype.names.index(n)] for n in inds)
             return CollectionScalar(tuple(new_data), new_dtype)
+
+        if ind == ():
+            return self
 
         # integer index
         return self._data[ind]

@@ -31,6 +31,14 @@ if (NumpyVersion(np.__version__) < '1.15.10' or
 def is_ndducktype(val):
     return hasattr(val, '__array_function__')
 
+def is_duckscalar(val):
+    # a simple test of whether a numpy-like type is a scalar and not a 0d array
+    # is if indexing with an empty tuple gives back a scalar. Hopefully that is
+    # not too fragile.n
+    return (isinstance(val, np.generic) or
+            (is_ndducktype(val) and val.shape == () and
+             type(val[()]) is type(val)))
+
 # WIP: Notes.
 #
 # The get/set_printoptions functionality is temporarily removed and being
@@ -118,10 +126,10 @@ class IntegerFormatter(ElementFormatter):
     def get_format_func(self, elem, **options):
         max_str_len = 0
         if elem.size > 0:
-            max_str_len = max(len(str(np.max(elem))),
-                              len(str(np.min(elem))))
+            max_str_len = max(len(str(int(np.max(elem)))),
+                              len(str(int(np.min(elem)))))
         fmt = '{{:{}d}}'.format(max_str_len)
-        return lambda x: fmt.format(x)
+        return lambda x: fmt.format(int(x))
 
 
 class FloatingFormatter(ElementFormatter):
@@ -773,7 +781,7 @@ def duck_repr(arr, **options):
         class_name = "array"
 
     skipdtype = False
-    if (not options.get('showdtype', False) and 
+    if (not options.get('showdtype', False) and
             (arr.dtype.type in typelessdata and arr.dtype.names is None)):
         skipdtype = True
 
