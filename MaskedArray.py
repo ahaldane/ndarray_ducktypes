@@ -23,10 +23,12 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
             db, mb = self._data.dtype.type(0), np.bool_(True)
         else:
             db, mb = getdata(other), getmask(other)
+        
+        cls = get_mask_cls(self, other)
 
         data = op(self._data, db)
         mask = self._mask | mb
-        return maskedarray_or_scalar(data, mask, cls=type(data))
+        return maskedarray_or_scalar(data, mask, cls=cls)
 
     def __lt__(self, other):
         return self._cmp_op(other, operator.lt)
@@ -916,9 +918,11 @@ class _Masked_BinOp(_Masked_UFunc):
 
         if out:
             return out[0]
+
+        cls = get_mask_cls(a, b)
         if is_duckscalar(result):
-            return MaskedScalar(result, m)  # XXX type resolution for subclass needed
-        return type(a)(result, m) #XXX better type resolution needed
+            return cls.ScalarType(result, m)
+        return cls(result, m)
 
     def reduce(self, a, **kwargs):
         if self.domain is not None:
@@ -971,9 +975,11 @@ class _Masked_BinOp(_Masked_UFunc):
 
         if out:
             return out[0]
+
+        cls = get_mask_cls(a)
         if is_duckscalar(result):
-            return MaskedScalar(result, m)
-        return type(a)(result, m)
+            return cls.ScalarType(result, m)
+        return cls(result, m)
 
     def accumulate(self, a, axis=0, dtype=None, out=None):
         if self.domain is not None:
@@ -1213,22 +1219,26 @@ def implements(numpy_function, checked_args=None):
     return decorator
 
 def get_mask_cls(*args):
-    # one of the args is guaranteed to be a maskedarray
     cls = None
     for arg in args:
         if isinstance(arg, (MaskedArray, MaskedScalar)):
             if cls is None or issubclass(cls, type(arg)):
                 cls = type(arg)
-        elif isinstance(arg, list):
-            cls = get_mask_cls(*arg)
+        elif isinstance(arg, (list, tuple)):
+            tmpcls = get_mask_cls(*arg)
+            if tmpcls is not None and (cls is None or issubclass(cls, tmpcls)):
+                cls = tmpcls
+
+    if cls is None:
+        return None
     return cls.ArrayType
 
 def maskedarray_or_scalar(data, mask, out=None, cls=MaskedArray):
     if out is not None:
         return out
     if is_duckscalar(data):
-        return cls.Scalartype(data, mask)
-    return cls(data, mask)
+        return cls.ScalarType(data, mask)
+    return cls.ArrayType(data, mask)
 
 def get_maskedout(out):
     if out is not None:
@@ -1722,7 +1732,7 @@ def setup_ducktype():
         mask_trace = np.trace(~a._mask, offset=offset, axis1=axis1, axis2=axis2,
                                         dtype=dtype, out=outdata)
         result_mask = mask_trace == 0
-        return maskedarray_or_scalar(result, result_mask, type(a))
+        return maskedarray_or_scalar(result, result_mask, cls=type(a))
 
     @implements(np.dot)
     def dot(a, b, out=None):
@@ -2301,7 +2311,7 @@ def setup_ducktype():
         outdata, outmask = get_maskedout(out)
         result_data = np.choose(a, choices._data, outdata, mode)
         result_mask = np.choose(a, choices._mask, outmask, mode)
-        return maskedarray_or_scalar(result_data, result_mask, out, type(a))
+        return maskedarray_or_scalar(result_data, result_mask, out, type(choices))
 
     #@implements(np.piecewise)
     #def piecewise(x, condlist, funclist, *args, **kw):
