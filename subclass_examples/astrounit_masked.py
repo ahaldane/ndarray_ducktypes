@@ -8,9 +8,11 @@ import duckprint
 class MaskedQ(MaskedArray):
     known_types = MaskedArray.known_types + (u.quantity.Quantity,)
 
-    def __init__(self, data, *args, units=u.dimensionless_unscaled, **kwargs):
+    def __init__(self, data, *args, units=None, **kwargs):
         super().__init__(data, *args, **kwargs)
-        self._data = self._data*units
+        if not isinstance(self._data, u.quantity.Quantity) and units is None:
+            units = u.dimensionless_unscaled
+        self._data = u.quantity.Quantity(self._data, unit=units)
 
     def __str__(self):
         s = MaskedArray(np.array(self._data), self._mask)
@@ -30,6 +32,14 @@ class MaskedQ(MaskedArray):
         self._data.unit = val
 
 # TODO: scalars
+class MaskedQScalar(MaskedScalar):
+    pass
+
+MaskedQ.ArrayType = MaskedQ
+MaskedQ.ScalarType = MaskedQScalar
+MaskedQScalar.ArrayType = MaskedQ
+MaskedQScalar.ScalarType = MaskedQScalar
+
 
 # TODO: allow binops directly with astropy.units.core.PrefixUnit
 
