@@ -25,7 +25,13 @@ class MaskedUnyt(MaskedArray):
     def units(self, val):
         self._data.units = val
 
-# TODO: class MaskedQuantity(MaskedScalar):
+class MaskedUnytScalar(MaskedScalar):
+    pass
+
+MaskedUnyt.ArrayType = MaskedUnyt
+MaskedUnyt.ScalarType = MaskedUnytScalar
+MaskedUnytScalar.ArrayType = MaskedUnyt
+MaskedUnytScalar.ScalarType = MaskedUnytScalar
 
 # TODO: allow binops with unyt.unit_object.Unit
 
