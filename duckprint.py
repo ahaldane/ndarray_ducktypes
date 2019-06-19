@@ -783,7 +783,9 @@ def duck_repr(arr, name=None, extra_args=None, **options):
     """
     linewidth = 75
 
-    if type(arr) is not ndarray:
+    if name is not None:
+        class_name = name
+    elif type(arr) is not ndarray:
         class_name = type(arr).__name__
     else:
         class_name = "array"
