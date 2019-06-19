@@ -745,7 +745,7 @@ def dtype_short_repr(dtype):
 
     return typename
 
-def duck_repr(arr, **options):
+def duck_repr(arr, name=None, extra_args=None, **options):
     """
     Return the string representation of an array.
 
@@ -753,6 +753,14 @@ def duck_repr(arr, **options):
     ----------
     arr : ndarray
         Input array.
+    name : string
+        Class name to use as part of repr
+    extra_args : list of strings
+        Extra arguments to display within constructor repr.
+        Should be a list of strings, each of which is of the
+        form "arg=value".
+    **options : dictionary
+        Extra numpy print configuration options
 
     Returns
     -------
@@ -780,36 +788,39 @@ def duck_repr(arr, **options):
     else:
         class_name = "array"
 
-    skipdtype = False
-    if (not options.get('showdtype', False) and
+    if extra_args is None:
+        extra_args = []
+
+    if not (not options.get('showdtype', False) and
             (arr.dtype.type in typelessdata and arr.dtype.names is None)):
-        skipdtype = True
+        extra_args.insert(0, "dtype={}".format(dtype_short_repr(arr.dtype)))
 
     prefix = class_name + "("
-    suffix = ")" if skipdtype else ","
 
     if arr.size > 0 or arr.shape == (0,):
         lst = duck_array2string(arr, separator=', ', prefix=prefix,
-                                suffix=suffix, **options)
+                                suffix=',', **options)
     else:  # show zero-length shape unless it is (0,)
-        lst = "[], shape=%s" % (repr(arr.shape),)
+        lst = "[]", 
+        extra_args.insert(0, "shape=%s" % (repr(arr.shape),))
 
-    arr_str = prefix + lst + suffix
+    arr_str = prefix + lst
 
-    if skipdtype:
-        return arr_str
+    if not extra_args:
+        return arr_str + ")"
 
-    dtype_str = "dtype={})".format(dtype_short_repr(arr.dtype))
+    kwd_str = ", ".join(extra_args) + ')'
+    arr_str = arr_str + ','
 
     # compute whether we should put dtype on a new line: Do so if adding the
     # dtype would extend the last line past max_line_width.
     # Note: This line gives the correct result even when rfind returns -1.
     last_line_len = len(arr_str) - (arr_str.rfind('\n') + 1)
     spacer = " "
-    if last_line_len + len(dtype_str) + 1 > linewidth:
+    if last_line_len + len(kwd_str) + 1 > linewidth:
         spacer = '\n' + ' '*len(class_name + "(")
 
-    return arr_str + spacer + dtype_str
+    return arr_str + spacer + kwd_str
 
 _guarded_str = _recursive_guard()(str)
 

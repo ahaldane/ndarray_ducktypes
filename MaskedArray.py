@@ -244,7 +244,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
     def __getitem__(self, ind):
         if is_string_or_list_of_strings(ind):
-            return MaskedArray(self._data[ind], self._mask.copy())
+            return type(self)(self._data[ind], self._mask.copy())
 
         if not isinstance(ind, tuple):
             ind = (ind,)
@@ -266,11 +266,11 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
         if np.isscalar(mask): # test mask, not data, to account for obj arrays
             return MaskedScalar(data, mask, dtype=self.dtype)
-        return MaskedArray(data, mask)
+        return type(self)(data, mask)
 
     def __setitem__(self, ind, val):
         if is_string_or_list_of_strings(ind):
-            view = MaskedArray(self._data[ind], self._mask.copy())
+            view = type(self)(self._data[ind], self._mask.copy())
             view[...] = val
             return
 
@@ -348,13 +348,13 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
             raise ValueError("views of MaskedArrays cannot change the "
                              "datatype's itemsize")
 
-        return MaskedArray(self._data.view(dtype), self._mask)
+        return type(self)(self._data.view(dtype), self._mask)
 
     def astype(self, dtype, order='K', casting='unsafe', subok=True, copy=True):
         result_data = self._data.astype(dtype, order, casting, subok, copy)
         result_mask = self._mask.astype(bool, order, casting, subok, copy)
         # XXX compute copy in mask based on whether result_data is a copy?
-        return MaskedArray(result_data, result_mask)
+        return type(self)(result_data, result_mask)
 
     def tolist(self):
         return [x.tolist() for x in self]
@@ -533,7 +533,7 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
             data = self._data[ind]
             mask = self._mask
             #XXX unclear if mask should be view or copy. See .real/.imag
-            return MaskedArray(data, mask)
+            return type(self)(data, mask)
 
         if ind is ():
             return self
@@ -845,7 +845,7 @@ class _Masked_UniOp(_Masked_UFunc):
         if is_duckscalar(result):
             return MaskedScalar(result, m)
 
-        return MaskedArray(result, m)
+        return type(a)(result, m)
 
 class _Masked_BinOp(_Masked_UFunc):
     """
@@ -912,8 +912,8 @@ class _Masked_BinOp(_Masked_UFunc):
         if out:
             return out[0]
         if is_duckscalar(result):
-            return MaskedScalar(result, m)
-        return MaskedArray(result, m)
+            return MaskedScalar(result, m)  # XXX type resolution for subclass needed
+        return type(a)(result, m) #XXX better type resolution needed
 
     def reduce(self, a, **kwargs):
         if self.domain is not None:
@@ -968,7 +968,7 @@ class _Masked_BinOp(_Masked_UFunc):
             return out[0]
         if is_duckscalar(result):
             return MaskedScalar(result, m)
-        return MaskedArray(result, m)
+        return type(a)(result, m)
 
     def accumulate(self, a, axis=0, dtype=None, out=None):
         if self.domain is not None:
@@ -1003,7 +1003,7 @@ class _Masked_BinOp(_Masked_UFunc):
             return out[0]
         if is_duckscalar(result):
             return MaskedScalar(result, m)
-        return MaskedArray(result, m)
+        return type(a)(result, m)
 
     def outer(self, a, b, **kwargs):
         if self.domain is not None:
@@ -1043,7 +1043,7 @@ class _Masked_BinOp(_Masked_UFunc):
             return out[0]
         if is_duckscalar(result):
             return MaskedScalar(result, m)
-        return MaskedArray(result, m)
+        return type(a)(result, m)
 
     def reduceat(self, a, indices, **kwargs):
         if self.domain is not None:
@@ -1080,7 +1080,7 @@ class _Masked_BinOp(_Masked_UFunc):
             return out[0]
         if is_duckscalar(result):
             return MaskedScalar(result, m)
-        return MaskedArray(result, m)
+        return type(a)(result, m)
 
     def at(self, a, indices, b=None):
         if isinstance(indices, (MaskedArray, MaskedScalar)):
