@@ -6,16 +6,17 @@ This `MaskedArray` module provides "missing value" support on top of NumPy's `nd
 ```python
 >>> import numpy as np
 >>> from MaskedArray import MaskedArray, MaskedScalar, X
->>> a = np.arange(4)
->>> m = MaskedArray(a)
->>> m[1:3] = X  # X denotes mask
+>>> m = MaskedArray(np.arange(5))
+>>> m[2:4] = X  # X denotes mask
 >>> m
-MaskedArray([0, X, X, 3])
+MaskedArray([0, 1, X, X, 4])
 >>> np.sum(m)
-MaskedScalar(3)
+MaskedScalar(5)
+>>> m + MaskedArray([X, 5, 6, 1, 2])
+MaskedArray([X, 6, X, X, 6])
 ```
 
-`MaskedArray` is implemented as an `ndarray` ducktype, and so `MaskedArrays` can be substituted into almost any NumPy expression, for instance involving `np.sum`, `np.mean`, `np.concatenate`, and many others. `MaskedArray` supports most of NumPy's API methods and vectorized mathematical operations.
+`MaskedArray` is implemented as an `ndarray` ducktype, and so `MaskedArrays` can be substituted into almost any NumPy expression, for instance involving `np.sum`, `np.mean`, `np.concatenate`, and many other vectorized mathematical operations. There are a small number of cases in which MaskedArrays cannot be substituted, described further below.
 
 Historical Relationship to NumPy's `MaskedArray`s
 -------------------------------------------------
@@ -191,21 +192,63 @@ The `.mask` attribute of a `MaskedArray` is a readonly view of the internal mask
 
 Unlike `ndarray`s, `MaskedArray`s do not support a `.base` attribute which can be used to tell if an array is a view. However, it is possible to check the `.base` attribute of the `ndarray`s returned by `.mask`, or `.filled` with `view=True`.
 
-Complex Values 
---------------
+Differences in behavior between MaskedArray and ndarray
+-------------------------------------------------------
 
-`MaskedArray`s of complex `dtype` have `.real` and `.imag` attributes, like `ndarrays`, which can also be obtained using `np.real` and `np.imag`. These return `MaskedArray`s whose data is a view of the original `MaskedArray`s real or imag part, similarly to `ndarray`s, but importantly the mask is a copy of the original `MaskedArray`s mask, and not a view. This means that operations which modify the mask of the `.real` or `.imag` part of a `MaskedArray` will not modify the original mask. Significantly, if you try to assign masked values to the real or imag part at locations which are unmasked in the original array, this may cause nonsense masked values to be visible from the original array. [TODO: Is it possible to avoid this without lots of complications?]
+There are a few types of expressions which will fail for MaskedArrays even though they work for ndarrays, which are noted here since they prevent substitution of MaskedArrays for ndarrays in these cases.
 
-If you wish to make extensive use of masked complex values, or wish to mask the real and complex parts separately, it may be preferable to use plain `ndarray` instead of `MaskedArray` and use `nan` in place of a mask. You can then use the `np.nan*` functions which ignore `nan` elements similarly to how `MaskedArray`s ignore masked elements.
+The .real and .imag attributes of Complex arrays
+------------------------------------------------
 
-[TODO: Perhaps it would be better to make `.real` and `.imag` readonly views? That would break code that tries to modify them, but such code would often be broken anyway in the current implementation]
+`MaskedArray`s of complex `dtype` have `.real` and `.imag` attributes, like `ndarrays`, which can also be obtained using `np.real` and `np.imag`. However, unlike ndarrays, these attributes return readonly arrays, and attempting to assign to them will raise an exception. This is because it is unclear how to update the mask of the original complex array when its individual real or imaginary components are modified or masked.
 
-Structured dtypes
------------------
+If you wish to make extensive use of masked complex values, or wish to mask the real and complex parts separately, one option is to use plain `ndarray` instead of `MaskedArray` and use `nan` in place of a mask. You can then use the `np.nan*` functions which ignore `nan` elements similarly to how `MaskedArray`s ignore masked elements. [Another is to use an "ArrayCollection" with dtype `'[('real', 'f8'), ('imag', 'f8')]` ? ]
+
+Accessing fields of Structured dtypes
+------------------------------------------------
 
 `MaskedArray` does not support masking individual fields of a structured datatype, instead each structured element as a whole can be masked. If you wish to mask individual fields, as an alternative consider using the `MaskedArrayCollection` class which behaves similarly to structured arrays but allows the user to separately mask each named array in the collection.
 
-Similarly to complex types, if you index a `MaskedArray` of structured dtype with a field name or names, the resulting `MaskedArray`s data is a view of the original `MaskedArray`s data, but the mask is a copy.
+Similarly to complex types, if you index a `MaskedArray` of structured dtype with a field name or names, the resulting `MaskedArray`s data will be a readonly view of the original array, again because it is unclear how to update the mask if this view were assigned to.
+
+
+Advanced MaskedArray Usage and implementation details
+=====================================================
+
+Implementation Details
+----------------------
+
+Describe using ._data
+
+Using MaskedArray to mask other ndarray ducktypes
+-------------------------------------------------
+
+It is sometimes desirable to mask ducktypes of ndarray, rather than plain ndarrays. For instance, one might want to make a masked-unit type which supports both masked values and keeps track of scientific units associated to the array.
+
+MaskedArray is designed to support such composition behavior. Most straightforwardly, the 'data' argument to the MaskedArray constructor can be any ndarray ducktype or subclass which follows numpy's indexing and broadcasting behavior, and this ducktype will be preserved in the course of all masked operations. In other words, `MaskedArray` can act as a container type. You can always get back access to the contained ducktyped array using `.filled()`. For instance:
+
+```python
+
+class MySubtype(np.ndarray):
+    def __init__(self, *args, **kwargs):
+        self.new_attr = 10
+        super().__init__(*args, **kwargs)
+
+    def __repr__(self):
+        return super().repr + str(self.new_attr)
+
+my_arr = MySubtype([1,2,3])
+my_marr = MaskedArray(my_arr, mask=[0,1,0])
+my_arr
+(2 + my_arr).filled()
+```
+
+This kind of simple usage can often work without much fuss, but it is missing some desirable features: Attributes of the contained type are not exposed on the masked instance, the `repr` and `str` of the `MaskedArray` do not display anything about the contained type, and numpy functions which create new masked arrays may lose the contained ducktype class information. To control these behaviors you should subclass `MaskedArray`. [TODO: example subclass]
+
+
+
+
+
 
 Appendix: Behavior Changes relative to np.ma.MaskedArray
 ========================================================

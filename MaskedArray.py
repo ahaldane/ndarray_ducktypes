@@ -23,7 +23,7 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
             db, mb = self._data.dtype.type(0), np.bool_(True)
         else:
             db, mb = getdata(other), getmask(other)
-        
+
         cls = get_mask_cls(self, other)
 
         data = op(self._data, db)
@@ -59,7 +59,7 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
 
     def __index__(self):
         raise TypeError("Use .filled() before converting to non-masked scalar")
-    
+
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_FUNCTIONS:
             return NotImplemented
@@ -70,7 +70,7 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
 
         #types are allowed to be Masked* or plain ndarrays
         if not all((issubclass(t, self.known_types) or
-                    t is np.ndarray) for t in types):
+                    t is np.ndarray or np.isscalar(t)) for t in types):
             return NotImplemented
 
         return impl(*args, **kwargs)
@@ -188,14 +188,17 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         """
 
         if isinstance(data, (MaskedArray, MaskedScalar)):
-            self._data = duck_require(data._data, copy=copy, order=order,
-                                              subok=subok, ndmin=ndmin)
             self._mask = np.array(data._mask, copy=copy, order=order,
                                               subok=subok, ndmin=ndmin)
 
             if mask is not None:
-                raise ValueError("don't use mask if passing a maskedarray")
+                self._data = duck_require(data._data, copy=True, order=order,
+                                                  subok=subok, ndmin=ndmin)
+                self._mask |= np.array(mask, copy=False)
 
+            else:
+                self._data = duck_require(data._data, copy=copy, order=order,
+                                                  subok=subok, ndmin=ndmin)
         elif data is X and mask is None:
             # 0d masked array
             if dtype is None:
@@ -1595,7 +1598,6 @@ def setup_ducktype():
             a = type(a)(a._data, mask)
         else:
             wgt = type(wgt)(wgt, a._mask)
-
 
         scl = wgt.sum(axis=axis, dtype=result_dtype)
         if np.any(scl == 0.0):

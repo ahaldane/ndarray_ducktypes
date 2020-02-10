@@ -39,19 +39,18 @@ Defining formatters for custom scalar types
 
 If you have created new scalar types associated to your ducktype (eg, a
 `MaskedScalar` type to accompany `MaskedArray`) you will also need to supply
-printing dispatch routines for your scalar, and should define the optional
+printing dispatch routines for your scalar and should define the optional
 `__nd_duckprint_dispatcher__` method in your ducktype as shown above, and
-create scalar `ElementFormatter` subclasses for your scalars.
+create scalar `ElementFormatter` subclasses corresponding to your scalars.
 
 Defining new `ElementFormatter`s
 --------------------------------
 
 The `ElementFormatter` types are used to determine which formatting function
-to use to print scalar values as part of the string representation of an array.
-An `ElementFormatter` needs to define three methods:
+to use to print scalar values as part of the string representation of an array. This is typically different from how the scalar is printed on its own, for instance because array elements have whitespace padding so that they align well when printed.  An `ElementFormatter` needs to define three methods:
 
-  * `will_dispatch(elem)` is used by to determine whether this formatter can
-    print the values `elem`. It should be passed an array of elements to be
+  * `will_dispatch(elem)` is used to determine whether this formatter can
+    print the values in `elem`. It should be passed an array of elements to be
     printed, and return True or False. If True, this means that
     `get_format_func` can be called on those elements.
   * `get_format_func(elem, **options)` takes an array of elements and the
@@ -62,7 +61,7 @@ An `ElementFormatter` needs to define three methods:
     `precision`, `sign` etc). This will validate any relevant options which the
     user has changed, and return a list of options it didn't handle.
 
-In many cases it will be desirable to re-use or subclass the `ElementFormatter`s
+In many cases it will be possible to re-use or subclass the `ElementFormatter`s
 already defined in `duckprint`, which are `BoolFormatter`, `IntegerFormatter`,
 `FloatingFormatter`, `ComplexFloatingFormatter`, `DatetimeFormatter`,
 `TimedeltaFormatter`, `SubArrayFormatter`, `StructuredFormatter`,

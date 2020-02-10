@@ -25,16 +25,16 @@ import os
 
 from numpy.lib import NumpyVersion
 if (NumpyVersion(np.__version__) < '1.15.10' or
-    os.environ.get('NUMPY_EXPERIMENTAL_ARRAY_FUNCTION', 0) == 0):
+        os.environ.get('NUMPY_EXPERIMENTAL_ARRAY_FUNCTION', '0') == '0'):
     raise Exception("numpy __array_function__ must be enabled")
 
 def is_ndducktype(val):
     return hasattr(val, '__array_function__')
 
 def is_duckscalar(val):
-    # a simple test of whether a numpy-like type is a scalar and not a 0d array
-    # is if indexing with an empty tuple gives back a scalar. Hopefully that is
-    # not too fragile.n
+    # A simple test of whether a numpy-like type is a scalar and not a 0d array
+    # is that indexing with an empty tuple gives back a scalar. Hopefully that
+    # is not too fragile.
     return (isinstance(val, np.generic) or
             (is_ndducktype(val) and val.shape == () and
              type(val[()]) is type(val)))

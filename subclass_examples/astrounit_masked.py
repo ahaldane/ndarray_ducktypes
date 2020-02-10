@@ -6,7 +6,7 @@ import numpy as np
 import duckprint
 
 class MaskedQ(MaskedArray):
-    known_types = MaskedArray.known_types + (u.quantity.Quantity,)
+    known_types = MaskedArray.known_types + (u.quantity.Quantity, u.core.PrefixUnit)
 
     def __init__(self, data, *args, units=None, **kwargs):
         super().__init__(data, *args, **kwargs)
