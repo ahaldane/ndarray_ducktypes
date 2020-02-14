@@ -93,17 +93,17 @@ MaskedScalars and the masked input marker `X`
 
 When operating on a `MaskedArray`, NumPy will return a `MaskedScalar` object in  situations which ordinarily return a NumPy scalar object, for instance when indexing an array to get a single element. While `MaskedScalar`s support almost all the methods and attributes of NumPy scalars there are some important differences. Notably, `MaskedScalar`s are not part of the NumPy scalar type hierarchy, and so for instance code of the form `isinstance(var, np.inexact)` will fail, and `np.isscalar` will return `False`. In such situations you can use `.filled` first to obtain a NumPy scalar.  Like NumPy scalars, `MaskedScalar`s are immutable (except for structured scalars) and can be used as dict keys.
 
-The special `X` variable is not a `MaskedScalar`, and does not share attributes with NumPy types. Significantly, it does not have a `dtype`. It is a singleton of a special `MaskedX` class which acts as a masked-value signifier. When it is used in `MaskedArray` operations and assignments it is effectively promoted to a masked `MaskedScalar` of the appropriate `dtype`. As a convenience the `X` variable can be explicitly promoted to a masked `MaskedScalar` of a specified `dtype` by calling it with the `dtype` as argument. Note that the `repr` of `MaskedScalar`s whose mask is `True` is represented using this `X(dtype)` construction:
+The special `X` variable is not a `MaskedScalar`, and does not share attributes with NumPy types. Significantly, it does not have a `dtype`. It is a singleton of a special `MaskedX` class which acts as a masked-value signifier. When it is used in `MaskedArray` operations and assignments it is effectively promoted to a masked `MaskedScalar` of the appropriate `dtype`. As a convenience the `X` variable can be explicitly promoted to a masked `MaskedScalar` of a specified `dtype` by calling it with the `dtype` as argument. The `repr` of `MaskedScalar`s whose mask is `True` is represented using this `X(dtype)` construction:
 
 ```python
->>> X, type(X)
-masked_input, MaskedX
->>> MaskedScalar(1), type(MaskedScalar(1))
-MaskedScalar(1), MaskedScalar
->>> MaskedScalar(1, mask=True), type(MaskedScalar(1, mask=True))
-X(int64), MaskedScalar
->>> X(np.float64), type(X(np.float64))
-X(float64), MaskedScalar
+>>> X
+masked_input
+>>> MaskedScalar(1)
+MaskedScalar(1)
+>>> MaskedScalar(1, mask=True)
+X(int64)
+>>> X(np.float64)
+X(float64)
 ```
 
 General Principles of Behavior
@@ -179,7 +179,7 @@ Sorting masked values
 
 In sorting operations such as `np.sort`, `np.lexsort`, `np.argsort`, masked elements will be treated as greater than the greatest value of the `MaskedArray`'s dtype. In other words they will sort to the "end" of the sorted array.
 
-For `np.max`, `np.min`, `np.argmin`, and `np.argmax`, non-masked values are returned before any masked value. In other words, these will only return a masked value, or index of a masked value, if all input values were masked. Note that the `arg*` methods will return `ndarrays` or `int` scalars, following the discussion of indexing-like operations above.
+For `np.max`, `np.min`, `np.argmin`, and `np.argmax`, non-masked values are returned before any masked value. In other words, these will only return a masked value, or index of a masked value, if all input values were masked. The `arg*` methods will return `ndarrays` or `int` scalars, following the discussion of indexing-like operations above.
 
 Views and Copies
 ----------------
@@ -225,7 +225,9 @@ Using MaskedArray to mask other ndarray ducktypes
 
 It is sometimes desirable to mask ducktypes of ndarray, rather than plain ndarrays. For instance, one might want to make a masked-unit type which supports both masked values and keeps track of scientific units associated to the array.
 
-MaskedArray is designed to support such composition behavior. Most straightforwardly, the 'data' argument to the MaskedArray constructor can be any ndarray ducktype or subclass which follows numpy's indexing and broadcasting behavior, and this ducktype will be preserved in the course of all masked operations. In other words, `MaskedArray` can act as a container type. You can always get back access to the contained ducktyped array using `.filled()`. For instance:
+MaskedArray is designed to support such behavior though either composition or encapsulation . 
+
+The simplest is encapsulation: The 'data' argument to the MaskedArray constructor can be any ndarray ducktype or subclass which follows numpy's indexing and broadcasting behavior, and this ducktype will be preserved in the course of all masked operations. In other words, `MaskedArray` can act as a container type which encapsulates the other ducktype. You can always get back access to the encapsulated ducktyped array using `.filled()`. For instance:
 
 ```python
 
@@ -243,7 +245,9 @@ my_arr
 (2 + my_arr).filled()
 ```
 
-This kind of simple usage can often work without much fuss, but it is missing some desirable features: Attributes of the contained type are not exposed on the masked instance, the `repr` and `str` of the `MaskedArray` do not display anything about the contained type, and numpy functions which create new masked arrays may lose the contained ducktype class information. To control these behaviors you should subclass `MaskedArray`. [TODO: example subclass]
+Encapsulation in this way is easy to implement, but it is missing  some desirable features: Attributes of the encapsulated type are not exposed on the masked instance, the `repr` and `str` of the `MaskedArray` do not display anything about the contained type, and numpy functions which create new masked arrays may lose the contained ducktype class information. 
+
+To control these behaviors we recommend you subclass `MaskedArray` and the other ducktype to create a composite type. [TODO: example subclass]
 
 
 

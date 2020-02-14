@@ -31,7 +31,17 @@ if (NumpyVersion(np.__version__) < '1.15.10' or
 def is_ndducktype(val):
     return hasattr(val, '__array_function__')
 
+
+# Interesting Fact: The numpy arrayprint machinery (for one) depends on having
+# a separate scalar type associated with any new ducktype (or subclass). This
+# is partly why both MaskedArray and recarray have to define associated scalar
+# types. I don't currently see a way to avoid this: All ducktypes will need
+# to create a scalar type, and return it (and not a 0d array) when indexed with
+# an integer.
+
 def is_duckscalar(val):
+    # These files assume that a scalar is a type separate from the main ducktype
+    # which also has an __array_function__ attribute.
     # A simple test of whether a numpy-like type is a scalar and not a 0d array
     # is that indexing with an empty tuple gives back a scalar. Hopefully that
     # is not too fragile.

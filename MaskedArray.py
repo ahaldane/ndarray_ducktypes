@@ -540,7 +540,7 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
             #XXX unclear if mask should be view or copy. See .real/.imag
             return type(self)(data, mask)
 
-        if ind is ():
+        if ind == ():
             return self
 
         raise IndexError("invalid index to scalar variable")
@@ -848,7 +848,7 @@ class _Masked_UniOp(_Masked_UFunc):
         with np.errstate(divide='ignore', invalid='ignore'):
             result = self.f(d, *args, **kwargs)
 
-        if out is not ():
+        if out != ():
             out[0]._mask[...] = m
             return out[0]
 
@@ -1184,6 +1184,7 @@ def setup_ufuncs():
     # XXX The last lines use the original MaskedArrays's strategy of hardcoded
     # limits. But would be nice to improve by adding float-specific limits
     # (diff for float32 vs float64) using finfo.
+    # XXX document these limits and behavior
 
     # binary ufuncs
     for ufunc in [umath.add, umath.subtract, umath.multiply,
@@ -1222,11 +1223,30 @@ def implements(numpy_function, checked_args=None):
     return decorator
 
 def get_mask_cls(*args):
+    """
+    Helper to make MaskedArray Subclass-friendly.
+
+    Finds the most derived class of MaskedArray/MaskedScalar.
+    If given both an Array and a Scalar, convert the Scalar to an array first.
+    In the case of two non-inheriting subclasses, raise TypeError.
+    """
     cls = None
     for arg in args:
         if isinstance(arg, (MaskedArray, MaskedScalar)):
-            if cls is None or issubclass(cls, type(arg)):
-                cls = type(arg)
+            acl = type(arg)
+            if cls is None or issubclass(acl, cls):
+                cls = acl
+                continue
+            elif issubclass(cls, MaskedScalar) and issubclass(acl, MaskedArray):
+                cls = cls.ArrayType
+            elif issubclass(acl, MaskedScalar) and issubclass(cls, MaskedArray):
+                acl = acl.ArrayType
+
+            if issubclass(acl, cls):
+                cls = acl
+            elif not issubclass(cls, acl):
+                raise TypeError(("Ambiguous mix of MaskedArray subtypes {} and "
+                                "{}").format(cls, acl))
         elif isinstance(arg, (list, tuple)):
             tmpcls = get_mask_cls(*arg)
             if tmpcls is not None and (cls is None or issubclass(cls, tmpcls)):
