@@ -245,9 +245,9 @@ my_arr
 (2 + my_arr).filled()
 ```
 
-Encapsulation in this way is easy to implement, but it is missing  some desirable features: Attributes of the encapsulated type are not exposed on the masked instance, the `repr` and `str` of the `MaskedArray` do not display anything about the contained type, and numpy functions which create new masked arrays may lose the contained ducktype class information. 
+Encapsulation is easy to implement, but it is missing  some desirable features: Attributes of the encapsulated type are not exposed on the masked instance, and the `repr` and `str` of the `MaskedArray` do not display anything about the contained type, and numpy functions which create new masked arrays may lose the contained ducktype class information. 
 
-To control these behaviors we recommend you subclass `MaskedArray` and the other ducktype to create a composite type. [TODO: example subclass]
+To control these behaviors we recommend you combine or subclass `MaskedArray` and the other ducktype to create a composite type. [TODO: example subclass]
 
 
 

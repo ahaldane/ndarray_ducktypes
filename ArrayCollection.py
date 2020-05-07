@@ -7,7 +7,7 @@ import sys
 import operator
 from functools import reduce
 
-# XXX simplyify using python 3.7+ dict order guarantee
+# we use python 3.7+ dict order guarantee
 if sys.version_info < (3,7):
     raise RuntimeError("ArrayCollection requires Python 3.7+")
 
@@ -29,6 +29,15 @@ class CollectionMixin(NDArrayAPIMixin):
 
     #def __array_ufunc__():
     #    # TODO: ArrayCollection supports only one ufunc: np.equal
+    # XXX actually, why don;t we try to support more?
+
+def _asarraylike(val, dtype=None):
+    if is_ndducktype(val):
+        if dtype is not None:
+            return val.astype(dtype)
+        return val
+    return np.array(val, dtype=dtype)
+
 
 class ArrayCollection(CollectionMixin):
     """
@@ -51,25 +60,49 @@ class ArrayCollection(CollectionMixin):
         """
         Parameters
         ----------
-        data : dict of (str, arraylike) pairs, structured ndarray,
-               or Arraycollection, or list of tuples with dtype
-            Set of data to make a collection from. For the tuple
-            of pairs, the arrays are viewed. For structured ndarray, each
-            field is copied. For an ArrayCollection, a view is made.
+        data : various inputs allowed
+            Data to make a collection from. Accepts multiple forms of input:
+            1. Dict of form "{name: arr}" where "name" is the fieldname and
+               "arr" is a numpy array of data, which is viewed.
+            2. List of tuples of form "(name: arr)", with the same meaning
+               as for the dict input.
+            3. An ndarray with structured dtype. The fieldnames are taken from
+               the dtype, and the data arrays are copied. Nested structured
+               fields will be converted to nested ArrayCollections.
+            4. Another ArrayCollection. This produces a view of all the data
+               arrays.
+            5. A list of ndarray-like objects. The corresponding field names 
+               must be supplied through the `dtype` argument. The arrays will
+               be cast to the dtypes of the fields of the supplied dtype. 
+        dtype : structured datatype or list of fieldnames
+            Should only be supplied if the `data` argument is a list of
+            ndarray-like objects. May be a structured datatype, in which case
+            the data arrays will be cast to the corresponding field dtypes,
+            or a list of fieldnames and no casting will occur.
         skip_validation : bool
             If False, check that the arrays have the same shape.
         """
+
+        if dtype is not None:
+            if isinstance(dtype, list):
+                arrays = {str(name): _asarraylike(a) 
+                          for name, a  in zip(dtype, data)}
+            elif isinstance(dtype, np.dtype):
+                dts = (dtype.fields[n][0] for n in dtype.names)
+                arrays = {name: _asarraylike(ai, dtype=dt)
+                          for name, ai, dt in zip(dtype.names, zip(*data), dts)}
+            else:
+                raise TypeError("dtype must be a np.dtype or a list of "
+                                "fieldnames")
+        # if data is a dict of {name: arr} key/values.
+        elif isinstance(data, dict):
+            arrays = {k: _asarraylike(v) for k, v in data.items()}
         # if data is a list of (name, arr) tuples:
-        if isinstance(data, dict):
-            arrays = {k: self._asarraylike(v) for k, v in data.items()}
         elif isinstance(data, list):
-            # XXX auto-detect dtype?
-            if dtype is None:
-                raise ValueError("dtype must be supplied when suing tuple "
-                                 "construction")
-            dts = (dtype.fields[n][0] for n in dtype.names)
-            arrays = {name: self._asarraylike(ai, dtype=dt)
-                      for name, ai, dt in zip(dtype.names, zip(*data), dts)}
+            arrays = {k: _asarraylike(v) for k, v in data}
+            #raise TypeError("data provided as a list must contain tuples "
+            #                "of (name, arr) pairs, or must be a list of "
+            #                "arrs and dtype must be supplied")
         # if data is a structured array
         elif isinstance(data, np.ndarray) and data.dtype.names is not None:
             # unpack a structured array
@@ -81,13 +114,11 @@ class ArrayCollection(CollectionMixin):
                 else:
                     arrays[n] = data[n].copy()
                     # note that this folds in dims of subarrays
-
         # if data is another ArrayCollection
         elif isinstance(data, ArrayCollection):
             arrays = data._arrays
         else:
-            raise Exception("Expected either a list of (name, arr) pairs"
-                            "or a structured array")
+            raise TypeError("invalid data format")
 
         # check all arrays have the same shape
         if not skip_validation:
@@ -105,11 +136,6 @@ class ArrayCollection(CollectionMixin):
         # for now, hijack structured dtypes to represent our dtype
         self._dtype = np.dtype([(n, a.dtype) for n, a in arrays.items()])
 
-    def _asarraylike(self, val, dtype=None):
-        if dtype is None and is_ndducktype(val):
-            return val
-        return np.array(val, dtype=dtype)
-
     @property
     def dtype(self):
         return self._dtype
@@ -123,7 +149,6 @@ class ArrayCollection(CollectionMixin):
 
     @shape.setter
     def shape(self, val):
-        # XXX revert on error?
         for a in self._arrays.values():
             a.shape = val
 
@@ -138,8 +163,8 @@ class ArrayCollection(CollectionMixin):
 
         # for a list of field names return an arraycollection (view)
         if is_list_of_strings(ind):
-            return ArrayCollection({n: self.arrays[n] for n in ind},
-                                   skip_validation=True)
+            return type(self)({n: self._arrays[n] for n in ind},
+                               skip_validation=True)
 
         # single integers get converted to tuple
         if isinstance(ind, (int, np.integer)):
@@ -227,9 +252,11 @@ class ArrayCollection(CollectionMixin):
 
         return ArrayCollection({n: ao for (n, ai, ao) in mapping})
 
-    def view(dtype=None):
-        # note: "type" kwd of ndarrays is not yet supported: How to mix
+    def view(dtype=None, type=None):
+        # "type" kwd of ndarrays is not yet supported: How to mix
         # ducktyping and subclassing?
+        if type is not None:
+            raise ValueError("type argument is not supported")
 
         dtype = np.dtype(dtype)
         newtypes = [(n, dtype.fields[n][0]) for n in dtype.names]
@@ -256,13 +283,6 @@ class ArrayCollection(CollectionMixin):
         for a in self._arrays.values():
             a.resize(new_shape, refcheck)
 
-
-# Interesting Fact: The numpy arrayprint machinery (for one) depends on having
-# a separate scalar type associated with any new ducktype (or subclass). This
-# is partly why both MaskedArray and recarray have to define associated scalar
-# types. I don't currently see a way to avoid this: All ducktypes will need
-# to create a scalar type, and return it (and not a 0d array) when indexed with
-# an integer.
 class CollectionScalar(CollectionMixin):
     def __init__(self, vals, dtype=None):
         if isinstance(vals, tuple):
@@ -334,14 +354,14 @@ def implements(numpy_function, checked_args=None):
 
 def setup_ducktype():
 
-    def check_common_dtype(arrays, dtype=None):
+    def check_common_fields(arrays, dtype=None):
         # validate the dtypes are similar enough (same field names)
         dtype = None
 
         ac = []
         for a in arrays:
             if isinstance(a, list):
-                a, dtype = check_common_dtype(a, dtype)
+                a, dtype = check_common_fields(a, dtype)
             else:
                 if a.dtype.names is None:
                     raise Exception("mismatched number of fields")
@@ -501,47 +521,48 @@ def setup_ducktype():
 
     @implements(np.concatenate)
     def concatenate(arrays, axis=0, out=None):
-        arrays, dtype = check_common_dtype(arrays)
+        out_dt, out_subtype = promote_duckarrays(arrays)
+        #arrays, dtype = check_common_fields(arrays)
         arrs = {name: np.concatenate([ai[name] for ai in arrays], axis, o)
                 for name, o in zip(dtype.names, check_out(out, dtype))}
         return out if out is not None else ArrayCollection(arrs)
 
     @implements(np.block)
     def block(arrays):
-        arrays, dtype = check_common_dtype(arrays)
+        arrays, dtype = check_common_fields(arrays)
         #XXX
 
     @implements(np.column_stack)
     def column_stack(tup):
-        arrays, dtype = check_common_dtype(tup)
+        arrays, dtype = check_common_fields(tup)
         fields = zip(*(a._arrays.values() for a in tup))
         return ArrayCollection({name: np.column_stack(ai)
                                for name,ai in zip(dtype.names, fields)})
 
     @implements(np.dstack)
     def dstack(tup):
-        arrays, dtype = check_common_dtype(tup)
+        arrays, dtype = check_common_fields(tup)
         fields = zip(*(a._arrays.values() for a in tup))
         return ArrayCollection({name: np.dstack(ai)
                                for name,ai in zip(dtype.names, fields)})
 
     @implements(np.vstack)
     def vstack(tup):
-        arrays, dtype = check_common_dtype(tup)
+        arrays, dtype = check_common_fields(tup)
         fields = zip(*(a._arrays.values() for a in tup))
         return ArrayCollection({name: np.vstack(ai)
                                for name,ai in zip(dtype.names, fields)})
 
     @implements(np.hstack)
     def hstack(tup):
-        arrays, dtype = check_common_dtype(tup)
+        arrays, dtype = check_common_fields(tup)
         fields = zip(*(a._arrays.values() for a in tup))
         return ArrayCollection({name: np.hstack(ai)
                                for name,ai in zip(dtype.names, fields)})
 
     @implements(np.stack)
     def stack(arrays, axis=0, out=None):
-        arrays, dtype = check_common_dtype(tup)
+        arrays, dtype = check_common_fields(tup)
         fields = zip(*(a._arrays.values() for a in arrays))
         arrs = {name: np.stack(ai, axis, o) for name, ai, o in
                 zip(dtype.names, fields, check_out(out, dtype))}
@@ -709,7 +730,7 @@ def setup_ducktype():
         if x is None or y is None:
             raise ValueError('np.where can only be used in "nonzero" mode for '
                              'ArrayCollection. Supply x and y.')
-        (x, y), dtype = check_common_dtype((x, y))
+        (x, y), dtype = check_common_fields((x, y))
         fields = zip(dtype.names, x._arrays.values(), y._arrays.values())
         return ArrayCollection({name: np.where(condition, xi, yi)
                                 for name, xi, yi in fields})

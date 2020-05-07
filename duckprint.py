@@ -39,6 +39,10 @@ def is_ndducktype(val):
 # to create a scalar type, and return it (and not a 0d array) when indexed with
 # an integer.
 
+#XXX consider defining an abstract "duck_scalar" class which all duck-scalar
+# implementors would be required to inherit. Then the function below could
+#be coded as "isinstance(val, [np.genetic, duck_scalar])"
+
 def is_duckscalar(val):
     # These files assume that a scalar is a type separate from the main ducktype
     # which also has an __array_function__ attribute.
