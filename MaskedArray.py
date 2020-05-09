@@ -8,7 +8,8 @@ import numpy.core.umath as umath
 from numpy.lib.mixins import NDArrayOperatorsMixin
 from ndarray_api_mixin import NDArrayAPIMixin
 import numpy.core.numerictypes as ntypes
-from numpy.core.multiarray import normalize_axis_index
+from numpy.core.multiarray import (normalize_axis_index,
+    interp as compiled_interp, interp_complex as compiled_interp_complex)
 from numpy.lib.stride_tricks import _broadcast_shape
 import operator
 import warnings
@@ -82,7 +83,7 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
                          if n in checked_args)
             elif callable(checked_args):
                 try:
-                    types = checked_args(args, types, self.known_types)
+                    types = checked_args(args, kwargs, types, self.known_types)
                 except NotImplementedError:
                     return NotImplemented
             else:
@@ -152,7 +153,7 @@ def duck_require(data, dtype=None, ndmin=0, copy=True, order='K'):
         data = data.astype(dtype, order=order)
 
     if order != 'K' and order is not None:
-        raise NotImplementedError("np.require cannot be ducktyped")
+        warnings.warn('order parameter of MaskedArray is gnored')
 
     if ndmin != 0 and data.ndim < ndmin:
         nd = ndmin - data.ndim
@@ -648,10 +649,6 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
             return type(self._data)(fill_value)
         return self._data
 
-MaskedOperatorMixin.ScalarType = MaskedScalar
-MaskedOperatorMixin.ArrayType = MaskedArray
-MaskedOperatorMixin.known_types = (MaskedArray, MaskedScalar)
-
 # create a special dummy object which signifies "masked", which users can put
 # in lists to pass to MaskedArray constructor, or can assign to elements of
 # a MaskedArray, to set the mask.
@@ -673,6 +670,10 @@ class MaskedX:
                           "MaskedArray assignment or construction")
 
 masked = X = MaskedX()
+
+MaskedOperatorMixin.ScalarType = MaskedScalar
+MaskedOperatorMixin.ArrayType = MaskedArray
+MaskedOperatorMixin.known_types = (MaskedArray, MaskedScalar, MaskedX)
 
 # takes array-like input, replaces masked value by 0 and return filled data &
 # mask. This is more-or-less a reimplementation of PyArray_DTypeFromObject to
@@ -1160,7 +1161,7 @@ def implements(numpy_function, checked_args=None):
         If a tuple of integers, only those indices in the "args" list of
         numpy dispatch are checked to be of known class.
 
-        If a function, should take three arguments, the "args" and "types"
+        If a function, should take four arguments, the "args" "kwds" and "types"
         argument of "array_function" and a list of "known_types". An iterable
         of types may be returned to checked to be of known class, or a
         NotImplementedError may be raised to signal no match.
@@ -2166,7 +2167,7 @@ def setup_ducktype():
 
     @implements(np.stack)
     def stack(arrays, axis=0, out=None):
-        #arrays = [asanyarray(arr) for arr in arrays]
+        #arrays = [asanyarray(arr) for arr in arrays]  # removed from original
         if not arrays:
             raise ValueError('need at least one array to stack')
 
@@ -2297,7 +2298,7 @@ def setup_ducktype():
     #@implements(np.piecewise)
     #def piecewise(x, condlist, funclist, *args, **kw):
 
-    @implements(np.select, checked_args=lambda a,t,k: [type(x) for x in a[1]])
+    @implements(np.select, checked_args=lambda a,k,t,n: [type(x) for x in a[1]])
     def select(condlist, choicelist, default=0):
         # choicelist may contain maskedarrays. Condlist must be unmasked
         # boolean  arrays.
@@ -2543,8 +2544,130 @@ def setup_ducktype():
             weights = weights.ravel()[keep]
         return np.histogram_bin_edges(dat, bins, range, weights)
 
-    #@implements(np.diff)
-    #@implements(np.interp)
+    @implements(np.diff)
+    def diff(a, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
+        if n == 0:
+            return a
+        if n < 0:
+            raise ValueError(
+                "order must be non-negative but got " + repr(n))
+
+        nd = a.ndim
+        if nd == 0:
+            raise ValueError("diff requires input that is at least one "
+                             "dimensional")
+        axis = normalize_axis_index(axis, nd)
+    
+        inputs = [a, prepend, append]
+        inputs = [i for i in inputs if is_ndducktype(i)]
+        cls = get_mask_cls(*inputs)
+
+        combined = []
+        if prepend is not np._NoValue:
+            prepend = cls(prepend)
+            if prepend.ndim == 0:
+                shape = list(a.shape)
+                shape[axis] = 1
+                prepend = np.broadcast_to(prepend, tuple(shape))
+            combined.append(prepend)
+
+        combined.append(a)
+
+        if append is not np._NoValue:
+            append = cls(append)
+            if append.ndim == 0:
+                shape = list(a.shape)
+                shape[axis] = 1
+                append = np.broadcast_to(append, tuple(shape))
+            combined.append(append)
+
+        if len(combined) > 1:
+            a = np.concatenate(combined, axis)
+
+        slice1 = [slice(None)] * nd
+        slice2 = [slice(None)] * nd
+        slice1[axis] = slice(1, None)
+        slice2[axis] = slice(None, -1)
+        slice1 = tuple(slice1)
+        slice2 = tuple(slice2)
+
+        op = np.not_equal if a.dtype == np.bool_ else np.subtract
+        for _ in range(n):
+            a = op(a[slice1], a[slice2])
+
+        return a
+    
+    def _interp_checkarg(args, kwds, types, known_types):
+        if builtins.any(is_ndducktype(x) and not isinstance(x, np.ndarray)
+                        for x in args[:2]):
+            raise NotImplementedError
+        kw = [type(kwds[n]) for n in ['left', 'right'] if n in kwds]
+        return [type(args[2])] + [k for k in kw if is_ndducktype(k)]
+
+    @implements(np.interp, checked_args=_interp_checkarg)
+    def interp(x, xp, fp, left=None, right=None, period=None):
+        
+        # convert appropriate args to common masked class
+        objs = [fp]
+        if left is not None and left is not X:
+            objs.append(left)
+        if right is not None and right is not X:
+            objs.append(right)
+        cls = get_mask_cls(objs)
+        fp = cls.ArrayType(fp)
+        if left is X:
+            left = cls.ScalarType(X, dtype=fp.dtype)
+        elif left is not None:
+            left = cls.ScalarType(left)
+        if right is X:
+            right = cls.ScalarType(X, dtype=fp.dtype)
+        elif right is not None:
+            right = cls.ScalarType(right)
+
+        if np.iscomplexobj(fp):
+            interp_func = compiled_interp_complex
+            input_dtype = np.complex128
+        else:
+            interp_func = compiled_interp
+            input_dtype = np.float64
+
+        if period is not None:
+            if period == 0:
+                raise ValueError("period must be a non-zero value")
+            period = abs(period)
+            left = None
+            right = None
+
+            x = np.asarray(x, dtype=np.float64)
+            xp = np.asarray(xp, dtype=np.float64)
+            fp = fp.astype(input_dtype)
+
+            if xp.ndim != 1 or fp.ndim != 1:
+                raise ValueError("Data points must be 1-D sequences")
+            if xp.shape[0] != fp.shape[0]:
+                raise ValueError("fp and xp are not of the same length")
+            # normalizing periodic boundaries
+            x = x % period
+            xp = xp % period
+            asort_xp = np.argsort(xp)
+            xp = xp[asort_xp]
+            fp = fp[asort_xp]
+            xp = np.concatenate((xp[-1:]-period, xp, xp[0:1]+period))
+            fp = np.concatenate((fp[-1:], fp, fp[0:1]))
+        
+        leftd = None if left is None else left.filled(0)
+        rightd = None if right is None else right.filled(0)
+        ret_data = interp_func(x, xp, fp.filled(0, view=True), leftd, rightd)
+
+        # we get interpolated mask using nan trick
+        v = np.array([0, np.nan])
+        leftm = None if left is None else v[left.mask.astype(int)]
+        rightm = None if right is None else v[right.mask.astype(int)]
+        ret_nanmask = interp_func(x, xp, v[fp.mask.astype(int)], leftm, rightm)
+        ret_mask = np.isnan(ret_nanmask)
+
+        return cls.ArrayType(ret_data, ret_mask)
+
     #@implements(np.ediff1d)
     #@implements(np.gradient)
 
@@ -2597,13 +2720,13 @@ def setup_ducktype():
     def packbits(myarray, axis=None):
         result_data = np.packbits(myarray._data, axis)
         result_mask = np.packbits(myarray._mask, axis) != 0
-        return maskedarray_or_scalar(result_data, result_mask, cls=type(myarray))
+        return maskedarray_or_scalar(result_data, result_mask,cls=type(myarray))
 
     @implements(np.unpackbits)
     def unpackbits(myarray, axis=None):
         result_data = np.unpackbits(myarray._data, axis)
         result_mask = np.unpackbits(myarray._mask*np.uint8(255), axis)
-        return maskedarray_or_scalar(result_data, result_mask, cls=type(myarray))
+        return maskedarray_or_scalar(result_data, result_mask,cls=type(myarray))
 
     @implements(np.isposinf)
     def isposinf(x, out=None):

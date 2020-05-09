@@ -3346,8 +3346,12 @@ class TestMaskedArrayFunctions:
     def test_broadcast_to(self):
         # make sure scalars work
         assert_equal(np.broadcast_to(X('f'), (3,4)).filled(1), np.ones((3,4)))
-        
 
+    def test_interp(self):
+        v = np.interp(linspace(0,12,10), [1,2,4,7,10],
+                   MaskedArray([1, 2, X, 2, 10]), left=4, right=X)
+        assert_masked_equal(v, MaskedArray([4., 1.33333333, X, X, X, X, 
+                                            4.66666667, 8.22222222, X, X ]))
 
 class TestMaskedObjectArray:
 

@@ -28,7 +28,7 @@ ducktype allows numpy-style indexing. That is, your ducktype should be
 indexable along multiple axes at once and support tuple-indexing, as well as
 boolean and integer fancy-indexing. It should also have basic ndarray
 attributes such as `.dtype`, `.shape`, and `.ndim`. When "fully" indexed at all
-axes it should return a scalar value, and not a 0d array. If your ducktype 's
+axes it should return a scalar value, and not a 0d array. If your ducktype's
 scalars are the same as numpy's built-in scalars (eg, `np.uint32`, `np.float64`
 etc) then nothing more should be needed, and `duckprint`'s default scalar
 formatters should work without modification and `__nd_duckprint_dispatcher__`
