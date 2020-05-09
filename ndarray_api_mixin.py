@@ -77,7 +77,8 @@ class NDArrayAPIMixin:
     def repeat(self, repeats, axis=None):
         return np.repeat(self, repeats, axis)
 
-    # unlike np.reshape, allows shape to be passed as separate args
+    # unlike np.reshape, allows shape to be passed as separate args and
+    # order param must be explicit keyword
     def reshape(self, *shape, **kwargs):
         if len(shape) > 1:
             shape = (shape,)
@@ -127,7 +128,7 @@ class NDArrayAPIMixin:
         self[:] = value
 
     def flatten(self, order='C'):
-        return np.copy(self, order).reshape(self.size, order)
+        return np.copy(self, order).reshape(self.size, order=order)
 
     @property
     def T(self):

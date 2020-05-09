@@ -3318,6 +3318,36 @@ class TestMaskedArrayFunctions:
         #test = np.ma.convolve(a, b, propagate_mask=True)
         #assert_equal(test, masked_equal([-1, -1, -1, -1, -1], -1))
 
+    def test_select(self):
+        x = MaskedArray([0, 1, X, 2, X, 4, 5])
+        choicelist = [x, x**2]
+        condlist = [(x<3).filled(False), (x>5).filled(True)]
+
+        assert_masked_equal(np.select(condlist, choicelist),
+                            MaskedArray([0, 1, X, 2, X, 0, 0]))
+        assert_masked_equal(np.select(condlist, choicelist, default=-9),
+                            MaskedArray([0, 1, X, 2, X, -9, -9]))
+        assert_masked_equal(np.select(condlist, choicelist, default=X),
+                            MaskedArray([0, 1, X, 2, X, X, X]))
+
+    def test_unique(self):
+        a = MaskedArray([2,X,0,X])
+        u, i, c = np.unique(a, return_inverse=True, return_counts=True)
+        assert_equal(u, MaskedArray([0, 2, X]))
+        assert_equal(i, np.array([1, 2, 0, 2]))
+        assert_equal(c, np.array([1, 1, 2]))
+        
+        b = MaskedArray([X,X], dtype='f')
+        u, i, c = np.unique(b, return_inverse=True, return_counts=True)
+        assert_equal(u, MaskedArray([X]))
+        assert_equal(i, np.array([0, 0]))
+        assert_equal(c, np.array([2]))
+
+    def test_broadcast_to(self):
+        # make sure scalars work
+        assert_equal(np.broadcast_to(X('f'), (3,4)).filled(1), np.ones((3,4)))
+        
+
 
 class TestMaskedObjectArray:
 

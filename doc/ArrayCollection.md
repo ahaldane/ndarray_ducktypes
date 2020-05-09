@@ -20,10 +20,20 @@ array([ 8, 10,  7,  8])
 Comparison with similar Python types
 ------------------------------------
 
-An ArrayCollection behaves very similarly to a NumPy structured `ndarray`, but
-NumPy's structured arrays are designed for lowlevel manipulation of binary blobs and for interfacing with C programs while in contrast `ArrayCollection` is meant for simple manipulation of multidimensional, multi-datatype datasets. In other words, `ArrayCollection` can be used as a "lite" version of Pandas `DataFrame` or Xarray `Dataset`. You are encouraged to consider using these other projects as they provide additional high-level features useful for tabular data analysis, such as named axes, which `ArrayCollection` lacks as it is only meant to be a simple wrapper around a set of `ndarray`s.
+An ArrayCollection has a very similar interface as a NumPy structured
+`ndarray` and they can often be used interchangeably. But while NumPy's
+structured arrays are designed for lowlevel manipulation of binary blobs and
+for interfacing with C programs, `ArrayCollection` is meant for simple
+manipulation of multidimensional, multi-datatype datasets. At the technical
+level, `ArrayCollection` is a container for a set of ndarrays, while structured
+ndarrays are arrays of C-structs.  This means that users of `ArrayCollection`
+do not need to worry about 'padding' bytes present in structured arrays, and
+`ArrayCollection` will often be more cache-friendly because the individual arrays are not strided in memory as the fields are are in structured ndarrays.
 
-By using an `ArrayCollection` instead of a structured array, you no longer have to wory about memory layout issues such as padding bytes, and the memory ordering will be more cache-friendly since the data is stored internally as a set of arrays instead of a single array of structures.
+`ArrayCollection` can be used as a "lite" version of Pandas `DataFrame` or
+Xarray `Dataset`. You are encouraged to consider using these other projects
+instead as they provide many additional high-level features useful for tabular
+data analysis, such as named axes. `ArrayCollection` in contrast provides a simpler more direct interface to a set of ndarrays.
 
 Quickstart
 ==========

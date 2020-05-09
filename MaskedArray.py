@@ -13,6 +13,17 @@ from numpy.lib.stride_tricks import _broadcast_shape
 import operator
 import warnings
 
+# IDEAS:
+#
+# A Masked type factory? Some of the things which we might want to make
+# configurable are 1. behavior of mask (ignore or skipna). 2. What to do
+# for operations which return nan.
+
+# I actually think maybe we *don't* want to auto-mask nans, since it is
+# impossible to rever this operation, but easy to let the user mask if they
+# want. Also explicit is greater than implicit: This way the user get a warning
+# about invalid operation, instead of it being hidden by becoming masked.
+
 class MaskedOperatorMixin(NDArrayOperatorsMixin):
     # shared implementations for MaskedArray, MaskedScalar
 
@@ -66,10 +77,19 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
         impl, checked_args = HANDLED_FUNCTIONS[func]
 
         if checked_args is not None:
-            types = (type(a) for n,a in enumerate(args) if n in checked_args)
+            if isinstance(checked_args, tuple):
+                types = (type(a) for n,a in enumerate(args)
+                         if n in checked_args)
+            elif callable(checked_args):
+                try:
+                    types = checked_args(args, types, self.known_types)
+                except NotImplementedError:
+                    return NotImplemented
+            else:
+                raise ValueError("unexpected checked_args type")
 
         #types are allowed to be Masked* or plain ndarrays
-        if not all((issubclass(t, self.known_types) or
+        if types != [] and not all((issubclass(t, self.known_types) or
                     t is np.ndarray or np.isscalar(t)) for t in types):
             return NotImplemented
 
@@ -80,11 +100,6 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
             return NotImplemented
 
         return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
-
-    ## This would be a nice way to convert to plain array, but seems
-    ## to cause problems with __array_function__.
-    #def __array__(self):
-    #    return self.filled(view=True) # this returns a (readonly) view.
 
     def _get_fill_value(self, fill_value, minmax):
         if minmax is not None:
@@ -110,14 +125,36 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
     def flat(self):
         return MaskedIterator(self)
 
-def duck_require(data, dtype=None, copy=True, order='K', subok=False, ndmin=0):
-    # this function takes an nd-ducktype (data) and makes sure all the
-    # other arguments normally supplied to np.array are satisfied.
+def duck_require(data, dtype=None, ndmin=0, copy=True, order='K'):
+    """
+    Return an ducktyped ndarray that satisfies requirements.
+
+    Returns a view if possible.
+
+    Parameters
+    ----------
+    data : array-like
+        Must be an ndarray or ndarray ducktype.
+    dtype : numpy datatype
+        Datatype to convert to
+    ndmin : integer
+        Same as 'ndmin' argument of np.array
+    copy : bool
+        Whether to guarantee a copy is made
+    order : one of 'K', 'F', 'C', 'A'
+        Same as 'order' argument of np.array
+    """
+
+    # we must use only propertie that work for ndarray ducktypes.
+    # This rules out using np.require
 
     if copy or (dtype is not None and dtype != data.dtype):
         data = data.astype(dtype, order=order)
-    # XXX deal with order and subok
-    if ndmin is not None and data.ndim < ndmin:
+
+    if order != 'K' and order is not None:
+        raise NotImplementedError("np.require cannot be ducktyped")
+
+    if ndmin != 0 and data.ndim < ndmin:
         nd = ndmin - data.ndim
         data = data[(None,)*nd + (Ellipsis,)]
 
@@ -127,15 +164,16 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     "An ndarray ducktype allowing array elements to be masked"
 
     def __init__(self, data, mask=None, dtype=None, copy=False,
-                order=None, subok=True, ndmin=0, **options):
+                order=None, ndmin=0, **options):
         """
         Constructs a MaskedArray given data and optional mask.
 
         Parameters
         ----------
         data : array-like
-            Any object convertible to an `ndarray`, but also allowing
-            the masked signifier `X` to mark masked elements. See Notes below.
+            Any object following the numpy ducktype api or convertible to an
+            ndarray, but also allowing the masked signifier `X` to mark masked
+            elements.  See Notes below.
         mask : array-like
             Any object convertible to a boolean `ndarray` of the same
             shape as data, where true elements are masked. If omitted, defaults
@@ -147,9 +185,8 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
             if they are ndarrays with the right properties. Otherwise
             a they will be copied.
         order : {'K', 'A', 'C', 'F'}, optional
-            Memory layout of the array. See `np.array` argument.
-        subok : bool, optional
-            Not yet fully supported.
+            Memory layout of the array. See `np.array` argument. This affects
+            both the data and mask.
         ndmin : int, optional
             Specifies the minimum number of dimensions the resulting array
             should have. See `np.array` argument.
@@ -189,16 +226,16 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
         if isinstance(data, (MaskedArray, MaskedScalar)):
             self._mask = np.array(data._mask, copy=copy, order=order,
-                                              subok=subok, ndmin=ndmin)
+                                              ndmin=ndmin)
 
             if mask is not None:
                 self._data = duck_require(data._data, copy=True, order=order,
-                                                  subok=subok, ndmin=ndmin)
+                                                  ndmin=ndmin)
                 self._mask |= np.array(mask, copy=False)
 
             else:
                 self._data = duck_require(data._data, copy=copy, order=order,
-                                                  subok=subok, ndmin=ndmin)
+                                                  ndmin=ndmin)
         elif data is X and mask is None:
             # 0d masked array
             if dtype is None:
@@ -220,19 +257,18 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
             if is_ndducktype(data):
                 self._data = duck_require(data, copy=copy, order=order,
-                                          subok=subok, ndmin=ndmin)
+                                          ndmin=ndmin)
             else:
                 self._data = np.array(data, dtype=dtype, copy=copy, order=order,
-                                      subok=subok, ndmin=ndmin)
+                                      ndmin=ndmin)
 
-            # XXX need to make sure mask order is same as data?
             if mask is None:
                 self._mask = np.zeros(self._data.shape, dtype='bool',
                                       order=order)
             elif (is_ndducktype(mask) and mask.shape == self._data.shape and
                     issubclass(mask.dtype.type, np.bool_)):
                 self._mask = np.array(mask, copy=copy, order=order,
-                                      subok=subok, ndmin=ndmin)
+                                      ndmin=ndmin)
             else:
                 self._mask = np.empty(self._data.shape, dtype='bool')
                 self._mask[...] = np.broadcast_to(mask, self._data.shape)
@@ -249,7 +285,11 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
     def __getitem__(self, ind):
         if is_string_or_list_of_strings(ind):
-            return type(self)(self._data[ind], self._mask.copy())
+            # for viewing fields of structured arrays, return readonly view.
+            # (see .real/.imag discussion in user guide)
+            ret = self._data[ind]
+            ret.flags['WRITEABLE'] = False
+            return type(self)(ret, self._mask)
 
         if not isinstance(ind, tuple):
             ind = (ind,)
@@ -274,10 +314,12 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         return type(self)(data, mask)
 
     def __setitem__(self, ind, val):
-        if is_string_or_list_of_strings(ind):
-            view = type(self)(self._data[ind], self._mask.copy())
-            view[...] = val
-            return
+        if not self.flags.writeable:
+            raise ValueError("assignment destination is read-only")
+
+        if self.dtype.names and is_string_or_list_of_strings(ind):
+            raise ValueError("Cannot assign to fields of a Masked structured "
+                             "array")
 
         if not isinstance(ind, tuple):
             ind = (ind,)
@@ -357,8 +399,10 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
     def astype(self, dtype, order='K', casting='unsafe', subok=True, copy=True):
         result_data = self._data.astype(dtype, order, casting, subok, copy)
+        # force a copy of mask if data was copied
+        if copy == False and result_data is not self:
+            copy = True
         result_mask = self._mask.astype(bool, order, casting, subok, copy)
-        # XXX compute copy in mask based on whether result_data is a copy?
         return type(self)(result_data, result_mask)
 
     def tolist(self):
@@ -537,13 +581,16 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
             # like structured scalars, support string indexing and int indexing
             data = self._data[ind]
             mask = self._mask
-            #XXX unclear if mask should be view or copy. See .real/.imag
             return type(self)(data, mask)
 
         if ind == ():
             return self
 
-        raise IndexError("invalid index to scalar variable")
+    def __setitem__(self, ind, val):
+        # non-masked structured scalars normally allow assignment (eg, to
+        # individual fields), but here we disallow *all* assignment, because of
+        # ambiguity about what to do with mask. See discussion of .real/.imag
+        raise ValueError("assignment destination is read-only")
 
     def __str__(self):
         if self._mask:
@@ -595,12 +642,9 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
 
         if self._mask:
             if self.dtype.names:
-                # next line is more complicated than desired due to struct types,
-                # which numpy does not have a constructor for
+                # next line is more complicated than desired due to struct
+                # types, which numpy does not have a constructor for
                 return np.array(fill_value, dtype=self.dtype)[()]
-                # XXX this will need to be modified to support structured duck-scalars.
-                # In particular, need a way to construct arbitrary scalars "like"
-                # the data scalar (same dtype and any other properties)
             return type(self._data)(fill_value)
         return self._data
 
@@ -822,13 +866,10 @@ class _Masked_UniOp(_Masked_UFunc):
     ----------
     ufunc : ufunc
         The ufunc for which to define a masked version.
-    maskdomain : function
-        Function which returns true for inputs whose output should be masked.
     """
 
-    def __init__(self, ufunc, maskdomain=None):
+    def __init__(self, ufunc):
         super().__init__(ufunc)
-        self.domain = maskdomain
 
     def __call__(self, a, *args, **kwargs):
         out = kwargs.get('out', ())
@@ -838,12 +879,7 @@ class _Masked_UniOp(_Masked_UFunc):
             kwargs['out'] = (out[0]._data,)
 
         d = getdata(a)
-
-        # mask computation before domain, in case domain is inplace
-        if self.domain is None:
-            m = getmask(a)
-        else:
-            m = self.domain(d) | getmask(a)
+        m = getmask(a)
 
         with np.errstate(divide='ignore', invalid='ignore'):
             result = self.f(d, *args, **kwargs)
@@ -865,8 +901,6 @@ class _Masked_BinOp(_Masked_UFunc):
     ----------
     ufunc : ufunc
         The ufunc for which to define a masked version.
-    maskdomain : funcion, optional
-        Function which returns true for inputs whose output should be masked.
     reduce_fill : function or scalar, optional
         Determines what fill_value is used during reductions. If a function is
         supplied, it shoud accept a dtype as argument and return a fill value
@@ -874,9 +908,8 @@ class _Masked_BinOp(_Masked_UFunc):
         for all dtypes of the ufunc.
     """
 
-    def __init__(self, ufunc, maskdomain=None, reduce_fill=None):
+    def __init__(self, ufunc, reduce_fill=None):
         super().__init__(ufunc)
-        self.domain = maskdomain
 
         if reduce_fill is None:
             reduce_fill = ufunc.identity
@@ -910,14 +943,8 @@ class _Masked_BinOp(_Masked_UFunc):
             mkwargs['out'] = (out[0]._mask,)
 
         m = np.logical_or(ma, mb, **mkwargs)
-        if self.domain is not None:
-            if 'out' not in mkwargs and isinstance(m, np.ndarray):
-                mkwargs['out'] = (m,)
-            m = np.logical_or(m, self.domain(da, db), **mkwargs)
-            #XXX add test that this gets where right
 
-        with np.errstate(divide='ignore', invalid='ignore'):
-            result = self.f(da, db, **kwargs)
+        result = self.f(da, db, **kwargs)
 
         if out:
             return out[0]
@@ -928,8 +955,6 @@ class _Masked_BinOp(_Masked_UFunc):
         return cls(result, m)
 
     def reduce(self, a, **kwargs):
-        if self.domain is not None:
-            raise TypeError("domained ufuncs do not support reduce")
         if self.reduce_fill is None:
             raise TypeError("reduce not supported for masked {}".format(self.f))
 
@@ -969,13 +994,6 @@ class _Masked_BinOp(_Masked_UFunc):
             result = self.f.reduce(da, **kwargs)
             m = np.logical_and.reduce(ma, **mkwargs)
 
-        ## Code that might be used to support domained ufuncs. WIP
-        #with np.errstate(divide='ignore', invalid='ignore'):
-        #    result = self.f.reduce(da, **kwargs)
-        #    m = np.logical_and.reduce(ma, **mkwargs)
-        #if self.domain is not None:
-        #    m = np.logical_or(ma, dom, **mkwargs)
-
         if out:
             return out[0]
 
@@ -985,8 +1003,6 @@ class _Masked_BinOp(_Masked_UFunc):
         return cls(result, m)
 
     def accumulate(self, a, axis=0, dtype=None, out=None):
-        if self.domain is not None:
-            raise RuntimeError("domained ufuncs do not support reduce")
         if self.reduce_fill is None:
             raise TypeError("accumulate not supported for masked {}".format(
                             self.f))
@@ -1005,14 +1021,6 @@ class _Masked_BinOp(_Masked_UFunc):
         result = self.f.accumulate(da, axis, dtype, dataout)
         m = np.logical_and.accumulate(ma, axis, out=maskout)
 
-        ## Code that might be used to support domained ufuncs. WIP
-        #with np.errstate(divide='ignore', invalid='ignore'):
-        #    result = self.f.accumulate(da, axis, dtype, dataout)
-        #    m = np.logical_and.accumulate(ma, axis, out=maskout)
-        #if self.domain is not None:
-        #    dom = self.domain(result[...,:-1], da[...,1:])
-        #    m = np.logical_or(ma, dom, **mkwargs)
-
         if out:
             return out[0]
         if is_duckscalar(result):
@@ -1020,8 +1028,6 @@ class _Masked_BinOp(_Masked_UFunc):
         return type(a)(result, m)
 
     def outer(self, a, b, **kwargs):
-        if self.domain is not None:
-            raise RuntimeError("domained ufuncs do not support reduce")
         if self.reduce_fill is None:
             raise TypeError("outer not supported for masked {}".format(self.f))
 
@@ -1060,8 +1066,6 @@ class _Masked_BinOp(_Masked_UFunc):
         return type(a)(result, m)
 
     def reduceat(self, a, indices, **kwargs):
-        if self.domain is not None:
-            raise TypeError("domained ufuncs do not support reduce")
         if self.reduce_fill is None:
             raise TypeError("reduce not supported for masked {}".format(self.f))
 
@@ -1106,57 +1110,9 @@ class _Masked_BinOp(_Masked_UFunc):
         if b is not None:
             db, mb = getdata(b), getmask(b)
 
-        with np.errstate(divide='ignore', invalid='ignore'):
-            self.f.at(da, indices, db)
-            np.logical_or.at(ma, indices, mb)
+        self.f.at(da, indices, db)
+        np.logical_or.at(ma, indices, mb)
 
-def maskdom_divide(a, b):
-    out_dtype = np.result_type(a, b)
-
-    # if floating, use finfo to determine domain
-    if isinstance(out_dtype, np.inexact):
-        tolerance = np.finfo(out_dtype).tiny
-        with np.errstate(invalid='ignore'):
-            return umath.absolute(a) * tolerance >= umath.absolute(b)
-
-    # otherwise, for integer types, only 0 is a problem
-    return b == 0
-
-def maskdom_power(a, b):
-    out_dtype = np.result_type(a, b)
-    if issubclass(out_dtype.type, np.floating):
-        # non-integer powers of negative floats not allowed
-        # negative powers of 0 not allowed
-        return ((a < 0) & (b != np.rint(b))) | ((a == 0) & (b < 0))
-    if issubclass(out_dtype.type, np.integer):
-        # integers to negative powers not allowed
-        # Note: the binop actually raises a ValueError, so this test is redundant
-        return b < 0
-    return np.broadcast_to(False, a.shape)
-
-def maskdom_greater_equal(x):
-    def maskdom_interval(a):
-        with np.errstate(invalid='ignore'):
-            return umath.less(a, x)
-    return maskdom_interval
-
-def maskdom_greater(x):
-    def maskdom_interval(a):
-        with np.errstate(invalid='ignore'):
-            return umath.less_equal(a, x)
-    return maskdom_interval
-
-def maskdom_tan(x):
-    #Use original MaskedArrays's strategy. But might be improved by using finfo
-    with np.errstate(invalid='ignore'):
-        return umath.less(umath.absolute(umath.cos(x)), 1e-35)
-
-def make_maskdom_interval(lo, hi):
-    def maskdom(x):
-        with np.errstate(invalid='ignore'):
-            return umath.logical_or(umath.greater(x, hi),
-                                    umath.less(x, lo))
-    return maskdom
 
 def setup_ufuncs():
     # unary funcs
@@ -1164,27 +1120,10 @@ def setup_ufuncs():
                   umath.arctan, umath.arcsinh, umath.sinh, umath.cosh,
                   umath.tanh, umath.absolute, umath.fabs, umath.negative,
                   umath.floor, umath.ceil, umath.logical_not, umath.isfinite,
-                  umath.isinf, umath.isnan, umath.invert]:
+                  umath.isinf, umath.isnan, umath.invert, umath.sqrt, umath.log,
+                  umath.log2, umath.log10, umath.tan, umath.arcsin,
+                  umath.arccos, umath.arccosh, umath.arctanh]:
         masked_ufuncs[ufunc] = _Masked_UniOp(ufunc)
-
-    # domained unary funcs
-    masked_ufuncs[umath.sqrt] = _Masked_UniOp(umath.sqrt,
-                                              maskdom_greater_equal(0.))
-    masked_ufuncs[umath.log] = _Masked_UniOp(umath.log, maskdom_greater(0.))
-    masked_ufuncs[umath.log2] = _Masked_UniOp(umath.log2, maskdom_greater(0.))
-    masked_ufuncs[umath.log10] = _Masked_UniOp(umath.log10, maskdom_greater(0.))
-    masked_ufuncs[umath.tan] = _Masked_UniOp(umath.tan, maskdom_tan)
-    maskdom_11 = make_maskdom_interval(-1., 1.)
-    masked_ufuncs[umath.arcsin] = _Masked_UniOp(umath.arcsin, maskdom_11)
-    masked_ufuncs[umath.arccos] = _Masked_UniOp(umath.arccos, maskdom_11)
-    masked_ufuncs[umath.arccosh] = _Masked_UniOp(umath.arccos,
-                                                 maskdom_greater_equal(1.))
-    masked_ufuncs[umath.arctanh] = _Masked_UniOp(umath.arctanh,
-                                       make_maskdom_interval(-1+1e-15, 1+1e-15))
-    # XXX The last lines use the original MaskedArrays's strategy of hardcoded
-    # limits. But would be nice to improve by adding float-specific limits
-    # (diff for float32 vs float64) using finfo.
-    # XXX document these limits and behavior
 
     # binary ufuncs
     for ufunc in [umath.add, umath.subtract, umath.multiply,
@@ -1192,7 +1131,8 @@ def setup_ufuncs():
                   umath.less_equal, umath.greater_equal, umath.less,
                   umath.greater, umath.logical_and, umath.logical_or,
                   umath.logical_xor, umath.bitwise_and, umath.bitwise_or,
-                  umath.bitwise_xor]:
+                  umath.bitwise_xor, umath.true_divide, umath.floor_divide,
+                  umath.remainder, umath.fmod, umath.mod, umath.power]:
         masked_ufuncs[ufunc] = _Masked_BinOp(ufunc)
 
     # fill value depends on dtype
@@ -1200,12 +1140,6 @@ def setup_ufuncs():
                                          reduce_fill=lambda dt: _max_filler[dt])
     masked_ufuncs[umath.minimum] = _Masked_BinOp(umath.minimum,
                                          reduce_fill=lambda dt: _min_filler[dt])
-
-    # domained binary ufuncs
-    for ufunc in [umath.true_divide, umath.floor_divide, umath.remainder,
-                  umath.fmod, umath.mod]:
-        masked_ufuncs[ufunc] = _Masked_BinOp(ufunc, maskdom_divide)
-    masked_ufuncs[umath.power] = _Masked_BinOp(umath.power, maskdom_power)
 
 setup_ufuncs()
 
@@ -1216,7 +1150,30 @@ setup_ufuncs()
 HANDLED_FUNCTIONS = {}
 
 def implements(numpy_function, checked_args=None):
-    """Register an __array_function__ implementation for MaskedArray objects."""
+    """
+    Register an __array_function__ implementation for MaskedArray objects.
+
+    checked_args : tuple of integers, function
+        If not provided, all entries in the "types" list from numpy
+        dispatch are checked to be of known class.
+
+        If a tuple of integers, only those indices in the "args" list of
+        numpy dispatch are checked to be of known class.
+
+        If a function, should take three arguments, the "args" and "types"
+        argument of "array_function" and a list of "known_types". An iterable
+        of types may be returned to checked to be of known class, or a
+        NotImplementedError may be raised to signal no match.
+
+    Notes
+    -----
+    Goal is to allow both control and convenience. The callable form of
+    checked_args is most powerful since it can be used to implement any
+    desired behavior based purely on the dispatch "args" by raising
+    NotImplementedError. This includes the behaviors obtained by giving a
+    callable return an iterable of types, of using a tuple, or not providing
+    checked_args, so these latter forms are for convenience only.
+    """
     def decorator(func):
         HANDLED_FUNCTIONS[numpy_function] = (func, checked_args)
         return func
@@ -2140,7 +2097,7 @@ def setup_ducktype():
             tup = (reps,)
         d = len(tup)
 
-        if all(x == 1 for x in tup):
+        if builtins.all(x == 1 for x in tup):
             return type(A)(A, copy=True, subok=True, ndmin=d)
         else:
             c = type(A)(A, copy=False, subok=True, ndmin=d)
@@ -2251,12 +2208,13 @@ def setup_ducktype():
 
     #@implements(np.pad)
     #def pad(array, pad_width, mode, **kwargs):
-    # XXX need identical code to np.pad but wihout call to asarray
+    # XXX takes too much effort to implement
 
     @implements(np.broadcast_to)
-    def broadcast_to(array, shape):
-        return type(array)(np.broadcast_to(array._data, shape),
-                           np.broadcast_to(array._mask, shape))
+    def broadcast_to(array, shape, subok=False):
+        cls = type(array).ArrayType
+        return cls(np.broadcast_to(array._data, shape, subok),
+                   np.broadcast_to(array._mask, shape))
 
     @implements(np.broadcast_arrays)
     def broadcast_arrays(*args, **kwargs):
@@ -2265,25 +2223,25 @@ def setup_ducktype():
                             'argument {!r}'.format(list(kwargs.keys())[0]))
         shape = _broadcast_shape(*args)
 
-        if all(array.shape == shape for array in args):
+        if builtins.all(array.shape == shape for array in args):
             return args
 
-        return [np.broadcast_to(array, shape, subok=subok, readonly=False)
+        return [np.broadcast_to(array, shape, **kwargs)
                 for array in args]
 
     @implements(np.empty_like)
     def empty_like(prototype, dtype=None, order='K', subok=True):
-        cls = type(prototype)
+        cls = type(prototype).ArrayType
         return cls(np.empty_like(prototype._data, dtype, order, subok))
 
     @implements(np.ones_like)
     def ones_like(prototype, dtype=None, order='K', subok=True):
-        cls = type(prototype)
+        cls = type(prototype).ArrayType
         return cls(np.ones_like(prototype._data, dtype, order, subok))
 
     @implements(np.zeros_like)
     def zeros_like(prototype, dtype=None, order='K', subok=True):
-        cls = type(prototype)
+        cls = type(prototype).ArrayType
         return cls(np.zeros_like(prototype._data, dtype, order, subok))
 
     @implements(np.full_like)
@@ -2333,16 +2291,173 @@ def setup_ducktype():
         outdata, outmask = get_maskedout(out)
         result_data = np.choose(a, choices._data, outdata, mode)
         result_mask = np.choose(a, choices._mask, outmask, mode)
-        return maskedarray_or_scalar(result_data, result_mask, out, type(choices))
+        cls = type(choices)
+        return maskedarray_or_scalar(result_data, result_mask, out, cls)
 
     #@implements(np.piecewise)
     #def piecewise(x, condlist, funclist, *args, **kw):
 
-    ##@implements(np.select)
-    #def select(condlist, choicelist, default=0):
-    #    # XXX same code as np.select but without asarray
+    @implements(np.select, checked_args=lambda a,t,k: [type(x) for x in a[1]])
+    def select(condlist, choicelist, default=0):
+        # choicelist may contain maskedarrays. Condlist must be unmasked
+        # boolean  arrays.
 
-    #@implements(np.unique)
+        # Check the size of condlist and choicelist are the same, or abort.
+        if len(condlist) != len(choicelist):
+            raise ValueError(
+                'list of cases must be same length as list of conditions')
+
+        # Now that the dtype is known, handle the deprecated select([], []) case
+        if len(condlist) == 0:
+            raise ValueError("select with an empty condition list is "
+                             "not possible")
+
+        for c in condlist:
+            if isinstance(c, (MaskedArray, MaskedScalar)):
+                raise TypeError("condlist arrays should not be masked")
+
+        cls = get_mask_cls(choicelist)
+        choicelist = [cls(choice) for choice in choicelist]
+        # need to get the result type before broadcasting for correct scalar
+        # behaviour
+        if default is X:
+            dtype = np.result_type(*choicelist)
+            default = cls.ScalarType(X, dtype=dtype)
+            choicelist.append(default)
+        else:
+            choicelist.append(cls.ScalarType(default))
+            dtype = np.result_type(*choicelist)
+
+        # Convert conditions to arrays and broadcast conditions and choices
+        # as the shape is needed for the result. Doing it separately optimizes
+        # for example when all choices are scalars.
+        condlist = np.broadcast_arrays(*condlist)
+        choicelist = np.broadcast_arrays(*choicelist)
+
+        # If cond array is not an ndarray in bool format or scalar bool, abort.
+        deprecated_ints = False
+        for i in range(len(condlist)):
+            cond = condlist[i]
+            if cond.dtype.type is not np.bool_:
+                raise TypeError('invalid entry {} in condlist: '
+                                'should be boolean ndarray'.format(i))
+
+        if choicelist[0].ndim == 0:
+            # This may be common, so avoid the call.
+            result_shape = condlist[0].shape
+        else:
+            bcast = np.broadcast_arrays(condlist[0], choicelist[0]._data)
+            result_shape = bcast[0].shape
+
+        result = np.broadcast_to(choicelist[-1], result_shape).astype(dtype)
+
+        # Use np.copyto to burn each choicelist array onto result, using the
+        # corresponding condlist as a boolean mask. This is done in reverse
+        # order since the first choice should take precedence.
+        choicelist = choicelist[-2::-1]
+        condlist = condlist[::-1]
+        for choice, cond in zip(choicelist, condlist):
+            np.copyto(result, choice, where=cond)
+
+        return result
+
+    def _unique1d(ar, return_index=False, return_inverse=False,
+                  return_counts=False):
+        """
+        Find the unique elements of an array, ignoring shape.
+        """
+        ar = ar.flatten()
+        optional_indices = return_index or return_inverse
+
+        if optional_indices:
+            perm = ar.argsort(kind='mergesort' if return_index else 'quicksort')
+            aux = ar[perm]
+        else:
+            ar.sort()
+            aux = ar
+        # argsort has put mask at end. As implementation hack, use the fact
+        # that argsort/argsort used .filled(minval, view=True)
+        mask = np.empty(aux.shape, dtype=np.bool_)
+        mask[:1] = True
+        mask[1:] = aux[1:] != aux[:-1]
+        n_masked = np.sum(ar._mask)
+        if n_masked > 0:
+            # main change to account for mask: keep all but one mased elem
+            mask[-n_masked:] = False
+            mask[-n_masked] = True
+
+        ret = (aux[mask],)
+        if return_index:
+            ret += (perm[mask],)
+        if return_inverse:
+            imask = np.cumsum(mask) - 1
+            inv_idx = np.empty(mask.shape, dtype=np.intp)
+            inv_idx[perm] = imask
+            ret += (inv_idx,)
+        if return_counts:
+            idx = np.concatenate(np.nonzero(mask) + ([mask.size],))
+            ret += (np.diff(idx),)
+        return ret
+
+    def _unpack_tuple(x):
+        """ Unpacks one-element tuples for use as return values """
+        if len(x) == 1:
+            return x[0]
+        else:
+            return x
+
+    @implements(np.unique)
+    def unique(ar, return_index=False, return_inverse=False,
+               return_counts=False, axis=None):
+        # masked values are treated as a unique value
+
+        if axis is None:
+            ret = _unique1d(ar, return_index, return_inverse, return_counts)
+            return _unpack_tuple(ret)
+
+        # axis was specified and not None
+        try:
+            ar = np.moveaxis(ar, axis, 0)
+        except np.AxisError:
+            # this removes the "axis1" or "axis2" prefix from the error message
+            raise np.AxisError(axis, ar.ndim)
+
+        # Must reshape to a contiguous 2D array for this to work...
+        orig_shape, orig_dtype = ar.shape, ar.dtype
+        ar = ar.reshape(orig_shape[0], np.prod(orig_shape[1:], dtype=np.intp))
+        ar = np.ascontiguousarray(ar)
+        dtype = [('f{i}'.format(i=i), ar.dtype) for i in range(ar.shape[1])]
+
+        # At this point, `ar` has shape `(n, m)`, and `dtype` is a structured
+        # data type with `m` fields where each field has the data type of `ar`.
+        # In the following, we create the array `consolidated`, which has
+        # shape `(n,)` with data type `dtype`.
+        try:
+            if ar.shape[1] > 0:
+                consolidated = ar.view(dtype)
+            else:
+                # If ar.shape[1] == 0, dtype will be `np.dtype([])`, which is
+                # a data type w itemsize 0, and the call `ar.view(dtype)` will
+                # fail.  Instead, we'll use `np.empty` to explicitly create the
+                # array with shape `(len(ar),)`.  Since `dtype` in this case has
+                # itemsize 0, the total size of the result is still 0 bytes.
+                consolidated = np.empty(len(ar), dtype=dtype)
+        except TypeError:
+            # There's no good way to do this for object arrays, etc...
+            msg = 'The axis argument to unique is not supported for dtype {dt}'
+            raise TypeError(msg.format(dt=ar.dtype))
+
+        def reshape_uniq(uniq):
+            n = len(uniq)
+            uniq = uniq.view(orig_dtype)
+            uniq = uniq.reshape(n, *orig_shape[1:])
+            uniq = np.moveaxis(uniq, 0, axis)
+            return uniq
+
+        output = _unique1d(consolidated, return_index,
+                           return_inverse, return_counts)
+        output = (reshape_uniq(output[0]),) + output[1:]
+        return _unpack_tuple(output)
 
     @implements(np.can_cast, checked_args=())
     def can_cast(from_, to, casting='safe'):
@@ -2360,13 +2475,13 @@ def setup_ducktype():
     def result_type(*arrays_and_dtypes):
         dat = [a._data if isinstance(a, (MaskedArray, MaskedScalar)) else a
                for a in arrays_and_dtypes]
-        return np.result_type(dat)
+        return np.result_type(*dat)
 
     @implements(np.common_type, checked_args=())
     def common_type(*arrays_and_dtypes):
         dat = [a._data if isinstance(a, (MaskedArray, MaskedScalar)) else a
                for a in arrays_and_dtypes]
-        return np.common_type(dat)
+        return np.common_type(*dat)
 
     @implements(np.bincount)
     def bincount(x, weights=None, minlength=0):
@@ -2458,7 +2573,7 @@ def setup_ducktype():
 
     @implements(np.alen)
     def alen(a):
-        return len(type(a)(a, ndmin=1))
+        return len(type(a).ArrayType(a, ndmin=1))
 
     @implements(np.ndim)
     def ndim(a):
@@ -2468,7 +2583,7 @@ def setup_ducktype():
     def size(a):
         return a.size
 
-    @implements(np.copyto, checked_args=(0))
+    @implements(np.copyto, checked_args=(0,))
     def copyto(dst, src, casting='same_kind', where=True):
         np.copyto(dst._data, src._data, casting, where)
         np.copyto(dst._mask, src._mask, casting, where)
