@@ -61,6 +61,37 @@ def assert_masked_equal(actual, desired, err_msg='', anymask=False):
             assert_equal(dx, dy, err_msg)
             assert_equal(mx, my, err_msg)
 
+def assert_almost_masked_equal(actual, desired, err_msg='', anymask=False):
+    __tracebackhide__ = True  # Hide traceback for py.test
+
+    if isinstance(desired, dict):
+        if not isinstance(actual, dict):
+            raise AssertionError(repr(type(actual)))
+        assert_almost_masked_equal(len(actual), len(desired), err_msg)
+        for k, i in desired.items():
+            if k not in actual:
+                raise AssertionError("%s not in %s" % (k, actual))
+            assert_almost_masked_equal(actual[k], desired[k],
+                                'key=%r\n%s' % (k, err_msg))
+    elif (isinstance(desired, (list, tuple)) and
+            isinstance(actual, (list, tuple))):
+        assert_masked_equal(len(actual), len(desired), err_msg)
+        for k in range(len(desired)):
+            assert_almost_masked_equal(actual[k], desired[k],
+                                'item=%r\n%s' % (k, err_msg))
+    else:
+        dx, dy = getdata(actual), getdata(desired)
+        mx, my = getmask(actual), getmask(desired)
+
+        if anymask:
+            dx = dx.copy()
+            m = mx | my
+            dx[m] = dy[m]
+            assert_almost_equal(dx, dy, err_msg=err_msg)
+        else:
+            assert_almost_equal(dx, dy, err_msg=err_msg)
+            assert_equal(mx, my, err_msg)
+
 class TestMaskedArray:
     # Base test class for MaskedArrays.
 
@@ -784,40 +815,27 @@ class TestMaskedArrayArithmetic:
 
     def test_divide_on_different_shapes(self):
         x = MaskedArray(np.arange(6, dtype=float))
+        x[0] = X
         x.shape = (2, 3)
         y = MaskedArray(np.arange(3, dtype=float))
+        y[0] = X
 
         z = x / y
-        assert_equal(z.filled(-1), [[-1., 1., 1.], [-1., 4., 2.5]])
-        assert_equal(z.mask, [[1, 0, 0], [1, 0, 0]])
+        assert_masked_equal(z, MaskedArray([[X, 1., 1.], [X, 4., 2.5]]))
 
         z = x / y[None,:]
-        assert_equal(z.filled(-1), [[-1., 1., 1.], [-1., 4., 2.5]])
-        assert_equal(z.mask, [[1, 0, 0], [1, 0, 0]])
+        assert_masked_equal(z, MaskedArray([[X, 1., 1.], [X, 4., 2.5]]))
 
         y = MaskedArray(np.arange(2, dtype=float))
+        y[0] = X
         z = x / y[:, None]
-        assert_equal(z.filled(-1), [[-1., -1., -1.], [3., 4., 5.]])
-        assert_equal(z.mask, [[1, 1, 1], [0, 0, 0]])
-
-    def test_mixed_arithmetic(self):
-        # Tests mixed arithmetics.
-        na = np.array([1])
-        ma = MaskedArray([1])
-        assert_(isinstance(na + ma, MaskedArray))
-        assert_(isinstance(ma + na, MaskedArray))
-
-    def test_limits_arithmetic(self):
-        tiny = np.finfo(float).tiny
-        a = MaskedArray([tiny, 1. / tiny, 0.])
-        assert_equal((a / 2).mask, [0, 0, 0])
-        assert_equal((2 / a).mask, [0, 0, 1]) # changed from numpy
+        assert_masked_equal(z, MaskedArray([[X, X, X], [3., 4., 5.]]))
 
     def test_masked_singleton_arithmetic(self):
         # Tests some scalar arithmetics on MaskedArrays.
         # Masked singleton should remain masked no matter what
         xm = MaskedArray(0, mask=1)
-        assert_((1 / MaskedArray(0)).mask)
+        assert_(not (1 / MaskedArray(0)).mask)
         assert_((1 + xm).mask)
         assert_((-xm).mask)
         assert_(np.maximum(xm, xm).mask)
@@ -849,16 +867,6 @@ class TestMaskedArrayArithmetic:
         y = x + X
         assert_equal(y.shape, x.shape)
         assert_equal(y.mask, [True, ])
-
-    def test_scalar_arithmetic(self):
-        # Next lines from ogigianl tests, no longer valid. XXX so this means .filled used to return a view?
-        #x = MaskedArray(0, mask=0)
-        #assert_equal(x.filled().ctypes.data, x.ctypes.data)
-
-        # Make sure we don't lose the shape in some circumstances
-        xm = MaskedArray((0, 0)) / 0.
-        assert_equal(xm.shape, (2,))
-        assert_equal(xm.mask, [1, 1])
 
     def test_basic_ufuncs(self):
         # Test various functions such as sin, cos.
@@ -1119,7 +1127,7 @@ class TestMaskedArrayArithmetic:
         test = np.mod(ym, xm)
         assert_equal(test.mask, xm.mask | ym.mask)
         test = np.mod(xm, ym)
-        assert_equal(test.mask, xm.mask | ym.mask | (ym == 0).filled(True))
+        assert_equal(test.mask, xm.mask | ym.mask)
 
     def test_TakeTransposeInnerOuter(self):
         # Test of take, transpose, inner, outer products
@@ -1429,13 +1437,9 @@ class TestMaskedArrayArithmetic:
 
     def test_numpyarithmetics(self):
         # Check that the mask is not back-propagated when using numpy functions
-        a = MaskedArray([-1, 0, 1, 2, 3], mask=[0, 0, 0, 0, 1])
-        control = MaskedArray([np.nan, np.nan, 0, np.log(2), -1],
-                               mask=[1, 1, 0, 0, 1])
-
-        test = np.log(a)
-        assert_equal(test, control)
-        assert_equal(test.mask, control.mask)
+        a = MaskedArray([-1, 0, 1, 2, X])
+        control = MaskedArray([np.nan, -np.inf, 0, np.log(2), X])
+        assert_masked_equal(np.log(a), control)
         assert_equal(a.mask, [0, 0, 0, 0, 1])
 
 
@@ -1559,12 +1563,10 @@ class TestUfuncs:
 
     def test_ndarray_mask(self):
         # Check that the mask of the result is a ndarray (not a MaskedArray...)
-        a = MaskedArray([-1, 0, 1, 2, 3], mask=[0, 0, 0, 0, 1])
+        a = MaskedArray([-1, 0, 1, 2, X])
         test = np.sqrt(a)
-        control = MaskedArray([-1, 0, 1, np.sqrt(2), -1],
-                               mask=[1, 0, 0, 0, 1])
-        assert_equal(test, control)
-        assert_equal(test.mask, control.mask)
+        control = MaskedArray([np.nan, 0, 1, np.sqrt(2), X])
+        assert_masked_equal(test, control)
         assert_(not isinstance(test.mask, MaskedArray))
 
     def test_treatment_of_NotImplemented(self):
@@ -1731,7 +1733,7 @@ class TestMaskedArrayInPlaceArithmetics:
         x /= 2.0
         assert_equal(x, y / 2.0)
         xm /= np.arange(10)
-        assert_masked_equal(xm, MaskedArray([X, 1, X, 1, 1, 1, 1, 1, 1, 1.]))
+        assert_masked_equal(xm, MaskedArray([np.nan, 1, X, 1, 1, 1, 1, 1, 1,1]))
 
     def test_inplace_division_array_float(self):
         # Test of inplace division
@@ -1746,27 +1748,19 @@ class TestMaskedArrayInPlaceArithmetics:
         xm /= a
         assert_equal(x, y / a)
         assert_equal(xm, y / a)
-        assert_equal(xm.mask, m | (a == 0).filled(True))
+        assert_equal(xm.mask, m)
 
     def test_inplace_division_misc(self):
+        x = MaskedArray([X, 1, 1, -2, pi / 2., 4, X, -10., 10., 1., 2., 3.])
+        y = MaskedArray([5, 0, X,  2,     -1., X, X, -10., 10., 1., 0., X])
+        control = MaskedArray([X, np.inf, X, -1,-pi/2, X, X, 1, 1, 1, np.inf,X])
 
-        x = [1., 1., 1., -2., pi / 2., 4., 5., -10., 10., 1., 2., 3.]
-        y = [5., 0., 3., 2., -1., -4., 0., -10., 10., 1., 0., 3.]
-        m1 = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
-        m2 = [0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1]
-        xm = MaskedArray(x, mask=m1)
-        ym = MaskedArray(y, mask=m2)
+        z = x / y
+        assert_masked_equal(z, control)
 
-        z = xm / ym
-        assert_equal(z._mask, [1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1])
-        assert_equal(z.filled(9),
-                     [9., 9., 9., -1., -pi / 2., 9., 9., 1., 1., 1., 9., 9.])
-
-        xm = xm.copy()
-        xm /= ym
-        assert_equal(xm._mask, [1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1])
-        assert_equal(xm.filled(9),
-                     [9., 9., 9., -1., -pi / 2., 9., 9., 1., 1., 1., 9., 9.])
+        x = x.copy()
+        x /= y
+        assert_masked_equal(x, control)
 
     def test_add(self):
         x = MaskedArray([1, 2, 3], mask=[0, 0, 1])
@@ -2026,9 +2020,9 @@ class TestMaskedArrayInPlaceArithmetics:
                 xm //= a
                 assert_equal(x, y // a)
                 assert_equal(xm, y // a)
-                assert_equal(xm.mask, m | (a == t(0)).filled(True))
+                assert_equal(xm.mask, m)
 
-                assert_equal(len(w), 0, "Failed on type=%s." % t)
+                assert_equal(len(w), 4, "Failed on type=%s." % t)
 
     def test_inplace_division_scalar_type(self):
         # Test of inplace division
@@ -2093,7 +2087,7 @@ class TestMaskedArrayInPlaceArithmetics:
                 try:
                     xm /= a
                     assert_equal(xm, y / a)
-                    assert_equal(xm.mask, m | (a == t(0)).filled(True))
+                    assert_equal(xm.mask, m)
                 except (DeprecationWarning, TypeError) as e:
                     warnings.warn(str(e), stacklevel=1)
 
@@ -3058,20 +3052,19 @@ class TestMaskedArrayFunctions:
         x = MaskedScalar(-1.1)
         assert_almost_equal(np.power(x, 2.).filled(), 1.21)
         assert_(np.power(x, X).mask)
-        x = MaskedArray([-1.1, -1.1, 1.1, 1.1, 0.])
-        b = MaskedArray([0.5, 2., 0.5, 2., -1.], mask=[0, 0, 0, 0, 1])
+        x = MaskedArray([-1.1, -1.1, 1.1, 1.1, 0.,   X])
+        b = MaskedArray([ 0.5,   2., 0.5,  2.,  X, 1.0])
         y = np.power(x, b)
-        assert_almost_equal(y.filled(), [0, 1.21, 1.04880884817, 1.21, 0.])
-        assert_equal(y.mask, [1, 0, 0, 0, 1])
-        b = MaskedArray([0.5, 2., 0.5, 2., -1.])
+        assert_almost_masked_equal(y, 
+                              MaskedArray([np.nan, 1.21, 1.1**0.5, 1.21, X, X]))
+        b = MaskedArray([0.5, 2., 0.5, 2., -1., -1])
         y = np.power(x, b)
-        assert_equal(y.mask, [1, 0, 0, 0, 1])
+        assert_almost_masked_equal(y, 
+                         MaskedArray([np.nan, 1.21, 1.1**0.5, 1.21, np.inf, X]))
         z = x ** b
-        assert_equal(z.mask, y.mask)
-        assert_almost_equal(z.filled(), y.filled())
+        assert_masked_equal(z, y)
         x **= b
-        assert_equal(x.mask, y.mask)
-        assert_almost_equal(x.filled(), y.filled())
+        assert_masked_equal(x, y)
 
     def test_power_with_broadcasting(self):
         # Test power w/ broadcasting
@@ -3339,7 +3332,7 @@ class TestMaskedArrayFunctions:
         
         b = MaskedArray([X,X], dtype='f')
         u, i, c = np.unique(b, return_inverse=True, return_counts=True)
-        assert_equal(u, MaskedArray([X]))
+        assert_equal(u, MaskedArray([X], dtype=u.dtype))
         assert_equal(i, np.array([0, 0]))
         assert_equal(c, np.array([2]))
 
@@ -3348,9 +3341,9 @@ class TestMaskedArrayFunctions:
         assert_equal(np.broadcast_to(X('f'), (3,4)).filled(1), np.ones((3,4)))
 
     def test_interp(self):
-        v = np.interp(linspace(0,12,10), [1,2,4,7,10],
+        v = np.interp(np.linspace(0,12,10), [1,2,4,7,10],
                    MaskedArray([1, 2, X, 2, 10]), left=4, right=X)
-        assert_masked_equal(v, MaskedArray([4., 1.33333333, X, X, X, X, 
+        assert_almost_masked_equal(v, MaskedArray([4., 1.33333333, X, X, X, X, 
                                             4.66666667, 8.22222222, X, X ]))
 
 class TestMaskedObjectArray:
