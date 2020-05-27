@@ -618,10 +618,12 @@ class TestMaskedArray:
 
     def test_filled_with_f_order(self):
         # Test filled w/ F-contiguous array
-        a = MaskedArray(np.array([(0, 1, 2), (4, 5, 6)], order='F'),
-                  mask=np.array([(0, 0, 1), (1, 0, 0)], order='F'),
-                  order='F')  # this is currently ignored
-        assert_(a.flags['F_CONTIGUOUS'])
+        with suppress_warnings() as sup:
+            sup.filter(UserWarning, "order parameter of MaskedArray")
+            a = MaskedArray(np.array([(0, 1, 2), (4, 5, 6)], order='F'),
+                      mask=np.array([(0, 0, 1), (1, 0, 0)], order='F'),
+                      order='F')  # this is currently ignored
+        assert_(a._data.flags['F_CONTIGUOUS'])
         assert_(a.filled(0).flags['F_CONTIGUOUS'])
 
     def test_fancy_printoptions(self):
@@ -1732,7 +1734,8 @@ class TestMaskedArrayInPlaceArithmetics:
 
         x /= 2.0
         assert_equal(x, y / 2.0)
-        xm /= np.arange(10)
+        with pytest.warns(RuntimeWarning, match='invalid value'):
+            xm /= np.arange(10)
         assert_masked_equal(xm, MaskedArray([np.nan, 1, X, 1, 1, 1, 1, 1, 1,1]))
 
     def test_inplace_division_array_float(self):
@@ -1744,22 +1747,28 @@ class TestMaskedArrayInPlaceArithmetics:
         m = xm.mask
         a = MaskedArray(np.arange(10, dtype=float))
         a[-1] = X
-        x /= a
-        xm /= a
-        assert_equal(x, y / a)
-        assert_equal(xm, y / a)
-        assert_equal(xm.mask, m)
+        with pytest.warns(RuntimeWarning) as record:
+            x /= a
+            xm /= a
+            assert_equal(x, y / a)
+            assert_equal(xm, y / a)
+            assert_equal(xm.mask, m)
+        assert(len(record) == 4) # div by zero
 
     def test_inplace_division_misc(self):
         x = MaskedArray([X, 1, 1, -2, pi / 2., 4, X, -10., 10., 1., 2., 3.])
         y = MaskedArray([5, 0, X,  2,     -1., X, X, -10., 10., 1., 0., X])
         control = MaskedArray([X, np.inf, X, -1,-pi/2, X, X, 1, 1, 1, np.inf,X])
 
-        z = x / y
+        with pytest.warns(RuntimeWarning) as record:
+            z = x / y
+        assert(len(record) == 2) # invalid val, div by zero
         assert_masked_equal(z, control)
 
         x = x.copy()
-        x /= y
+        with pytest.warns(RuntimeWarning) as record:
+            x /= y
+        assert(len(record) == 2) # invalid val, div by zero
         assert_masked_equal(x, control)
 
     def test_add(self):
@@ -2067,7 +2076,7 @@ class TestMaskedArrayInPlaceArithmetics:
                 sup.record(UserWarning)
                 (x, y, xm) = (_.astype(t) for _ in self.uint8data)
                 m = xm.mask
-                a = MaskedArray(np.arange(10, dtype=t))
+                a = MaskedArray(np.arange(1, 11, dtype=t))
                 a[-1] = X
 
                 # May get a DeprecationWarning or a TypeError.
@@ -3054,16 +3063,23 @@ class TestMaskedArrayFunctions:
         assert_(np.power(x, X).mask)
         x = MaskedArray([-1.1, -1.1, 1.1, 1.1, 0.,   X])
         b = MaskedArray([ 0.5,   2., 0.5,  2.,  X, 1.0])
-        y = np.power(x, b)
+        with pytest.warns(RuntimeWarning, match='invalid value'):
+            y = np.power(x, b)
         assert_almost_masked_equal(y, 
                               MaskedArray([np.nan, 1.21, 1.1**0.5, 1.21, X, X]))
         b = MaskedArray([0.5, 2., 0.5, 2., -1., -1])
-        y = np.power(x, b)
+        with pytest.warns(RuntimeWarning) as record:
+            y = np.power(x, b)
+        assert(len(record) == 2) # invalid val, div by zero
         assert_almost_masked_equal(y, 
                          MaskedArray([np.nan, 1.21, 1.1**0.5, 1.21, np.inf, X]))
-        z = x ** b
+        with pytest.warns(RuntimeWarning) as record:
+            z = x ** b
+        assert(len(record) == 2) # invalid val, div by zero
         assert_masked_equal(z, y)
-        x **= b
+        with pytest.warns(RuntimeWarning) as record:
+            x **= b
+        assert(len(record) == 2) # invalid val, div by zero
         assert_masked_equal(x, y)
 
     def test_power_with_broadcasting(self):
@@ -3345,6 +3361,48 @@ class TestMaskedArrayFunctions:
                    MaskedArray([1, 2, X, 2, 10]), left=4, right=X)
         assert_almost_masked_equal(v, MaskedArray([4., 1.33333333, X, X, X, X, 
                                             4.66666667, 8.22222222, X, X ]))
+
+    def test_quntile(self):
+        data = np.array([[[0.25515513, 0.81984257, 0.26292477],
+                          [0.98868172, 0.13840085, 0.92959184],
+                          [0.61194388, 0.80812464, 0.58633275]],
+                         [[0.82612799, 0.02958672, 0.64152733],
+                          [0.12933993, 0.71415531, 0.46514879],
+                          [0.70051523, 0.76018618, 0.0172671 ]],
+                         [[0.84570913, 0.62145495, 0.01087859],
+                          [0.52438135, 0.82609156, 0.21855111],
+                          [0.82448953, 0.77798911, 0.3643823 ]]])
+        x = MaskedArray(data)
+        x[:,:,-1] = X
+        d = data[:,:,:-1]
+        
+        # test scalar case
+        res = np.quantile(x, 0.2)
+        assert_(isinstance(res, MaskedScalar))
+        assert_equal(res.filled(), np.quantile(d, 0.2))
+    
+        # test different combinations of axis and q
+        assert_equal(np.quantile(x, [0.2, 0.5]).filled(), 
+                     np.quantile(d, [0.2, 0.5]))
+        assert_equal(np.quantile(x, [0.2, 0.5], axis=2).filled(), 
+                     np.quantile(d, [0.2, 0.5], axis=2))
+        assert_equal(np.quantile(x, 0.2, axis=(1,2)).filled(), 
+                     np.quantile(d, 0.2, axis=(1,2)))
+        assert_equal(np.quantile(x, [0.2, 0.5], axis=(1,2)).filled(), 
+                     np.quantile(d, [0.2, 0.5], axis=(1,2)))
+        res = MaskedArray(np.empty((2,3,3)), mask=True)
+        res[:,:,:-1] = np.quantile(d, [0.2, 0.5], axis=1)
+        assert_masked_equal(np.quantile(x, [0.2, 0.5], axis=1), res)
+
+        # test keepdims
+        assert_equal(np.quantile(x, 0.2, axis=1, keepdims=True).shape, (3,1,3))
+        assert_equal(np.quantile(x, [0.2,0.5], axis=1, keepdims=True).shape,
+                     (2, 3, 1, 3))
+        assert_equal(np.quantile(x, [0.2,0.5], axis=(1,2), keepdims=True).shape,
+                     (2, 3, 1, 1))
+        assert_equal(np.quantile(x, 0.2, axis=(1,2), keepdims=True).shape,
+                     (3, 1, 1))
+
 
 class TestMaskedObjectArray:
 

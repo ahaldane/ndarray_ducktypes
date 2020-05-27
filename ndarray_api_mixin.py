@@ -60,7 +60,8 @@ class NDArrayAPIMixin:
         return np.nonzero(self)
 
     def partition(self, kth, axis=-1, kind='introselect', order=None):
-        return np.partition(self, kth, axis, kind, order)
+        # Note: uses a temp copy. Subclasses may want to optimize this.
+        self[:] = np.partition(self, kth, axis, kind, order)
 
     def prod(self, axis=None, dtype=None, out=None, keepdims=False):
         return np.prod(self, axis, dtype, out, keepdims)

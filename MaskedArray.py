@@ -11,6 +11,7 @@ import numpy.core.numerictypes as ntypes
 from numpy.core.multiarray import (normalize_axis_index,
     interp as compiled_interp, interp_complex as compiled_interp_complex)
 from numpy.lib.stride_tricks import _broadcast_shape
+from numpy.core.numeric import normalize_axis_tuple
 import operator
 import warnings
 
@@ -153,7 +154,7 @@ def duck_require(data, dtype=None, ndmin=0, copy=True, order='K'):
         data = data.astype(dtype, order=order)
 
     if order != 'K' and order is not None:
-        warnings.warn('order parameter of MaskedArray is gnored')
+        warnings.warn('order parameter of MaskedArray is ignored')
 
     if ndmin != 0 and data.ndim < ndmin:
         nd = ndmin - data.ndim
@@ -490,23 +491,6 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         self._data.resize(new_shape, refcheck)
         self._mask.resize(new_shape, refcheck)
 
-# Ndarrays return scalars when "fully indexed" (integer at each axis). Ducktype
-# implementors need to mimic this. However, they often want the scalars to
-# behave specially - eg be masked for MaskedArray. I see a few different
-# scalar strategies:
-# 1. Make a MaskedScalar class which wraps all scalars. This is implemented
-#    below. Problem: It fails code which uses "isisntance(np.int32)". But maybe
-#    that is good to force people to use `filled` before using this way.
-# 2. Subclass each numpy scalar type individually to keep parent methods and
-#    use super(), but modify the repr, add a "filled" method and fillvalue.
-#    Problem: 1. currently subclassing numpy scalars does not work properly. 2.
-#    Other code is not aware of the mask and ignores it.
-# 3. return normal numpy scalars for unmasked values, and return separate masked
-#    values when masked. How to implement the masked values? As in #2?
-# 4. Like #3 but return a "masked" singleton for masked values like in the old
-#    MaskedArray. Problem: it has a fixed dtype of float64 causing lots of
-#    casting bugs, and unintentionally modifying the singleton (not too hard to
-#    do) leads to bugs. Also fails the isinstance checks, and more.
 
 class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
     "An ndarray scalar ducktype allowing the value to be masked"
@@ -729,6 +713,7 @@ def replace_X(data, dtype=None):
 
     return replace(data)
 
+# used by marr.flat
 class MaskedIterator:
     def __init__(self, ma):
         self.dataiter = ma._data.flat
@@ -1542,7 +1527,7 @@ def setup_ducktype():
         if weights is None:
             avg = a.mean(axis)
             if returned:
-                return avg, avg.dtype.dtype(a.count(axis)/avg.count(axis))
+                return avg, avg.dtype.type(a.count(axis))
             return avg
 
         if issubclass(a.dtype.type, (np.integer, np.bool_)):
@@ -1588,14 +1573,131 @@ def setup_ducktype():
             return avg, scl
         return avg
 
-    #@implements(np.median)
-    #def median(a, axis=None, out=None, overwrite_input=False, keepdims=False):
-    #    return np.percentile(a, q=50., axis=axis, out=out,
-    #                      overwrite_input=overwrite_input,
-    #                      interpolation="linear", keepdims=keepdims)
+    def _move_reduction_axis_last(a, axis=None):
+        """
+        Modified from numpy.lib.function_base._ureduce.
 
-    #@implements(np.percentile)
-    #@implements(np.quantile)
+        Reshape/transpose array so desired axes are grouped at the end.
+
+        Parameters
+        ----------
+        a : array_like
+            Input array or object that can be converted to an array.
+        axis : int or iterable of ints
+            axes or axis to reduce
+
+        Returns
+        -------
+        arr : ndarray
+            Input ndarray with iteration axis/axes moved to be a single axis
+            at the end.
+        keepdims : tuple
+            a.shape with axis dims set to 1 which can be used to reshape the
+            result of a reduction to the same shape a ufunc with keepdims=True
+            would produce.
+
+        """
+        if axis is not None:
+            keepdim = list(a.shape)
+            nd = a.ndim
+            axis = normalize_axis_tuple(axis, nd)
+
+            for ax in axis:
+                keepdim[ax] = 1
+
+            if len(axis) == 1:
+                # arr, with the iteration axis at the end
+                ax = axis[0]
+                dims = list(range(a.ndim))
+                a = np.transpose(a, dims[:ax] + dims[ax+1:] + [ax])
+            else:
+                keep = set(range(nd)) - set(axis)
+                nkeep = len(keep)
+                # swap axis that should not be reduced to front
+                for i, s in enumerate(sorted(keep)):
+                    a = a.swapaxes(i, s)
+                # merge reduced axis
+                a = a.reshape(a.shape[:nkeep] + (-1,))
+
+            keepdim = tuple(keepdim)
+        else:
+            keepdim = (1,) * a.ndim
+            a = a.ravel()
+
+        return a, keepdim
+
+    @implements(np.median)
+    def median(a, axis=None, out=None, overwrite_input=False, keepdims=False):
+        return np.quantile(a, 0.5, axis=axis, out=out,
+                            overwrite_input=overwrite_input,
+                            interpolation='midpoint', keepdims=keepdims)
+
+    @implements(np.percentile)
+    def percentile(a, q, axis=None, out=None, overwrite_input=False,
+                   interpolation='linear', keepdims=False):
+        q = np.true_divide(q, 100)
+        q = np.asanyarray(q)  # undo any decay the ufunc performed (gh-13105)
+        if not _quantile_is_valid(q):
+            raise ValueError("Percentiles must be in the range [0, 100]")
+        return _quantile_unchecked(
+            a, q, axis, out, overwrite_input, interpolation, keepdims)
+
+    @implements(np.quantile)
+    def quantile(a, q, axis=None, out=None, overwrite_input=False,
+                 interpolation='linear', keepdims=False):
+        q = np.asanyarray(q)
+        if not _quantile_is_valid(q):
+            raise ValueError("Quantiles must be in the range [0, 1]")
+        return _quantile_unchecked(
+            a, q, axis, out, overwrite_input, interpolation, keepdims)
+
+    def _quantile_unchecked(a, q, axis=None, out=None, overwrite_input=False,
+                            interpolation='linear', keepdims=False):
+        """Assumes that q is in [0, 1], and is an ndarray"""
+
+        a, kdim = _move_reduction_axis_last(a, axis)
+
+        if len(q.shape) > 1:
+            raise ValueError("q must be a scalar or 1d array")
+
+        out_shape = (q.size,) + a.shape[:-1]
+
+        if out is None:
+            dt = np.promote_types(a.dtype, np.float64)
+            out = MaskedArray(np.empty(out_shape, dtype=dt))
+        elif out.shape != out_shape:
+            raise ValueError('out has wrong shape')
+
+        inds = np.ndindex(a.shape[:-1])
+        inds = (ind + (Ellipsis,) for ind in inds)
+        for ind in inds:
+            ai = a[ind]
+            dat = ai._data[~ai.mask]
+            oind = (slice(None),) + ind
+            if dat.size == 0:
+                out[oind] = X
+            else:
+                out[oind] = np.quantile(dat, q, interpolation=interpolation)
+
+        # return a scalar in simple case
+        if q.shape == () and axis is None:
+            return out[0]
+
+        out_dim = kdim if keepdims else a.shape[:-1]
+        return out.reshape(q.shape + out_dim)
+
+    def _quantile_is_valid(q):
+        # avoid expensive reductions, eg for arrays with < O(1000) elements
+        if q.ndim == 1 and q.size < 10:
+            for i in range(q.size):
+                if q[i] < 0.0 or q[i] > 1.0:
+                    return False
+        else:
+            # faster than any()
+            if np.count_nonzero(q < 0.0) or np.count_nonzero(q > 1.0):
+                return False
+        return True
+
     #@implements(np.cov)
     #@implements(np.corrcoef)
 
@@ -2557,7 +2659,7 @@ def setup_ducktype():
             raise ValueError("diff requires input that is at least one "
                              "dimensional")
         axis = normalize_axis_index(axis, nd)
-    
+
         inputs = [a, prepend, append]
         inputs = [i for i in inputs if is_ndducktype(i)]
         cls = get_mask_cls(*inputs)
@@ -2596,7 +2698,7 @@ def setup_ducktype():
             a = op(a[slice1], a[slice2])
 
         return a
-    
+
     def _interp_checkarg(args, kwds, types, known_types):
         if builtins.any(is_ndducktype(x) and not isinstance(x, np.ndarray)
                         for x in args[:2]):
@@ -2606,7 +2708,7 @@ def setup_ducktype():
 
     @implements(np.interp, checked_args=_interp_checkarg)
     def interp(x, xp, fp, left=None, right=None, period=None):
-        
+
         # convert appropriate args to common masked class
         objs = [fp]
         if left is not None and left is not X:
@@ -2654,7 +2756,7 @@ def setup_ducktype():
             fp = fp[asort_xp]
             xp = np.concatenate((xp[-1:]-period, xp, xp[0:1]+period))
             fp = np.concatenate((fp[-1:], fp, fp[0:1]))
-        
+
         leftd = None if left is None else left.filled(0)
         rightd = None if right is None else right.filled(0)
         ret_data = interp_func(x, xp, fp.filled(0, view=True), leftd, rightd)
