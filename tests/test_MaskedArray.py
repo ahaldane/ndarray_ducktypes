@@ -4063,12 +4063,12 @@ if __name__ == '__main__':
             continue
         if f not in HANDLED_FUNCTIONS:
             n_missing += 1
-            #print(a)
+            print("Missing:", a)
             pass
         else:
             n_implemented += 1
         #    print("Have", a)
-    #print("Total api:   ", len(api))
-    #print("Skipped:     ", n_skipped)
-    #print("Implemented: ", n_implemented)
-    #print("Missing:     ", n_missing)
+    print("Total api:   ", len(api))
+    print("Skipped:     ", n_skipped)
+    print("Implemented: ", n_implemented)
+    print("Missing:     ", n_missing)

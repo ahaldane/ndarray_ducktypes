@@ -259,7 +259,12 @@ Encapsulation is easy to implement, but it is missing  some desirable features: 
 To control these behaviors we recommend you combine or subclass `MaskedArray` and the other ducktype to create a composite type. [TODO: example subclass]
 
 
+Statistical Functions
+=====================
 
+It is often ambiguous how to implement missing values in many of the more complex statistical functions, such correlation coefficients. This MaskedArray implementation makes choices which can have benefits and drawbacks in different situations, described here.
+
+First in `np.cov` MaskedArray computes each covariance value separately by simply leaving out the masked datapoints when taking each expectation value. This can lead to a covariance matrix which is not positive semi-definite. In many cases a more involved approach is needed to estimate covariance matrices with missing data, many ways are documented in the scientific literature.
 
 
 
