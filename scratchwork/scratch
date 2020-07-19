@@ -1,0 +1,44 @@
+
+
+# Ndarrays return scalars when "fully indexed" (integer at each axis). Ducktype
+# implementors need to mimic this. However, they often want the scalars to
+# behave specially - eg be masked for MaskedArray. I see a few different
+# scalar strategies:
+# 1. Make a MaskedScalar class which wraps all scalars. This is implemented
+#    below. Problem: It fails code which uses "isisntance(np.int32)". But maybe
+#    that is good to force people to use `filled` before using this way.
+# 2. Subclass each numpy scalar type individually to keep parent methods and
+#    use super(), but modify the repr, add a "filled" method and fillvalue.
+#    Problem: 1. currently subclassing numpy scalars does not work properly. 2.
+#    Other code is not aware of the mask and ignores it.
+# 3. return normal numpy scalars for unmasked values, and return separate masked
+#    values when masked. How to implement the masked values? As in #2?
+# 4. Like #3 but return a "masked" singleton for masked values like in the old
+#    MaskedArray. Problem: it has a fixed dtype of float64 causing lots of
+#    casting bugs, and unintentionally modifying the singleton (not too hard to
+#    do) leads to bugs. Also fails the isinstance checks, and more.
+
+
+# Flags object for MaskedArray only supports "WRITEABLE" flag
+class MaskedFlagsObj:
+    def __init__(writeable=True):
+        self._writeable = writeable
+
+    def __getattr__(self, attr):
+        return self[attr]
+
+    def __setattr__(self, attr, val):
+        self[attr] = val
+
+    def __getitem__(self, ind):
+        if ind == 'WRITEABLE':
+            return self._writeable
+        raise KeyError('Unknown flag')
+
+    def __setitem__(self, ind, val):
+        if ind == 'WRITEABLE':
+            self._writeable = bool(val)
+        raise KeyError('Unknown flag')
+
+    def __repr__(self):
+        return repr({'WRITEABLE': self.writeable})
