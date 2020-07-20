@@ -1148,7 +1148,7 @@ def implements(numpy_function, checked_args=None):
 
         If a function, should take four arguments, the "args" "kwds" and "types"
         argument of "array_function" and a list of "known_types". An iterable
-        of types may be returned to checked to be of known class, or a
+        of types may be returned to be checked to be of known class, or a
         NotImplementedError may be raised to signal no match.
 
     Notes
@@ -1530,13 +1530,16 @@ def setup_ducktype():
                 return avg, avg.dtype.type(a.count(axis))
             return avg
 
+        wgt = weights if is_ndducktype(weights) else np.array(weights)
+
+        if isinstance(wgt, MaskedArray):
+            raise TypeError("weight must not be a MaskedArray")
+
         if issubclass(a.dtype.type, (np.integer, np.bool_)):
             result_dtype = np.result_type(a.dtype, wgt.dtype, 'f8')
         else:
             result_dtype = np.result_type(a.dtype, wgt.dtype)
             # Note: No float16 special case, since ndarray.average skips it
-
-        wgt = weights
 
         # Sanity checks
         if a.shape != wgt.shape:
@@ -1554,14 +1557,10 @@ def setup_ducktype():
             # setup wgt to broadcast along axis
             wgt = np.broadcast_to(wgt, (a.ndim-1)*(1,) + wgt.shape)
             wgt = wgt.swapaxes(-1, axis)
+            if wgt.shape != a.shape:
+                wgt = np.broadcast_to(wgt, a.shape)
 
-        if isinstance(wgt, MaskedArray):
-            mask = a._mask | wgt._mask
-            wgt = type(wgt)(wgt._data, mask)
-            a = type(a)(a._data, mask)
-        else:
-            wgt = type(wgt)(wgt, a._mask)
-
+        wgt = MaskedArray(wgt, a._mask)
         scl = wgt.sum(axis=axis, dtype=result_dtype)
         if np.any(scl == 0.0):
             raise ZeroDivisionError(
@@ -1698,8 +1697,142 @@ def setup_ducktype():
                 return False
         return True
 
-    #@implements(np.cov)
-    #@implements(np.corrcoef)
+    def cov_impl_check(args, kwds, typs, knwn):
+        chk = (type(args[0]),)
+        if 'y' in kwds:
+            chk += (type(kwds['y']))
+        return chk
+
+    @implements(np.cov, checked_args=cov_impl_check)
+    def cov(m, y=None, rowvar=True, bias=False, ddof=None, fweights=None,
+            aweights=None):
+        # Check inputs
+        if ddof is not None and ddof != int(ddof):
+            raise ValueError(
+                "ddof must be integer")
+
+        # Handles complex arrays too
+        if not is_ndducktype(m):
+            m = np.maskedarray(m)
+        if m.ndim > 2:
+            raise ValueError("m has more than 2 dimensions")
+
+        if y is None:
+            dtype = np.result_type(m, np.float64)
+        else:
+            if not is_ndducktype(y):
+                y = type(x)(y)
+            if y.ndim > 2:
+                raise ValueError("y has more than 2 dimensions")
+            dtype = np.result_type(m, y, np.float64)
+
+        X = MaskedArray(m, ndmin=2, dtype=dtype)
+        if not rowvar and X.shape[0] != 1:
+            X = X.T
+        if X.shape[0] == 0:
+            return MaskedArray([]).reshape(0, 0)
+        if y is not None:
+            y = MaskedArray(y, copy=False, ndmin=2, dtype=dtype)
+            if not rowvar and y.shape[0] != 1:
+                y = y.T
+            X = np.concatenate((X, y), axis=0)
+
+        if ddof is None:
+            if bias == 0:
+                ddof = 1
+            else:
+                ddof = 0
+
+        # Get the product of frequencies and weights
+        w = None
+        if fweights is not None:
+            fweights = np.asarray(fweights, dtype=float)
+            if not np.all(fweights == np.around(fweights)):
+                raise TypeError(
+                    "fweights must be integer")
+            if fweights.ndim > 1:
+                raise RuntimeError(
+                    "cannot handle multidimensional fweights")
+            if fweights.shape[0] != X.shape[1]:
+                raise RuntimeError(
+                    "incompatible numbers of samples and fweights")
+            if np.any(fweights < 0):
+                raise ValueError(
+                    "fweights cannot be negative")
+            w = fweights
+        if aweights is not None:
+            aweights = np.asarray(aweights, dtype=float)
+            if aweights.ndim > 1:
+                raise RuntimeError(
+                    "cannot handle multidimensional aweights")
+            if aweights.shape[0] != X.shape[1]:
+                raise RuntimeError(
+                    "incompatible numbers of samples and aweights")
+            if np.any(aweights < 0):
+                raise ValueError(
+                    "aweights cannot be negative")
+            if w is None:
+                w = aweights
+            else:
+                w *= aweights
+
+        avg = np.average(X, axis=1, weights=w)
+
+        X -= avg[:, None]
+        if w is None:
+            X_T = X.T
+        else:
+            X_T = (X*w).T
+        c = np.dot(X, X_T.conj())
+
+        # Determine the normalization
+        nomask = ~X.mask
+        wnm = nomask.astype(dtype) if w is None else w*nomask
+        w_sum = np.dot(wnm, nomask.T)
+        if ddof == 0:
+            fact = w_sum
+        elif aweights is None:
+            fact = w_sum - ddof
+        else:
+            a_sum = np.dot(w*aweights*nomask, nomask.T)
+            fact = w_sum - ddof*a_sum/w_sum
+
+        nonpos_fact = fact <= 0
+        if np.any(nonpos_fact):
+            warnings.warn("Degrees of freedom <= 0 for slice",
+                          RuntimeWarning, stacklevel=3)
+            fact[nonpos_fact] = X
+
+        c *= np.true_divide(1, fact)
+        return c.squeeze()
+
+    @implements(np.corrcoef, checked_args=(0,1))
+    def corrcoef(x, y=None, rowvar=True, bias=np._NoValue, ddof=np._NoValue):
+        if bias is not np._NoValue or ddof is not np._NoValue:
+            # 2015-03-15, 1.10
+            warnings.warn('bias and ddof have no effect and are deprecated',
+                          DeprecationWarning, stacklevel=3)
+        c = np.cov(x, y, rowvar)
+        try:
+            d = np.diag(c)
+        except ValueError:
+            # scalar covariance
+            # nan if incorrect value (nan, inf, 0), 1 otherwise
+            return c / c
+        stddev = np.sqrt(d.real)
+        c /= stddev[:, None]
+        c /= stddev[None, :]
+
+        # Clip real and imaginary parts to [-1, 1].  This does not guarantee
+        # abs(a[i,j]) <= 1 for complex arrays, but is the best we can do without
+        # excessive work.
+        cd = c._data
+        with np.errstate(invalid='ignore'):
+            np.clip(cd.real, -1, 1, out=cd.real)
+            if np.iscomplexobj(cd):
+                np.clip(cd.imag, -1, 1, out=cd.imag)
+
+        return c
 
     @implements(np.clip)
     def clip(a, a_min, a_max, out=None):

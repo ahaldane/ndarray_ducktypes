@@ -66,7 +66,7 @@ MaskedArray([[1, X, 3],
 `MaskedArray` Basic Attributes
 -----------------------------
 
-`MaskedArray` and `MaskedScalar` support two new attributes relative to `ndarray`:
+`MaskedArray` and `MaskedScalar` support a few new attributes relative to `ndarray`:
 
 The `.filled` method  returns a copy of the `MaskedArray`s data as a plain `ndarray`, with all masked elements replaced by a fill value, which is 0 by default. The `.filled()` method is the primary way of converting a `MaskedArray` back to an `ndarray`.
 
@@ -87,7 +87,9 @@ array([[False,  True, False],
 ```
 This is readonly to prevent exposure of uninitialized values to the user. To mask elements you should use assignment with `X` as described below. 
 
-Otherwise `MaskedArray` supports most of the basic attributes of `ndarrays` like `.shape`, `.dtype`, `.strides` and others, with a few exceptions such as `.base`.
+`MaskedArray` also has a new method, `.count`, which counts up the number of unmasked elements, along given axes.
+
+Otherwise `MaskedArray` supports most of the basic attributes of `ndarrays` like `.shape`, `.dtype`, `.strides` and others, with a few exceptions such as `.base` as noted below.
 
 MaskedScalars and the masked input marker `X`
 ---------------------------------------------
@@ -262,10 +264,11 @@ To control these behaviors we recommend you combine or subclass `MaskedArray` an
 Statistical Functions
 =====================
 
-It is often ambiguous how to implement missing values in many of the more complex statistical functions, such correlation coefficients. This MaskedArray implementation makes choices which can have benefits and drawbacks in different situations, described here.
+It is often ambiguous how to implement missing values in many of the more complex statistical functions, such correlation coefficients. This MaskedArray implementation makes choices which might not be appropriate for some applications.
 
-First in `np.cov` MaskedArray computes each covariance value separately by simply leaving out the masked datapoints when taking each expectation value. This can lead to a covariance matrix which is not positive semi-definite. In many cases a more involved approach is needed to estimate covariance matrices with missing data, many ways are documented in the scientific literature.
+For `np.mean` and `np.average` MaskedArray will ignore masked elements and will normalize only according to the unmasked elements, including when weights are used in `np.average`.
 
+For `np.cov` MaskedArray computes each covariance value separately by leaving out the masked datapoints when taking expectation values. If the normalization factor is less than or equal to 0, the corresponding output element will be masked. While simple, this method can lead to a covariance matrix which is not positive semi-definite causing problems in some applications. Depending on your use-case, you may want to instead implement one of the many alternate methods to estimate covariance matrices with missing data documented in the scientific literature, as suitable for your application. `np.corrcoef` behaves likewise.
 
 
 Appendix: Behavior Changes relative to np.ma.MaskedArray
