@@ -14,6 +14,8 @@ from numpy.lib.stride_tricks import _broadcast_shape
 from numpy.core.numeric import normalize_axis_tuple
 import operator
 import warnings
+from inspect import signature
+from collections.abc import Iterable
 
 # IDEAS:
 #
@@ -76,19 +78,13 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_FUNCTIONS:
             return NotImplemented
-        impl, checked_args = HANDLED_FUNCTIONS[func]
+        impl, check_args = HANDLED_FUNCTIONS[func]
 
-        if checked_args is not None:
-            if isinstance(checked_args, tuple):
-                types = (type(a) for n,a in enumerate(args)
-                         if n in checked_args)
-            elif callable(checked_args):
-                try:
-                    types = checked_args(args, kwargs, types, self.known_types)
-                except NotImplementedError:
-                    return NotImplemented
-            else:
-                raise ValueError("unexpected checked_args type")
+        if check_args is not None:
+            try:
+                types = check_args(args, kwargs, types, self.known_types)
+            except NotImplementedError:
+                return NotImplemented
 
         #types are allowed to be Masked* or plain ndarrays
         if types != [] and not all((issubclass(t, self.known_types) or
@@ -1139,17 +1135,19 @@ def implements(numpy_function, checked_args=None):
     """
     Register an __array_function__ implementation for MaskedArray objects.
 
-    checked_args : tuple of integers, function
+    checked_args : tuple of integers, function, optional
         If not provided, all entries in the "types" list from numpy
         dispatch are checked to be of known class.
 
-        If a tuple of integers, only those indices in the "args" list of
-        numpy dispatch are checked to be of known class.
+        If an iterable of argument names, those arguments are checked to be of
+        known class if supplied.
 
-        If a function, should take four arguments, the "args" "kwds" and "types"
-        argument of "array_function" and a list of "known_types". An iterable
-        of types may be returned to be checked to be of known class, or a
-        NotImplementedError may be raised to signal no match.
+        If a function, should take four arguments,
+        (args, kwds, types, known_types) where args, kwds, types are the
+        same as supplied to __array_function__, and "known_types" is a list of
+        compatible types. An iterable of types may be returned to be checked to
+        be of known class, or a NotImplementedError may be raised to signal no
+        match.
 
     Notes
     -----
@@ -1157,12 +1155,24 @@ def implements(numpy_function, checked_args=None):
     checked_args is most powerful since it can be used to implement any
     desired behavior based purely on the dispatch "args" by raising
     NotImplementedError. This includes the behaviors obtained by giving a
-    callable return an iterable of types, of using a tuple, or not providing
+    callable return an iterable of , of using a tuple, or not providing
     checked_args, so these latter forms are for convenience only.
     """
+
     def decorator(func):
-        HANDLED_FUNCTIONS[numpy_function] = (func, checked_args)
+        if isinstance(checked_args, Iterable):
+            sig = signature(func)
+            def checked_args_func(args, kwargs, types, known_types):
+                bound = sig.bind(*args, *kwargs).arguments
+                return (type(bound[a]) for a in checked_args if a in bound)
+        elif checked_args is None:
+            checked_args_func = None
+        else:
+            checked_args_func = checked_args
+
+        HANDLED_FUNCTIONS[numpy_function] = (func, checked_args_func)
         return func
+
     return decorator
 
 def get_mask_cls(*args):
@@ -1319,7 +1329,7 @@ def setup_ducktype():
         ranks[a._mask] = _min_filler[ranks.dtype]
         return np.argpartition(ranks, kth, axis, kind)
 
-    @implements(np.searchsorted, checked_args=(1,))
+    @implements(np.searchsorted, checked_args=('v',))
     def searchsorted(a, v, side='left', sorter=None):
 
         if isinstance(a, MaskedArray):
@@ -1522,7 +1532,7 @@ def setup_ducktype():
             ret = np.sqrt(ret)
         return ret
 
-    @implements(np.average, checked_args=(0,))
+    @implements(np.average, checked_args=('a',))
     def average(a, axis=None, weights=None, returned=False):
         if weights is None:
             avg = a.mean(axis)
@@ -1697,13 +1707,7 @@ def setup_ducktype():
                 return False
         return True
 
-    def cov_impl_check(args, kwds, typs, knwn):
-        chk = (type(args[0]),)
-        if 'y' in kwds:
-            chk += (type(kwds['y']),)
-        return chk
-
-    @implements(np.cov, checked_args=cov_impl_check)
+    @implements(np.cov, checked_args=('m', 'y'))
     def cov(m, y=None, rowvar=True, bias=False, ddof=None, fweights=None,
             aweights=None):
         # Check inputs
@@ -1806,7 +1810,7 @@ def setup_ducktype():
         c *= np.true_divide(1, fact)
         return c.squeeze()
 
-    @implements(np.corrcoef, checked_args=(0,1))
+    @implements(np.corrcoef, checked_args=('x', 'y'))
     def corrcoef(x, y=None, rowvar=True, bias=np._NoValue, ddof=np._NoValue):
         if bias is not np._NoValue or ddof is not np._NoValue:
             # 2015-03-15, 1.10
@@ -2153,13 +2157,13 @@ def setup_ducktype():
         np.put(a._mask, indices, mask, mode)
         return None
 
-    @implements(np.take_along_axis, checked_args=(0,))
+    @implements(np.take_along_axis, checked_args=('arr',))
     def take_along_axis(arr, indices, axis):
         result_data = np.take_along_axis(arr._data, indices, axis)
         result_mask = np.take_along_axis(arr._mask, indices, axis)
         return maskedarray_or_scalar(result_data, result_mask, cls=type(arr))
 
-    @implements(np.put_along_axis, checked_args=(0,))
+    @implements(np.put_along_axis, checked_args=('arr',))
     def put_along_axis(arr, indices, values, axis):
         if isinstance(values, (MaskedArray, MaskedScalar)):
             np.put_along_axis(arr._mask, indices, values._mask, axis)
@@ -2305,11 +2309,11 @@ def setup_ducktype():
     def hstack(tup):
         return np.hstack.__wrapped__(tup)
 
-    @implements(np.array_split, checked_args=(0,))
+    @implements(np.array_split, checked_args=('ary',))
     def array_split(ary, indices_or_sections, axis=0):
         return np.array_split.__wrapped__(ary, indices_or_sections, axis)
 
-    @implements(np.split, checked_args=(0,))
+    @implements(np.split, checked_args=('ary',))
     def split(ary, indices_or_sections, axis=0):
         return np.split.__wrapped__(ary, indices_or_sections, axis)
 
@@ -2519,7 +2523,7 @@ def setup_ducktype():
     def argwhere(a):
         return np.transpose(np.nonzero(a))
 
-    @implements(np.choose, checked_args=(1,))
+    @implements(np.choose, checked_args=('choices',))
     def choose(a, choices, out=None, mode='raise'):
         if isinstance(a, (MaskedArray, MaskedScalar)):
             raise TypeError("choice indices should not be masked")
@@ -2735,7 +2739,7 @@ def setup_ducktype():
     def flatnonzero(a):
         return np.nonzero(np.ravel(a))[0]
 
-    @implements(np.histogram, checked_args=(0,))
+    @implements(np.histogram, checked_args=('a',))
     def histogram(a, bins=10, range=None, normed=None, weights=None,
                   density=None):
         a = a.ravel()
@@ -2746,7 +2750,7 @@ def setup_ducktype():
 
         return np.histogram(dat, bins, range, normed, weights, density)
 
-    @implements(np.histogram2d, checked_args=(0,1))
+    @implements(np.histogram2d, checked_args=('x', 'y'))
     def histogram2d(x, y, bins=10, range=None, normed=None, weights=None,
                     density=None):
         return np.histogram2d.__wrapped__(x, y, bins, range, normed, weights,
@@ -2941,10 +2945,14 @@ def setup_ducktype():
     def size(a):
         return a.size
 
-    @implements(np.copyto, checked_args=(0,))
+    @implements(np.copyto, checked_args=('dst',))
     def copyto(dst, src, casting='same_kind', where=True):
-        np.copyto(dst._data, src._data, casting, where)
-        np.copyto(dst._mask, src._mask, casting, where)
+        if isinstance(src, (MaskedArray, MaskedScalar)):
+            np.copyto(dst._data, src._data, casting, where)
+            np.copyto(dst._mask, src._mask, casting, where)
+        else:
+            np.copyto(dst._data, src, casting, where)
+            np.copyto(dst._mask, False, casting, where)
 
     @implements(np.putmask)
     def putmask(a, mask, values):
