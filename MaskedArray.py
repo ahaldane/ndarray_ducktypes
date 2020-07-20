@@ -1700,7 +1700,7 @@ def setup_ducktype():
     def cov_impl_check(args, kwds, typs, knwn):
         chk = (type(args[0]),)
         if 'y' in kwds:
-            chk += (type(kwds['y']))
+            chk += (type(kwds['y']),)
         return chk
 
     @implements(np.cov, checked_args=cov_impl_check)
