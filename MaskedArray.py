@@ -2276,15 +2276,51 @@ def moveaxis(a, source, destination):
 
 @implements(np.flip)
 def flip(m, axis=None):
-    return type(a)(np.flip(m._data, axis),
+    return type(m)(np.flip(m._data, axis),
                    np.flip(m._mask, axis))
 
-#@implements(np.rot90)
-#def rot90(m, k=1, axes=(0,1)):
-#    # XXX copy code from np.rot90 but remove asarray
+@implements(np.rot90)
+def rot90(m, k=1, axes=(0,1)):
+    axes = tuple(axes)
+    if len(axes) != 2:
+        raise ValueError("len(axes) must be 2.")
 
-#@implements(np.fliplr)
-#@implements(np.flipud)
+    if axes[0] == axes[1] or np.absolute(axes[0] - axes[1]) == m.ndim:
+        raise ValueError("Axes must be different.")
+
+    if (axes[0] >= m.ndim or axes[0] < -m.ndim
+        or axes[1] >= m.ndim or axes[1] < -m.ndim):
+        raise ValueError("Axes={} out of range for array of ndim={}."
+            .format(axes, m.ndim))
+
+    k %= 4
+
+    if k == 0:
+        return m[:]
+    if k == 2:
+        return np.flip(np.flip(m, axes[0]), axes[1])
+
+    axes_list = np.arange(0, m.ndim)
+    (axes_list[axes[0]], axes_list[axes[1]]) = (axes_list[axes[1]],
+                                                axes_list[axes[0]])
+
+    if k == 1:
+        return np.transpose(np.flip(m,axes[1]), axes_list)
+    else:
+        # k == 3
+        return np.flip(np.transpose(m, axes_list), axes[1])
+
+@implements(np.fliplr)
+def fliplr(m):
+    if m.ndim < 2:
+        raise ValueError("Input must be >= 2-d.")
+    return m[:, ::-1]
+
+@implements(np.flipud)
+def flipud(m):
+    if m.ndim < 1:
+        raise ValueError("Input must be >= 1-d.")
+    return m[::-1, ...]
 
 @implements(np.expand_dims)
 def expand_dims(a, axis):
