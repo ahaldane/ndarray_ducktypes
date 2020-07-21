@@ -2932,8 +2932,15 @@ def interp(x, xp, fp, left=None, right=None, period=None):
 
 @implements(np.ediff1d)
 def ediff1d(ary, to_end=None, to_begin=None):
+    inputs = [ary]
+    if to_end is not None:
+        inputs.append(to_end)
+    if to_begin is not None:
+        inputs.append(to_begin)
+    cls = get_mask_cls(*inputs)
+
     # force a 1d array
-    ary = ary.ravel()
+    ary = cls(ary).ravel()
 
     # enforce propagation of the dtype of input
     # ary to returned result
@@ -2946,28 +2953,27 @@ def ediff1d(ary, to_end=None, to_begin=None):
     if to_begin is None:
         l_begin = 0
     else:
-        _to_begin = np.asanyarray(to_begin, dtype=dtype_req)
-        if not np.all(_to_begin == to_begin):
-            raise ValueError("cannot convert 'to_begin' to array with dtype "
-                            "'%r' as required for input ary" % dtype_req)
-        to_begin = _to_begin.ravel()
+        to_begin = cls(to_begin, dtype=dtype_req)
+        if not np.can_cast(to_begin, dtype_req, casting="same_kind"):
+            raise TypeError("dtype of `to_end` must be compatible "
+                            "with input `ary` under the `same_kind` rule.")
+        to_begin = to_begin.ravel()
         l_begin = len(to_begin)
 
     if to_end is None:
         l_end = 0
     else:
-        _to_end = np.asanyarray(to_end, dtype=dtype_req)
-        # check that casting has not overflowed
-        if not np.all(_to_end == to_end):
-            raise ValueError("cannot convert 'to_end' to array with dtype "
-                             "'%r' as required for input ary" % dtype_req)
-        to_end = _to_end.ravel()
+        to_end = cls(to_end, dtype=dtype_req)
+        if not np.can_cast(to_end, dtype_req, casting="same_kind"):
+            raise TypeError("dtype of `to_end` must be compatible "
+                            "with input `ary` under the `same_kind` rule.")
+        to_end = to_end.ravel()
         l_end = len(to_end)
 
     # do the calculation in place and copy to_begin and to_end
-    l_diff = max(len(ary) - 1, 0)
+    l_diff = builtins.max(len(ary) - 1, 0)
     result = np.empty(l_diff + l_begin + l_end, dtype=ary.dtype)
-    result = ary.__array_wrap__(result)
+    result = cls(result)
     if l_begin > 0:
         result[:l_begin] = to_begin
     if l_end > 0:
@@ -2976,6 +2982,8 @@ def ediff1d(ary, to_end=None, to_begin=None):
     return result
 
 #@implements(np.gradient)
+#def gradient(f, *varargs, axis=None, edge_order=1):
+
 
 @implements(np.array2string)
 def array2string(a, max_line_width=None, precision=None,
