@@ -1132,7 +1132,7 @@ class implements:
     """
     Register an __array_function__ implementation for MaskedArray objects.
 
-    checked_args : tuple of integers, function, optional
+    checked_args : iterable of strings, function. optional
         If not provided, all entries in the "types" list from numpy
         dispatch are checked to be of known class.
 
@@ -2593,8 +2593,47 @@ def choose(a, choices, out=None, mode='raise'):
     cls = type(choices)
     return maskedarray_or_scalar(result_data, result_mask, out, cls)
 
-#@implements(np.piecewise)
-#def piecewise(x, condlist, funclist, *args, **kw):
+@implements(np.piecewise)
+def piecewise(x, condlist, funclist, *args, **kw):
+    # condlist may be boolean maskedarrays, mask is treated as False
+    # masked elements in x stay masked in result.
+
+    n2 = len(funclist)
+
+    # undocumented: single condition is promoted to a list of one condition
+    if is_duckscalar(condlist) or (
+            not isinstance(condlist[0], (list, np.ndarray, MaskedArray))
+            and x.ndim != 0):
+        condlist = [condlist]
+
+    condlist = [c.filled(False) if isinstance(c, (MaskedArray, MaskedScalar))
+                else c for c in condlist]
+
+    condlist = np.array(condlist, dtype=bool)
+    n = len(condlist)
+
+    if n == n2 - 1:  # compute the "otherwise" condition.
+        condelse = ~np.any(condlist, axis=0, keepdims=True)
+        condlist = np.concatenate([condlist, condelse], axis=0)
+        n += 1
+    elif n != n2:
+        raise ValueError(
+            "with {} condition(s), either {} or {} functions are expected"
+            .format(n, n, n+1)
+        )
+    
+    # initialize output to all masked
+    y = type(x)(np.empty(x.shape, x.dtype), True)
+    for k in range(n):
+        item = funclist[k]
+        if not callable(item):
+            y[condlist[k]] = item
+        else:
+            vals = x[condlist[k]]
+            if vals.size > 0:
+                y[condlist[k]] = item(vals, *args, **kw)
+
+    return y
 
 @implements(np.select, checked_args=lambda a,k,t,n: [type(x) for x in a[1]])
 def select(condlist, choicelist, default=0):
