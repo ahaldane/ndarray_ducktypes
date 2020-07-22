@@ -17,17 +17,6 @@ import warnings
 from inspect import signature
 from collections.abc import Iterable
 
-# IDEAS:
-#
-# A Masked type factory? Some of the things which we might want to make
-# configurable are 1. behavior of mask (ignore or skipna). 2. What to do
-# for operations which return nan.
-
-# I actually think maybe we *don't* want to auto-mask nans, since it is
-# impossible to rever this operation, but easy to let the user mask if they
-# want. Also explicit is greater than implicit: This way the user get a warning
-# about invalid operation, instead of it being hidden by becoming masked.
-
 class MaskedOperatorMixin(NDArrayOperatorsMixin):
     # shared implementations for MaskedArray, MaskedScalar
 
@@ -1593,7 +1582,7 @@ def average(a, axis=None, weights=None, returned=False):
         if wgt.shape != a.shape:
             wgt = np.broadcast_to(wgt, a.shape)
 
-    wgt = MaskedArray(wgt, a._mask)
+    wgt = type(a)(wgt, a._mask)
     scl = wgt.sum(axis=axis, dtype=result_dtype)
     if np.any(scl == 0.0):
         raise ZeroDivisionError(
@@ -1696,7 +1685,7 @@ def _quantile_unchecked(a, q, axis=None, out=None, overwrite_input=False,
 
     if out is None:
         dt = np.promote_types(a.dtype, np.float64)
-        out = MaskedArray(np.empty(out_shape, dtype=dt))
+        out = type(a)(np.empty(out_shape, dtype=dt))
     elif out.shape != out_shape:
         raise ValueError('out has wrong shape')
 
@@ -1744,22 +1733,25 @@ def cov(m, y=None, rowvar=True, bias=False, ddof=None, fweights=None,
     if m.ndim > 2:
         raise ValueError("m has more than 2 dimensions")
 
+    cls = type(m)
     if y is None:
         dtype = np.result_type(m, np.float64)
     else:
         if not is_ndducktype(y):
-            y = type(x)(y)
+            y = cls(y)
+        else:
+            cls = get_mask_cls(m, y)
         if y.ndim > 2:
             raise ValueError("y has more than 2 dimensions")
         dtype = np.result_type(m, y, np.float64)
 
-    X = MaskedArray(m, ndmin=2, dtype=dtype)
+    X = cls(m, ndmin=2, dtype=dtype)
     if not rowvar and X.shape[0] != 1:
         X = X.T
     if X.shape[0] == 0:
-        return MaskedArray([]).reshape(0, 0)
+        return cls([]).reshape(0, 0)
     if y is not None:
-        y = MaskedArray(y, copy=False, ndmin=2, dtype=dtype)
+        y = cls(y, copy=False, ndmin=2, dtype=dtype)
         if not rowvar and y.shape[0] != 1:
             y = y.T
         X = np.concatenate((X, y), axis=0)
