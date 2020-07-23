@@ -2220,10 +2220,73 @@ def put_along_axis(arr, indices, values, axis):
         values = values._data
     np.put_along_axis(arr._data, indices, values, axis)
 
-#@implements(np.apply_along_axis)
-#def apply_along_axis(func1d, axis, arr, *args, **kwargs)
+@implements(np.apply_along_axis)
+def apply_along_axis(func1d, axis, arr, *args, **kwargs):
+    # handle negative axes
+    cls = get_mask_cls(arr)
+    nd = arr.ndim
+    axis = normalize_axis_index(axis, nd)
 
-#@implements(np.apply_over_axes)
+    # arr, with the iteration axis at the end
+    in_dims = list(range(nd))
+    inarr_view = np.transpose(arr, in_dims[:axis] + in_dims[axis+1:] + [axis])
+
+    # compute indices for the iteration axes, and append a trailing ellipsis to
+    # prevent 0d arrays decaying to scalars, which fixes gh-8642
+    inds = np.ndindex(inarr_view.shape[:-1])
+    inds = (ind + (Ellipsis,) for ind in inds)
+
+    # invoke the function on the first item
+    try:
+        ind0 = next(inds)
+    except StopIteration:
+        raise ValueError('Cannot apply_along_axis when any '
+                         'iteration dimensions are 0')
+    res = func1d(inarr_view[ind0], *args, **kwargs)
+
+    # build a buffer for storing evaluations of func1d.
+    # remove the requested axis, and add the new ones on the end.
+    # laid out so that each write is contiguous.
+    # for a tuple index inds, buff[inds] = func1d(inarr_view[inds])
+    buff = cls(np.empty(inarr_view.shape[:-1] + res.shape, res.dtype), False)
+
+    # permutation of axes such that out = buff.transpose(buff_permute)
+    buff_dims = list(range(buff.ndim))
+    buff_permute = (
+        buff_dims[0 : axis] +
+        buff_dims[buff.ndim-res.ndim : buff.ndim] +
+        buff_dims[axis : buff.ndim-res.ndim]
+    )
+
+    # save the first result, then compute and save all remaining results
+    buff[ind0] = res
+    for ind in inds:
+        buff[ind] = func1d(inarr_view[ind], *args, **kwargs)
+
+    # finally, rotate the inserted axes back to where they belong
+    return transpose(buff, buff_permute)
+
+@implements(np.apply_over_axes)
+def apply_over_axes(func, a, axes):
+    val = a
+    N = a.ndim
+    if np.array(axes).ndim == 0:
+        axes = (axes,)
+    for axis in axes:
+        if axis < 0:
+            axis = N + axis
+        args = (val, axis)
+        res = func(*args)
+        if res.ndim == val.ndim:
+            val = res
+        else:
+            res = np.expand_dims(res, axis)
+            if res.ndim == val.ndim:
+                val = res
+            else:
+                raise ValueError("function is not returning "
+                                 "an array of the correct shape")
+    return val
 
 @implements(np.ravel)
 def ravel(a, order='C'):
@@ -2354,7 +2417,7 @@ def flipud(m):
 @implements(np.expand_dims)
 def expand_dims(a, axis):
     return type(a)(np.expand_dims(a._data, axis),
-                       np.expand_dims(a._mask, axis))
+                   np.expand_dims(a._mask, axis))
 
 @implements(np.concatenate)
 def concatenate(arrays, axis=0, out=None):
@@ -3426,16 +3489,17 @@ def sinc(x):
     return np.sin(y)/y
 
 @implements(np.unwrap)
-def unwrap(p, discont=pi, axis=-1):
+def unwrap(p, discont=np.pi, axis=-1):
+    pi = np.pi
     nd = p.ndim
     dd = np.diff(p, axis=axis)
     slice1 = [slice(None, None)]*nd     # full slices
     slice1[axis] = slice(1, None)
     slice1 = tuple(slice1)
     ddmod = mod(dd + pi, 2*pi) - pi
-    np.copyto(ddmod, pi, np.where=(ddmod == -pi) & (dd > 0))
+    np.copyto(ddmod, pi, where=(ddmod == -pi) & (dd > 0))
     ph_correct = ddmod - dd
-    np.copyto(ph_correct, 0, np.where=abs(dd) < discont)
+    np.copyto(ph_correct, 0, where=abs(dd) < discont)
     up = get_mask_cls(p)(p, copy=True, dtype='d')
     up[slice1] = p[slice1] + ph_correct.cumsum(axis)
     return up
