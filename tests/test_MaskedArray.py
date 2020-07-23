@@ -3896,7 +3896,7 @@ class Test_ReplaceX:
         arr2 = MaskedArray([[X, X, X], [X, X, X('f8')]])
         assert_masked_equal(arr, arr2)
 
-        data, mask = replace_X([[X, X, X], [X, X, X]], dtype='u1')
+        data, mask, _ = replace_X([[X, X, X], [X, X, X]], dtype='u1')
         assert_equal(arru1, MaskedArray(data, mask))
 
     def test_mixedndarray(self):

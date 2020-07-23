@@ -226,7 +226,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         if mask is None:
             # if mask is None, user can put X in the data.
             # Otherwise, X will cause some kind of error in np.array below
-            data, mask = replace_X(data, dtype=dtype)
+            data, mask, _ = replace_X(data, dtype=dtype)
 
             # replace_X sometimes uses broadcast_to, which returns a
             # readonly array with funny strides. Make writeable if so,
@@ -641,10 +641,26 @@ MaskedOperatorMixin.ScalarType = MaskedScalar
 MaskedOperatorMixin.ArrayType = MaskedArray
 MaskedOperatorMixin.known_types = (MaskedArray, MaskedScalar, MaskedX)
 
-# takes array-like input, replaces masked value by 0 and return filled data &
-# mask. This is more-or-less a reimplementation of PyArray_DTypeFromObject to
-# account for masked values
 def replace_X(data, dtype=None):
+    """
+    takes array-like input, replaces masked value by 0 and return filled data &
+    mask. This is more-or-less a reimplementation of PyArray_DTypeFromObject to
+    account for masked values
+
+    Parameters
+    ==========
+    data : nested tuple.list of ndarrays/MaskedArrays/X
+    dtype : dtype to force for output
+
+    Returns
+    =======
+    data : ndarray (or duck)
+        The data array of the combined inputs
+    mask : ndarray (or duck)
+        The mask array of the combined inputs
+    cls : type
+        The most derived MaskedArray subtype seen in the inputs
+    """
 
     # we do two passes: First we figure out the output dtype, then we replace
     # all masked values by the filler "type(0)".
@@ -680,11 +696,15 @@ def replace_X(data, dtype=None):
         dtype = np.dtype(dtype)
 
     fill = dtype.type(0)
+    cls = MaskedArray
 
     def replace(data):
+        nonlocal cls
         if data is X:
             return fill, True
         if isinstance(data, (MaskedScalar, MaskedArray)):
+            # whenever we come across a Masked* subtype, update cls
+            cls = get_mask_cls(cls, data)
             return data._data, data._mask
         if isinstance(data, list):
             return (list(x) for x in zip(*(replace(d) for d in data)))
@@ -693,7 +713,8 @@ def replace_X(data, dtype=None):
         # otherwise assume it is some kind of scalar
         return data, False
 
-    return replace(data)
+    out_dat, out_mask = replace(data)
+    return out_dat, out_mask, cls
 
 # used by marr.flat
 class MaskedIterator:
@@ -1191,11 +1212,23 @@ def get_mask_cls(*args):
     Finds the most derived class of MaskedArray/MaskedScalar.
     If given both an Array and a Scalar, convert the Scalar to an array first.
     In the case of two non-inheriting subclasses, raise TypeError.
+
+    Parameters
+    ==========
+    *args : nested list/tuple or ndarray ducktype
+        The bottom elements can be either ndarrays, scalars, ducktypes of
+        either, or type objects of any of these.
+
+    Returns
+    =======
+    arraytype : type
+        The derived class of all of the inputs
     """
     cls = None
     for arg in args:
-        if isinstance(arg, (MaskedArray, MaskedScalar)):
-            acl = type(arg)
+        acl = arg if isinstance(arg, type) else type(arg)
+
+        if issubclass(acl, (MaskedArray, MaskedScalar)):
             if cls is None or issubclass(acl, cls):
                 cls = acl
                 continue
@@ -1209,7 +1242,7 @@ def get_mask_cls(*args):
             elif not issubclass(cls, acl):
                 raise TypeError(("Ambiguous mix of MaskedArray subtypes {} and "
                                 "{}").format(cls, acl))
-        elif isinstance(arg, (list, tuple)):
+        elif issubclass(acl, (list, tuple)):
             tmpcls = get_mask_cls(*arg)
             if tmpcls is not None and (cls is None or issubclass(cls, tmpcls)):
                 cls = tmpcls
@@ -2058,6 +2091,8 @@ def tensordot(a, b, axes=2):
     na, axes_a = nax(axes_a)
     nb, axes_b = nax(axes_b)
 
+    cls = get_mask_cls(a, b)
+    a, b = cls(a), cls(b)
     ashape, bshape = a.shape, b.shape
     nda, ndb = a.ndim, b.ndim
     equal = True
@@ -2106,7 +2141,7 @@ def einsum(*operands, **kwargs):
         outdata, outmask = get_maskedout(out)
 
     data, nmask = zip(*((x._data, ~x._mask) for x in operands))
-    cls = get_mask_cls(operands)
+    cls = get_mask_cls(*operands)
 
     result_data = np.einsum(data, out=outdata, **kwargs)
     result_mask = np.einsum(nmask, out=outmask, **kwargs)
@@ -2167,7 +2202,7 @@ def take(a, indices, axis=None, out=None, mode='raise'):
 
 @implements(np.put)
 def put(a, indices, values, mode='raise'):
-    data, mask = replace_X(values, dtype=a.dtype)
+    data, mask, _ = replace_X(values, dtype=a.dtype)
     np.put(a._data, indices, data, mode)
     np.put(a._mask, indices, mask, mode)
     return None
@@ -2212,11 +2247,13 @@ def resize(a, new_shape):
 
 @implements(np.meshgrid)
 def meshgrid(*xi, **kwargs):
-    cls = get_mask_cls(xi)
+    cls = get_mask_cls(*xi)
+    xi = (cls(x) for x in xi)
     data, mask = zip(*((x._data, x._mask) for x in xi))
-    result_data = np.meshgrid(data, **kwargs)
-    result_mask = np.meshgrid(mask, **kwargs)
-    return maskedarray_or_scalar(result_data, result_mask, cls)
+    result_data = np.meshgrid(*data, **kwargs)
+    result_mask = np.meshgrid(*mask, **kwargs)
+    return [maskedarray_or_scalar(d, m, cls=cls)
+            for d, m in zip(result_data, result_mask)]
 
 @implements(np.around)
 def around(a, decimals=0, out=None):
@@ -2323,7 +2360,7 @@ def expand_dims(a, axis):
 def concatenate(arrays, axis=0, out=None):
     outdata, outmask = get_maskedout(out)
     cls = get_mask_cls(arrays)
-    arrays = [cls(a) for a in arrays] # XXX may need tweaking
+    arrays = (cls(a) for a in arrays)
     data, mask = zip(*((x._data, x._mask) for x in arrays))
     result_data = np.concatenate(data, axis, outdata)
     result_mask = np.concatenate(mask, axis, outmask)
@@ -2331,10 +2368,9 @@ def concatenate(arrays, axis=0, out=None):
 
 @implements(np.block)
 def block(arrays):
-    data, mask = replace_X(arrays)
+    data, mask, cls = replace_X(arrays)
     result_data = np.block(data)
     result_mask = np.block(mask)
-    cls = get_mask_cls(arrays)
     return maskedarray_or_scalar(result_data, result_mask, cls=cls)
 
 @implements(np.column_stack)
@@ -2404,11 +2440,25 @@ def tile(A, reps):
             n //= dim_in
     return c.reshape(shape_out)
 
+# if these atleast_*d functions only accepted a single argument our life would
+# be easier since we could just drop the asarray.
+# But since multiple args are allowed, should we allow inuts like:
+# (MaskedArray([1,2,3]), [4, X, 6], np.array([1,2,3])), i.e mixtures od
+# maskedarrays and lists and ndarrays to be converted to maskedarrays?
+# Note we may also want the user to be able to do
+# ndarray_ducktypes.MaskedArray.atleast1d([1, X, 3]), i.e. allow
+# user to use X-aware conversion of plain-lists.
+# I think least-bad approach right now is to convert lists to MaskedArray,
+# otherwise leave ducktype alone.
+
+def _asMAduck(a):
+    return a if is_ndducktype(a) else MaskedArray(a)
+
 @implements(np.atleast_1d)
 def atleast_1d(*arys):
     res = []
     for ary in arys:
-        #removed: ary = asanyarray(ary)
+        ary = _asMAduck(ary)
         if ary.ndim == 0:
             result = ary.reshape(1)
         else:
@@ -2423,7 +2473,7 @@ def atleast_1d(*arys):
 def atleast_2d(*arys):
     res = []
     for ary in arys:
-        #removed: ary = asanyarray(ary)
+        ary = _asMAduck(ary)
         if ary.ndim == 0:
             result = ary.reshape(1, 1)
         elif ary.ndim == 1:
@@ -2440,7 +2490,7 @@ def atleast_2d(*arys):
 def atleast_3d(*arys):
     res = []
     for ary in arys:
-        #removed: ary = asanyarray(ary)
+        ary = _asMAduck(ary)
         if ary.ndim == 0:
             result = ary.reshape(1, 1, 1)
         elif ary.ndim == 1:
@@ -2457,7 +2507,7 @@ def atleast_3d(*arys):
 
 @implements(np.stack)
 def stack(arrays, axis=0, out=None):
-    #arrays = [asanyarray(arr) for arr in arrays]  # removed from original
+    arrays = [_asMAduck(arr) for arr in arrays]
     if not arrays:
         raise ValueError('need at least one array to stack')
 
@@ -2613,7 +2663,7 @@ def piecewise(x, condlist, funclist, *args, **kw):
             "with {} condition(s), either {} or {} functions are expected"
             .format(n, n, n+1)
         )
-    
+
     # initialize output to all masked
     y = type(x)(np.empty(x.shape, x.dtype), True)
     for k in range(n):
@@ -3375,7 +3425,20 @@ def sinc(x):
     y = np.pi * np.where((x == 0).filled(False, view=1), 1.0e-20, x)
     return np.sin(y)/y
 
-#@implements(np.unwrap)
+@implements(np.unwrap)
+def unwrap(p, discont=pi, axis=-1):
+    nd = p.ndim
+    dd = np.diff(p, axis=axis)
+    slice1 = [slice(None, None)]*nd     # full slices
+    slice1[axis] = slice(1, None)
+    slice1 = tuple(slice1)
+    ddmod = mod(dd + pi, 2*pi) - pi
+    np.copyto(ddmod, pi, np.where=(ddmod == -pi) & (dd > 0))
+    ph_correct = ddmod - dd
+    np.copyto(ph_correct, 0, np.where=abs(dd) < discont)
+    up = get_mask_cls(p)(p, copy=True, dtype='d')
+    up[slice1] = p[slice1] + ph_correct.cumsum(axis)
+    return up
 
 
 
