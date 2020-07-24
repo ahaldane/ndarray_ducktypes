@@ -1,13 +1,13 @@
 import sys
+import pickle
 import pytest
 from numpy.testing import (
     assert_raises, assert_warns, suppress_warnings, assert_,
     assert_equal, assert_almost_equal)
 import numpy as np
 import numpy
-from numpy.core.numeric import pickle
-from MaskedArray import (MaskedArray, MaskedScalar, X, HANDLED_FUNCTIONS,
-                         replace_X)
+from ndarray_ducktypes.MaskedArray import (MaskedArray, MaskedScalar, X, 
+    replace_X)
 from functools import reduce
 import textwrap
 import operator
@@ -741,7 +741,7 @@ class TestMaskedArray:
     def test_object_with_array(self):
         mx1 = MaskedArray([1.], mask=[True])
         mx2 = MaskedArray([1., 2.])
-        mx = MaskedArray([mx1, mx2], mask=[False, True])
+        mx = MaskedArray([mx1, mx2], mask=[False, True], dtype='O')
         assert_(mx[0].filled() is mx1)
         assert_(mx[1].filled() is not mx2)
         assert_(np.all(mx[1]._data == mx2._data))

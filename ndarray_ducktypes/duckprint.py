@@ -1,17 +1,12 @@
-from __future__ import division, absolute_import, print_function
-
 import sys
 import functools
-if sys.version_info[0] >= 3:
-    try:
-        from _thread import get_ident
-    except ImportError:
-        from _dummy_thread import get_ident
-else:
-    try:
-        from thread import get_ident
-    except ImportError:
-        from dummy_thread import get_ident
+import warnings
+import contextlib
+import os
+try:
+    from _thread import get_ident
+except ImportError:
+    from _dummy_thread import get_ident
 
 import numpy as np
 from numpy import (concatenate, errstate, array, format_float_positional,
@@ -19,46 +14,19 @@ from numpy import (concatenate, errstate, array, format_float_positional,
                    ndarray, ravel, any, longlong, intc, int_, float_, complex_,
                    bool_, flexible)
 from numpy.core import umath
-import warnings
-import contextlib
-import os
 
 from numpy.lib import NumpyVersion
 if (NumpyVersion(np.__version__) < '1.15.10' or
         os.environ.get('NUMPY_EXPERIMENTAL_ARRAY_FUNCTION', '0') == '0'):
     raise Exception("numpy __array_function__ must be enabled")
 
-def is_ndducktype(val):
-    return hasattr(val, '__array_function__')
-
-
-# Interesting Fact: The numpy arrayprint machinery (for one) depends on having
-# a separate scalar type associated with any new ducktype (or subclass). This
-# is partly why both MaskedArray and recarray have to define associated scalar
-# types. I don't currently see a way to avoid this: All ducktypes will need
-# to create a scalar type, and return it (and not a 0d array) when indexed with
-# an integer.
-
-#XXX consider defining an abstract "duck_scalar" class which all duck-scalar
-# implementors would be required to inherit. Then the function below could
-#be coded as "isinstance(val, [np.genetic, duck_scalar])"
-
-def is_duckscalar(val):
-    # These files assume that a scalar is a type separate from the main ducktype
-    # which also has an __array_function__ attribute.
-    # A simple test of whether a numpy-like type is a scalar and not a 0d array
-    # is that indexing with an empty tuple gives back a scalar. Hopefully that
-    # is not too fragile.
-    return (isinstance(val, np.generic) or
-            (is_ndducktype(val) and val.shape == () and
-             type(val[()]) is type(val)))
+from .common import is_ndducktype, is_duckscalar
 
 # WIP: Notes.
 #
 # The get/set_printoptions functionality is temporarily removed and being
 # reworked. That is the purpose of all the `check_options` methods defined
 # below, which are currently largely unused.
-#
 
 class FormatDispatcher(object):
     """
@@ -375,7 +343,7 @@ class TimedeltaFormatter(_TimelikeFormatter):
 
 class SubArrayFormatter(ElementFormatter):
     def will_dispatch(self, elem):
-        return elem.dtype.shape is not ()
+        return elem.dtype.shape != ()
 
     def get_format_func(self, elem, **options):
         #XXX incorporate threshold?

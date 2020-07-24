@@ -1,21 +1,22 @@
 #!/usr/bin/env python
-import numpy as np
-from duckprint import (duck_str, duck_repr, duck_array2string, typelessdata,
-    default_duckprint_options, default_duckprint_formatters, FormatDispatcher,
-    is_ndducktype, is_duckscalar)
 import builtins
+import operator
+import warnings
+
+from .duckprint import (duck_str, duck_repr, duck_array2string, typelessdata,
+    default_duckprint_options, default_duckprint_formatters, FormatDispatcher)
+from .common import (is_ndducktype, is_duckscalar, new_ducktype_implementation,
+    ducktype_linkscalar, get_duck_cls)
+from .ndarray_api_mixin import NDArrayAPIMixin
+
+import numpy as np
 import numpy.core.umath as umath
 from numpy.lib.mixins import NDArrayOperatorsMixin
-from ndarray_api_mixin import NDArrayAPIMixin
 import numpy.core.numerictypes as ntypes
 from numpy.core.multiarray import (normalize_axis_index,
     interp as compiled_interp, interp_complex as compiled_interp_complex)
 from numpy.lib.stride_tricks import _broadcast_shape
 from numpy.core.numeric import normalize_axis_tuple
-import operator
-import warnings
-from inspect import signature
-from collections.abc import Iterable
 
 class MaskedOperatorMixin(NDArrayOperatorsMixin):
     # shared implementations for MaskedArray, MaskedScalar
@@ -28,7 +29,7 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
         else:
             db, mb = getdata(other), getmask(other)
 
-        cls = get_mask_cls(self, other)
+        cls = get_duck_cls(self, other)
 
         data = op(self._data, db)
         mask = self._mask | mb
@@ -65,7 +66,7 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
         raise TypeError("Use .filled() before converting to non-masked scalar")
 
     def __array_function__(self, func, types, arg, kwarg):
-        impl, check_args = HANDLED_FUNCTIONS.get(func, (None, None))
+        impl, check_args = implements.handled_functions.get(func, (None, None))
         if impl is None or not check_args(arg, kwarg, types, self.known_types):
             return NotImplemented
 
@@ -637,10 +638,6 @@ class MaskedX:
 
 masked = X = MaskedX()
 
-def ducktype_linkscalar(arraytype, scalartype):
-    arraytype.ArrayType = scalartype.ArrayType = arraytype
-    arraytype.ScalarType = scalartype.ScalarType = scalartype
-
 ducktype_linkscalar(MaskedArray, MaskedScalar)
 MaskedOperatorMixin.known_types = (MaskedArray, MaskedScalar, MaskedX)
 
@@ -707,7 +704,7 @@ def replace_X(data, dtype=None):
             return fill, True
         if isinstance(data, (MaskedScalar, MaskedArray)):
             # whenever we come across a Masked* subtype, update cls
-            cls = get_mask_cls(cls, data)
+            cls = get_duck_cls(cls, data)
             return data._data, data._mask
         if isinstance(data, list):
             return (list(x) for x in zip(*(replace(d) for d in data)))
@@ -941,7 +938,7 @@ class _Masked_BinOp(_Masked_UFunc):
         if out:
             return out[0]
 
-        cls = get_mask_cls(a, b)
+        cls = get_duck_cls(a, b)
         if is_duckscalar(result):
             return cls.ScalarType(result, m)
         return cls(result, m)
@@ -989,7 +986,7 @@ class _Masked_BinOp(_Masked_UFunc):
         if out:
             return out[0]
 
-        cls = get_mask_cls(a)
+        cls = get_duck_cls(a)
         if is_duckscalar(result):
             return cls.ScalarType(result, m)
         return cls(result, m)
@@ -1139,129 +1136,7 @@ setup_ufuncs()
 #                         __array_function__ setup
 ################################################################################
 
-HANDLED_FUNCTIONS = {}
-
-class implements:
-    """
-    Register an __array_function__ implementation for MaskedArray objects.
-
-    checked_args : iterable of strings, function. optional
-        If not provided, all entries in the "types" list from numpy
-        dispatch are checked to be of known class.
-
-        If an iterable of argument names, those arguments are checked to be of
-        known class if supplied.
-
-        If a function, should take four arguments, (args, kwds, types,
-        known_types) where args, kwds, types are the same as supplied to
-        __array_function__, and "known_types" is a list of compatible types. An
-        iterable of types may be returned to be checked to be of known class,
-        or None to signify all args were checked, or a NotImplementedError may
-        be raised to signal no match.
-
-    Notes
-    -----
-    Goal is to allow both control and convenience. The callable form of
-    checked_args is most powerful since it can be used to implement any
-    desired behavior based purely on the dispatch "args" by raising
-    NotImplementedError. This includes the behaviors obtained by giving a
-    callable return an iterable of , of using a tuple, or not providing
-    checked_args, so these latter forms are for convenience only.
-    """
-    def __init__(self, numpy_function, checked_args=None):
-        self.npfunc = numpy_function
-        self.checked_args = checked_args
-
-    @classmethod
-    def check_types(cls, types, known_types):
-        # returns true if all types are known types or ndarray/scalar.
-        return builtins.all((issubclass(t, known_types) or
-                             t is np.ndarray or np.isscalar(t)) for t in types)
-
-    def __call__(self, func):
-        checked_args = self.checked_args
-
-        if isinstance(checked_args, Iterable):
-            sig = signature(func)
-            def checked_args_func(args, kwargs, types, known_types):
-                bound = sig.bind(*args, *kwargs).arguments
-                types = (type(bound[a]) for a in checked_args if a in bound)
-                return implements.check_types(types, known_types)
-
-        elif callable(checked_args):
-            def checked_args_func(args, kwargs, types, known_types):
-                try:
-                    types = checked_args(args, kwargs, types, known_types)
-                except NotImplementedError:
-                    return False
-                if types is None:
-                    return True
-                return implements.check_types(types, known_types)
-
-        elif checked_args is None:
-            checked_args_func = lambda a, k, t, n: implements.check_types(t, n)
-
-        else:
-            raise ValueError("invalid checked_args")
-
-        HANDLED_FUNCTIONS[self.npfunc] = (func, checked_args_func)
-
-        return func
-
-def get_mask_cls(*args):
-    """
-    Helper to make MaskedArray Subclass-friendly.
-
-    Finds the most derived class of MaskedArray/MaskedScalar.
-    If given both an Array and a Scalar, convert the Scalar to an array first.
-    In the case of two non-inheriting subclasses, raise TypeError.
-
-    Parameters
-    ==========
-    *args : nested list/tuple or ndarray ducktype
-        The bottom elements can be either ndarrays, scalars, ducktypes of
-        either, or type objects of any of these.
-
-    Returns
-    =======
-    arraytype : type
-        The derived class of all of the inputs
-    """
-    cls = None
-    for arg in args:
-        acl = arg if isinstance(arg, type) else type(arg)
-
-        if issubclass(acl, (MaskedArray, MaskedScalar)):
-            print("A", cls, acl)
-            if cls is None or issubclass(acl, cls):
-                print("B", cls, acl)
-                cls = acl
-                continue
-            elif issubclass(cls, MaskedScalar) and issubclass(acl, MaskedArray):
-                cls = cls.ArrayType
-            elif issubclass(acl, MaskedScalar) and issubclass(cls, MaskedArray):
-                acl = acl.ArrayType
-            print("C", cls, acl)
-            if issubclass(acl, cls):
-                cls = acl
-            elif not issubclass(cls, acl):
-                raise TypeError(("Ambiguous mix of MaskedArray subtypes {} and "
-                                "{}").format(cls, acl))
-        elif issubclass(acl, (list, tuple)):
-            tmpcls = get_mask_cls(*arg)
-            if tmpcls is not None and (cls is None or issubclass(cls, tmpcls)):
-                cls = tmpcls
-
-    if cls is None:
-        return None
-    return cls.ArrayType
-
-def maskedarray_or_scalar(data, mask, out=None, cls=MaskedArray):
-    if out is not None:
-        return out
-    if is_duckscalar(data):
-        return cls.ScalarType(data, mask)
-    return cls.ArrayType(data, mask)
+implements = new_ducktype_implementation()
 
 def get_maskedout(out):
     if out is not None:
@@ -1269,6 +1144,13 @@ def get_maskedout(out):
             return out._data, out._mask
         raise Exception("out must be a masked array")
     return None, None
+
+def maskedarray_or_scalar(data, mask, out=None, cls=MaskedArray):
+    if out is not None:
+        return out
+    if is_duckscalar(data):
+        return cls.ScalarType(data, mask)
+    return cls.ArrayType(data, mask)
 
 def _copy_mask(mask, outmask=None):
     if outmask is not None:
@@ -1778,7 +1660,7 @@ def cov(m, y=None, rowvar=True, bias=False, ddof=None, fweights=None,
         if not is_ndducktype(y):
             y = cls(y)
         else:
-            cls = get_mask_cls(m, y)
+            cls = get_duck_cls(m, y)
         if y.ndim > 2:
             raise ValueError("y has more than 2 dimensions")
         dtype = np.result_type(m, y, np.float64)
@@ -1902,7 +1784,7 @@ def clip(a, a_min, a_max, out=None):
 def compress(condition, a, axis=None, out=None):
     # Note: masked values in condition treated as False
     outdata, outmask = get_maskedout(out)
-    cls = get_mask_cls(condition, a)
+    cls = get_duck_cls(condition, a)
     cond = cls(condition).filled(False, view=1)
     a = cls(a)
     result_data = np.compress(cond, a._data, axis, outdata)
@@ -2009,7 +1891,7 @@ def trace(a, offset=0, axis1=0, axis2=1, dtype=None, out=None):
 @implements(np.dot)
 def dot(a, b, out=None):
     outdata, outmask = get_maskedout(out)
-    cls = get_mask_cls(a, b)
+    cls = get_duck_cls(a, b)
     a, b = cls(a), cls(b)
     result_data = np.dot(a.filled(0, view=1), b.filled(0, view=1),
                          out=outdata)
@@ -2019,7 +1901,7 @@ def dot(a, b, out=None):
 
 @implements(np.vdot)
 def vdot(a, b):
-    cls = get_mask_cls(a, b)
+    cls = get_duck_cls(a, b)
     a, b = cls(a), cls(b)
     result_data = np.vdot(a.filled(0, view=1), b.filled(0, view=1))
     result_mask = np.vdot(~a._mask, ~b._mask)
@@ -2028,7 +1910,7 @@ def vdot(a, b):
 
 @implements(np.cross)
 def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
-    cls = get_mask_cls(a, b)
+    cls = get_duck_cls(a, b)
     a, b = cls(a), cls(b)
     result_data = np.cross(a.filled(0, view=1), b.filled(0, view=1), axisa,
                            axisb, axisc, axis)
@@ -2038,7 +1920,7 @@ def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
 
 @implements(np.inner)
 def inner(a, b):
-    cls = get_mask_cls(a, b)
+    cls = get_duck_cls(a, b)
     a, b = cls(a), cls(b)
     result_data = np.inner(a.filled(0, view=1), b.filled(0, view=1))
     result_mask = np.inner(~a._mask, ~b._mask)
@@ -2048,7 +1930,7 @@ def inner(a, b):
 @implements(np.outer)
 def outer(a, b, out=None):
     outdata, outmask = get_maskedout(out)
-    cls = get_mask_cls(a, b)
+    cls = get_duck_cls(a, b)
     a, b = cls(a), cls(b)
     result_data = np.outer(a.filled(0, view=1), b.filled(0, view=1),
                            out=outdata)
@@ -2058,7 +1940,7 @@ def outer(a, b, out=None):
 
 @implements(np.kron)
 def kron(a, b):
-    cls = get_mask_cls(a, b)
+    cls = get_duck_cls(a, b)
     a = cls(a, copy=False, subok=True, ndmin=b.ndim)
     if (a.ndim == 0 or b.ndim == 0):
         return np.multiply(a, b)
@@ -2096,7 +1978,7 @@ def tensordot(a, b, axes=2):
     na, axes_a = nax(axes_a)
     nb, axes_b = nax(axes_b)
 
-    cls = get_mask_cls(a, b)
+    cls = get_duck_cls(a, b)
     a, b = cls(a), cls(b)
     ashape, bshape = a.shape, b.shape
     nda, ndb = a.ndim, b.ndim
@@ -2146,7 +2028,7 @@ def einsum(*operands, **kwargs):
         outdata, outmask = get_maskedout(out)
 
     data, nmask = zip(*((x._data, ~x._mask) for x in operands))
-    cls = get_mask_cls(*operands)
+    cls = get_duck_cls(*operands)
 
     result_data = np.einsum(data, out=outdata, **kwargs)
     result_mask = np.einsum(nmask, out=outmask, **kwargs)
@@ -2157,14 +2039,14 @@ def einsum(*operands, **kwargs):
 
 @implements(np.correlate)
 def correlate(a, v, mode='valid'):
-    cls = get_mask_cls(a, v)
+    cls = get_duck_cls(a, v)
     result_data = np.correlate(a.filled(view=1), v.filled(view=1), mode)
     result_mask = ~np.correlate(~a._mask, v._mask, mode)
     return maskedarray_or_scalar(result_data, result_mask, cls=cls)
 
 @implements(np.convolve)
 def convolve(a, v, mode='full'):
-    cls = get_mask_cls(a, v)
+    cls = get_duck_cls(a, v)
     a, v = cls(a), cls(v)
     result_data = np.convolve(a.filled(view=1), v.filled(view=1), mode)
     result_mask = ~np.convolve(~a._mask, ~v._mask, mode)
@@ -2228,7 +2110,7 @@ def put_along_axis(arr, indices, values, axis):
 @implements(np.apply_along_axis)
 def apply_along_axis(func1d, axis, arr, *args, **kwargs):
     # handle negative axes
-    cls = get_mask_cls(arr)
+    cls = get_duck_cls(arr)
     nd = arr.ndim
     axis = normalize_axis_index(axis, nd)
 
@@ -2315,7 +2197,7 @@ def resize(a, new_shape):
 
 @implements(np.meshgrid)
 def meshgrid(*xi, **kwargs):
-    cls = get_mask_cls(*xi)
+    cls = get_duck_cls(*xi)
     xi = (cls(x) for x in xi)
     data, mask = zip(*((x._data, x._mask) for x in xi))
     result_data = np.meshgrid(*data, **kwargs)
@@ -2427,7 +2309,7 @@ def expand_dims(a, axis):
 @implements(np.concatenate)
 def concatenate(arrays, axis=0, out=None):
     outdata, outmask = get_maskedout(out)
-    cls = get_mask_cls(arrays)
+    cls = get_duck_cls(arrays)
     arrays = (cls(a) for a in arrays)
     data, mask = zip(*((x._data, x._mask) for x in arrays))
     result_data = np.concatenate(data, axis, outdata)
@@ -2443,7 +2325,7 @@ def block(arrays):
 
 @implements(np.column_stack)
 def column_stack(tup):
-    cls = get_mask_cls(tup)
+    cls = get_duck_cls(tup)
     arrays = []
     for v in tup:
         arr = cls(v, copy=False, subok=True)
@@ -2602,7 +2484,7 @@ def insert(arr, obj, values, axis=None):
 
 @implements(np.append)
 def append(arr, values, axis=None):
-    cls = get_mask_cls(arr, values)
+    cls = get_duck_cls(arr, values)
     arr, values = cls(arr), cls(values)
     return cls(np.append(arr._data, values._data, axis),
                np.append(arr._mask, values._mask, axis))
@@ -2663,7 +2545,7 @@ def where(condition, x=None, y=None):
     if x is None and y is None:
         return np.nonzero(condition)
 
-    cls = get_mask_cls(condition, x, y)
+    cls = get_duck_cls(condition, x, y)
 
     # convert x, y to MaskedArrays, using the other's dtype if one is X
     if x is X:
@@ -2764,7 +2646,7 @@ def select(condlist, choicelist, default=0):
         if isinstance(c, (MaskedArray, MaskedScalar)):
             raise TypeError("condlist arrays should not be masked")
 
-    cls = get_mask_cls(choicelist)
+    cls = get_duck_cls(choicelist)
     choicelist = [cls(choice) for choice in choicelist]
     # need to get the result type before broadcasting for correct scalar
     # behaviour
@@ -3007,7 +2889,7 @@ def diff(a, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
 
     inputs = [a, prepend, append]
     inputs = [i for i in inputs if is_ndducktype(i)]
-    cls = get_mask_cls(*inputs)
+    cls = get_duck_cls(*inputs)
 
     combined = []
     if prepend is not np._NoValue:
@@ -3060,7 +2942,7 @@ def interp(x, xp, fp, left=None, right=None, period=None):
         objs.append(left)
     if right is not None and right is not X:
         objs.append(right)
-    cls = get_mask_cls(objs)
+    cls = get_duck_cls(objs)
     fp = cls.ArrayType(fp)
     if left is X:
         left = cls.ScalarType(X, dtype=fp.dtype)
@@ -3122,7 +3004,7 @@ def ediff1d(ary, to_end=None, to_begin=None):
         inputs.append(to_end)
     if to_begin is not None:
         inputs.append(to_begin)
-    cls = get_mask_cls(*inputs)
+    cls = get_duck_cls(*inputs)
 
     # force a 1d array
     ary = cls(ary).ravel()
@@ -3168,7 +3050,7 @@ def ediff1d(ary, to_end=None, to_begin=None):
 
 @implements(np.gradient)
 def gradient(f, *varargs, axis=None, edge_order=1):
-    cls = get_mask_cls(*((f,) + varargs))
+    cls = get_duck_cls(*((f,) + varargs))
     varargs = [cls(v) for v in varargs]
 
     N = f.ndim  # number of dimensions
@@ -3443,7 +3325,7 @@ def real_if_close(a, tol=100):
 
 @implements(np.isclose)
 def isclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False):
-    cls = get_mask_cls(a, b)
+    cls = get_duck_cls(a, b)
     a, b = cls(a), cls(b)
     result_data = np.isclose(a._data, b._data, rtol, atol, equal_nan)
     result_mask = a._mask | b._mask
@@ -3505,7 +3387,7 @@ def unwrap(p, discont=np.pi, axis=-1):
     np.copyto(ddmod, pi, where=(ddmod == -pi) & (dd > 0))
     ph_correct = ddmod - dd
     np.copyto(ph_correct, 0, where=abs(dd) < discont)
-    up = get_mask_cls(p)(p, copy=True, dtype='d')
+    up = get_duck_cls(p)(p, copy=True, dtype='d')
     up[slice1] = p[slice1] + ph_correct.cumsum(axis)
     return up
 

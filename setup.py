@@ -9,14 +9,14 @@ setuptools.setup(
     name="ndarray_ducktypes",
     version="alpha",
     author="Allan Haldane",
-    author_email="allan.haldane@temple.edu",
+    author_email="allan.haldane@gmail.com",
     description=("A set of ndarray ducktypes testing the new "
                  "__array_function__ and __array_ufunc__ functionality in "
                  "numpy. "),
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/ahaldane/ndarray_ducktypes",
-    packages=setuptools.find_packages(),
+    packages=setuptools.find_packages(include=['ndarray_ducktypes']),
     include_package_data = True,
     classifiers=[
         "Programming Language :: Python :: 3",

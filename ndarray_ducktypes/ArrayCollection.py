@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 import numpy as np
 import warnings
-from duckprint import duck_repr, duck_str, is_ndducktype
-from ndarray_api_mixin import NDArrayAPIMixin
+from .duckprint import duck_repr, duck_str, is_ndducktype
+from .ndarray_api_mixin import NDArrayAPIMixin
 import sys
 import operator
 from functools import reduce

@@ -5,12 +5,11 @@ from numpy.testing import (
     assert_equal, assert_almost_equal)
 import numpy as np
 import numpy
-from numpy.core.numeric import pickle
 from functools import reduce
 import textwrap
 import operator
 import warnings
-from ArrayCollection import ArrayCollection, CollectionScalar
+from ndarray_ducktypes.ArrayCollection import ArrayCollection, CollectionScalar
 
 class TestConstruction:
     def test_simple_dict(self):
