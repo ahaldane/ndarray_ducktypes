@@ -637,8 +637,11 @@ class MaskedX:
 
 masked = X = MaskedX()
 
-MaskedOperatorMixin.ScalarType = MaskedScalar
-MaskedOperatorMixin.ArrayType = MaskedArray
+def ducktype_linkscalar(arraytype, scalartype):
+    arraytype.ArrayType = scalartype.ArrayType = arraytype
+    arraytype.ScalarType = scalartype.ScalarType = scalartype
+
+ducktype_linkscalar(MaskedArray, MaskedScalar)
 MaskedOperatorMixin.known_types = (MaskedArray, MaskedScalar, MaskedX)
 
 def replace_X(data, dtype=None):
@@ -1229,14 +1232,16 @@ def get_mask_cls(*args):
         acl = arg if isinstance(arg, type) else type(arg)
 
         if issubclass(acl, (MaskedArray, MaskedScalar)):
+            print("A", cls, acl)
             if cls is None or issubclass(acl, cls):
+                print("B", cls, acl)
                 cls = acl
                 continue
             elif issubclass(cls, MaskedScalar) and issubclass(acl, MaskedArray):
                 cls = cls.ArrayType
             elif issubclass(acl, MaskedScalar) and issubclass(cls, MaskedArray):
                 acl = acl.ArrayType
-
+            print("C", cls, acl)
             if issubclass(acl, cls):
                 cls = acl
             elif not issubclass(cls, acl):

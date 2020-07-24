@@ -199,6 +199,15 @@ The `.mask` attribute of a `MaskedArray` is a readonly view of the internal mask
 
 Unlike `ndarray`s, `MaskedArray`s do not support a `.base` attribute which can be used to tell if an array is a view. However, it is possible to check the `.base` attribute of the `ndarray`s returned by `.mask`, or `.filled` with `view=True`.
 
+Subclasses and Coercion
+-----------------------
+
+As described further below, you can subclass MaskedArray to create derived and composite ndarray ducktypes. This module aims to preserve MaskedArray subclasses provided as inputs to its implementations of the Numpy API functions. The API functions, such as `np.concatenate`, will detect the most-derived MaskedArray subclass in the inputs using the usual Python subclass rules, and convert all the inputs to that class before performing the computation, and the result will have that subclass.
+
+Similarly, the result of arithmetic operations and other ufuncs will have type equal to the most derived MaskedArray subclass of the inputs.
+
+Note that the normal Numpy-API functions are not aware of the `X` placeholder, so cannot auto-convert arguments which are list/tuples containing X into MaskedArrays. I.e, code such as `np.sin([1,2,X])` will fail, and must be corrected to `np.sin(MaskedArray([1,2,X])). However, you can also import the MaskedArray implementation of the api function, and it can autoconvert list input containing `X`, as in `import MaskedArray as ma; ma.sin([1,2,X])`.
+
 Differences in behavior between MaskedArray and ndarray
 -------------------------------------------------------
 
@@ -236,7 +245,7 @@ Using MaskedArray to mask other ndarray ducktypes
 
 It is sometimes desirable to mask ducktypes of ndarray, rather than plain ndarrays. For instance, one might want to make a masked-unit type which supports both masked values and keeps track of scientific units associated to the array.
 
-MaskedArray is designed to support such behavior though either composition or encapsulation . 
+MaskedArray is designed to support such behavior though either composition or encapsulation.
 
 The simplest is encapsulation: The 'data' argument to the MaskedArray constructor can be any ndarray ducktype or subclass which follows numpy's indexing and broadcasting behavior, and this ducktype will be preserved in the course of all masked operations. In other words, `MaskedArray` can act as a container type which encapsulates the other ducktype. You can always get back access to the encapsulated ducktyped array using `.filled()`. For instance:
 
@@ -256,7 +265,7 @@ my_arr
 (2 + my_arr).filled()
 ```
 
-Encapsulation is easy to implement, but it is missing  some desirable features: Attributes of the encapsulated type are not exposed on the masked instance, and the `repr` and `str` of the `MaskedArray` do not display anything about the contained type, and numpy functions which create new masked arrays may lose the contained ducktype class information. 
+Encapsulation is easy to implement, but it is missing  some desirable features: Attributes of the encapsulated type are not exposed on the masked instance, the `repr` and `str` of the `MaskedArray` do not display anything about the contained type, and numpy functions which create new masked arrays may lose the contained ducktype class information. 
 
 To control these behaviors we recommend you combine or subclass `MaskedArray` and the other ducktype to create a composite type. [TODO: example subclass]
 
