@@ -112,9 +112,9 @@ def get_duck_cls(*args):
     """
     Helper to make ducktypes Subclass-friendly.
 
-    Finds the most derived class of MaskedArray/MaskedScalar.
+    Finds the most derived class of a ducktype
     If given both an Array and a Scalar, convert the Scalar to an array first.
-    In the case of two non-inheriting subclasses, raise TypeError.
+    In the case of two non-inheriting ducktypes, raise TypeError.
 
     Parameters
     ==========
@@ -129,32 +129,23 @@ def get_duck_cls(*args):
     """
     cls = None
     for arg in args:
-        acl = arg if isinstance(arg, type) else type(arg)
+        if is_ndducktype(arg):
+            if isinstance(arg, (np.ndarray, np.generic)):
+                acl = np.ndarray 
+            else:
+                acl = arg.ArrayType
 
-        if issubclass(acl, (np.ndarray, np.generic)):
-            continue
-        elif is_ndducktype(acl):
-            atype, stype = acl.ArrayType, acl.ScalarType
-
-            if cls is None or issubclass(acl, cls):
+            if cls is None or cls == np.ndarray or issubclass(acl, cls):
                 cls = acl
-                continue
-            elif issubclass(cls, cls.ScalarType) and issubclass(acl, atype):
-                cls = cls.ArrayType
-            elif issubclass(cls, cls.ArrayType) and issubclass(acl, stype):
-                acl = acl.ArrayType
-
-            if issubclass(acl, cls):
-                cls = acl
-            elif not issubclass(cls, acl):
+            elif acl != np.ndarray and not issubclass(cls, acl):
                 raise TypeError(("Ambiguous mix of ducktypes {} and {}"
                                 ).format(cls, acl))
-        elif issubclass(acl, (list, tuple)):
+        elif isinstance(arg, (list, tuple)):
             tmpcls = get_duck_cls(*arg)
             if tmpcls is not None and (cls is None or issubclass(cls, tmpcls)):
                 cls = tmpcls
 
     if cls is None:
         return None
-    return cls.ArrayType
+    return cls
 
