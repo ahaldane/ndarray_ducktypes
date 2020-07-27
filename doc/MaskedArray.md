@@ -206,7 +206,7 @@ As described further below, you can subclass MaskedArray to create derived and c
 
 Similarly, the result of arithmetic operations and other ufuncs will have type equal to the most derived MaskedArray subclass of the inputs.
 
-Note that the normal Numpy-API functions are not aware of the `X` placeholder, so cannot auto-convert arguments which are list/tuples containing X into MaskedArrays. I.e, code such as `np.sin([1,2,X])` will fail, and must be corrected to `np.sin(MaskedArray([1,2,X])). However, you can also import the MaskedArray implementation of the api function, and it can autoconvert list input containing `X`, as in `import MaskedArray as ma; ma.sin([1,2,X])`.
+Note that the normal Numpy-API functions are not aware of the `X` placeholder, so cannot auto-convert arguments which are list/tuples containing X into MaskedArrays. I.e, code such as `np.sin([1,2,X])` will fail, and must be corrected to `np.sin(MaskedArray([1,2,X]))`. However, you can also import the MaskedArray implementation of the api function, and it can autoconvert list input containing `X`, as in `import MaskedArray as ma; ma.sin([1,2,X])`.
 
 Differences in behavior between MaskedArray and ndarray
 -------------------------------------------------------

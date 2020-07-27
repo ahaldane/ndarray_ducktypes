@@ -1,14 +1,32 @@
 NDarray Ducktypes
 =================
 
-This module provides a set of numpy ndarray ducktypes which use the new `__array_function__` and `__array_ufunc__` functionality in numpy. Currently, this includes a more modern MaskedArray replacement, and a structured-array-like ducktype called ArrayCollection meant to allow simple tabular data analysis. 
+This module provides a set of numpy ndarray ducktypes which use the new `__array_function__` and `__array_ufunc__` functionality in numpy. Currently, this includes a more modern MaskedArray replacement, and a structured-array-like ducktype called ArrayCollection meant to allow simple tabular data analysis.
+
+This module also provides helper tools for defining your own new ndarray-ducktypes, including various boilerplate methods and ready-made ducktype printing functionality, in the duckprint submodule. Getting the `str` and `repr` of ndarray ducktypes to mirror that of numpy's ndarrays is not trivial, and the `duckprint` module's goal is to make it easy.
+
+Insallation and Usage
+---------------------
+
+This package supports standard [python package installation](https://packaging.python.org/tutorials/installing-packages/) using setuptools. The simplest way is to use `pip` to install from the cloned source directory:
+
+    $ pip install /path/to/ndarray_ducktypes
+
+and uninstall by "pip uninstall ndarray_ducktypes".
 
 To use these ducktypes, numpy's `__array_function__` must be enabled, and it is currently disabled by default. To enable, in your shell do:
 ```
 export NUMPY_EXPERIMENTAL_ARRAY_FUNCTION=1
 ```
 
-This module also provides helper tools for defining your own new ndarray-ducktypes, including various boilerplate methods and ready-made ducktype printing functionality, in the duckprint submodule. Getting the `str` and `repr` of ndarray ducktypes to mirror that of numpy's ndarrays is not trivial, and the `duckprint` module's goal is to make it easy.
+New Ndarray Ducktypes
+---------------------
+
+These are documented in the following links:
+
+ * [MakedArray documentation](MaskedArray.md).
+ * [ArrayCollection documentation](ArrayCollection.md)
+ * UnitArray documentation (TODO)
 
 Defining Your Own Ducktypes
 ---------------------------
@@ -20,18 +38,18 @@ Before implementing a ducktype, you should familiarize yourself with the basics 
 Mixins
 ------
 
-Implementing a new ducktype can be sped up by using mixins provided by this module as well as by numpy.  
+Implementing a new ducktype can be sped up by using mixins provided by this module as well as by numpy.
 
 Numpy provides a mixin, `NDArrayOperatorsMixin`, from `numpy.lib.mixins`, which defines almost all python operators incliuding arithmetic and comparisons on your ducktype. It implements them by calling the corresponding numpy ufunc. See its [documentation](https://numpy.org/doc/stable/reference/generated/numpy.lib.mixins.NDArrayOperatorsMixin.html). If you then define an appropriate `__array_ufunc__` method as in the documentation linked above, your ducktype will automatically support Python arithmetic and comparison.
 
 This module provides another mixin, `NDArrayAPIMixin`, in `ndarray_ducktypes.ndarray_api_mixin`, which defines many of the numpy-api methods as attributes on your ducktype by calling the corresponding Numpy-api function. For instance, this allows you to call `arr.sum()` on your ducktype, and this mixin implements this method to call `np.sum(arr)`. If you then define an appropriate `__array_function__` your ducktype will automatically support all of these attributes. Some numpy attribute method operate inplace, such as sort. This mixin also implements other ndarray attributes which are not part of the numpy-api such as `.fill()`, `.imag` and `.flatten()`.
 
-There are some attributes which `NDArrayAPIMixin` does not attempt to implement because they typically depend on how your ducktype stores its data internally. These are the attributes `dtype`, `shape`, `strides`, `flags`, `base`, the methods `astype`, `view`, `item`, `resize` (which needs to be inplace), as well as other miscellaneous attributes, `byteswap`, `ctypes`, `data`, `dump`, `dumps`, `flat`, `getfield`,  `itemset`, `itemsize`.
+There are some attributes which `NDArrayAPIMixin` does not attempt to implement because they typically depend on how your ducktype stores its data internally. These are the attributes `dtype`, `shape`, `strides`, `flags`, `base`, the methods `astype`, `view`, `item`, `resize` (which needs to be inplace), as well as the less commonly used attributes, `byteswap`, `ctypes`, `data`, `dump`, `dumps`, `flat`, `getfield`,  `itemset`, `itemsize`.
 
 The `implements` decorator
 --------------------------
 
-In order to use `__array_function__`, you will need to define implementations for all the api-functions you wish to support, arrange to have these called in your `__array_function__` implementation, and correctly dispatch based on types of the input arguments. The numpy docs on `__array_function__` give some guidance on how to do this, but this module provides an extra helper function, `new_ducktype_implementation`, provided from `ndarray_ducktypes.common`. 
+In order to use `__array_function__`, you will need to define implementations for all the api-functions you wish to support, arrange to have these called in your `__array_function__` implementation, and correctly dispatch based on types of the input arguments. The numpy docs on `__array_function__` give some guidance on how to do this, but this module provides an extra helper function, `new_ducktype_implementation`, provided from `ndarray_ducktypes.common`.
 
 This will return a decorator to decorate each of your api-implementations with, which will record all decorated api functions and which also will automate ducktype dispatch for you. It allows for a simple `__array_function__` implementation, as in this example:
 ```
@@ -64,7 +82,7 @@ decorator is used to get your implementation, accessible through the
 (`check_args` above) which is used to implement the `__array_function__`
 dispatch logic.
 
-By default, `check_args(arg, kwarg, types, known_types)` will check that all of the elements in the `types` argument are of one of the `known_types` you provide or an ndarray, and will ignore `arg` and `kwarg`. In many cases you can simply pass on the `types`  argument of `__array_function__` to `check_args`. 
+By default, `check_args(arg, kwarg, types, known_types)` will check that all of the elements in the `types` argument are of one of the `known_types` you provide or an ndarray, and will ignore `arg` and `kwarg`. In many cases you can simply pass on the `types`  argument of `__array_function__` to `check_args`.
 
 However, in other cases you will want to only check certain args or will require a more complicated type check. For this, the decorator provides a `checked_args` optional argument to customize behavior. This may be either a tuple of strings which are argument names of the function being decorated, or a function with signature `(args, kwds, types, known_types)`. For example:
 
@@ -90,7 +108,7 @@ Numpy distinguishes between ndarrays and numpy scalars, which are subtypes of `n
 
 While for some ducktypes it might be appropriate to simply return numpy scalars when a scalar should be returned, in most cases you want the returned scalar to retain information related to your ducktype, and therefore you will want to define duck-scalar types. How to do so is not obvious, and there are technical challengees caused by the fact that numpy scalar types cannot be subclassed.
 
-The strategy used in this module is to define a single duck-scalar type associated to each ducktype, whose instance's datatype is determined by the `.dtype` attribute. You should do this too for your ducktype in order to fully use this module's helper functions, in particular its printing functionality, 
+The strategy used in this module is to define a single duck-scalar type associated to each ducktype, whose instance's datatype is determined by the `.dtype` attribute. You should do this too for your ducktype in order to fully use this module's helper functions, in particular its printing functionality,
 
 Your duck-scalar should support `__array_function__` as well as all the ndarray attributes (just as numpy scalars do). Numpy scalars support indexing, and indexing with an empty tuple `()` should return a copy of the scalar.
 
@@ -104,7 +122,7 @@ Subclassing Ducktypes
 
 In order to combine different ndarray-ducktypes together, or provide additional behavior, it can sometimes be useful to subclass your ducktype or someone else's ducktype. It is reasonable to try to implement your ducktype's api to allow others to subclass it and still use your api function implementations.
 
-To help with this, the function `get_duck_cls(*args)` is defined in `ndarray_ducktypes.common`. Given a set of input arguments, it returns the most derived ducktype class, and counts plain `ndarray`s as the base type even if your ducktype does not subclass ndarray. If the inputs contain multiple ducktypes which are not related by inheritance, it will raise and exception. It will return the corresponding ndarray or a duck-array type if given a scalar of duck-scalar.
+To help with this, the function `get_duck_cls(*args)` is defined in `ndarray_ducktypes.common`. Given a set of input arguments, it returns the most derived ducktype class, and counts plain `ndarray`s as the base type even if your ducktype does not subclass ndarray. If the inputs contain multiple ducktypes which are not related by inheritance, it will raise and exception. If given a scalar of duck-scalar it will return the corresponding ndarray or a duck-array type .
 
 Often, by calling this at the start of your api method implementation on all the inputs and converting all inputs to the returned class, you will allow downstream users to subclass your ducktype such that your api methods preserve their subtype. [XXX should we check known types? if one ducktype knows the other but not vice-versa, use that one?]
 
@@ -115,7 +133,7 @@ Duckprint
 The duckprint module implements functionality for printing ndarray-ducktypes in
 the numpy output style, which is meant to be re-used by ducktype implementors.
 
-Implementors of new ndarray ducktypes can use this module by implementing 
+Implementors of new ndarray ducktypes can use this module by implementing
 `__repr__` and `__str__` for their ducktype by using `duck_str` and `duck_repr` from the `ndarray_ducktypes.duckprint` submodule as follows, and optionally also
 implementing a class method `__nd_duckprint_dispatch__` in their ducktype for
 further customization:
@@ -132,7 +150,7 @@ further customization:
 ```
 
 The main requirements for using `duck_str` and `duck_repr` are that your
-ducktype allows numpy-style indexing. That is, your ducktype should be 
+ducktype allows numpy-style indexing. That is, your ducktype should be
 indexable along multiple axes at once and support tuple-indexing, as well as
 boolean and integer fancy-indexing. It should also have basic ndarray
 attributes such as `.dtype`, `.shape`, and `.ndim`. When "fully" indexed at all
@@ -191,7 +209,7 @@ my_dispatcher = FormatDispatcher([Ef1, Ef2, Ef3], default_duckprint_options)
 ```
 where `Ef1`, `Ef2` and so on are your `ElementFormatter` instances. When given a set
 of elements to print, the `FormatDispatcher` will try the `will_dispatch` method
-of the ElementFormatters one-by-one until one returns True, and then use that 
+of the ElementFormatters one-by-one until one returns True, and then use that
 `ElementFormatter` to print the elements. The dispatcher created here should
 be returned by `__nd_ducktype_dispatcher__` in your ducktype.
 

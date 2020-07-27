@@ -1,26 +1,36 @@
-## NDarray Ducktypes
+# NDarray Ducktypes
 
-This module provides a set of numpy `ndarray` ducktypes which use the new `__array_function__` and `__array_ufunc__` functionality in numpy. Currently, this includes a more modern `MaskedArray` replacement, and a structured-array-like ducktype called `ArrayCollection` meant to allow simple tabular data analysis. It also provides ready-made printing functionality useful for anyone implementing a new ndarray ducktype, in the `duckprint` submodule.
+This module provides:
+
+ 1. A set of new numpy `ndarray` ducktypes, called `MaskedArray`, `ArrayCollection`, and `UnitArray` using the [new ducktype numpy api](https://numpy.org/neps/nep-0022-ndarray-duck-typing-overview.html). See below for descriptions.
+ 2. Helper tools to help you define your own numpy ducktypes. This including helper methods, mixins, and most importantly printing functionality in the `duckprint` submodule to help implement your ducktype's `str` and `repr`.
+
+This project is currently in "alpha" stage.
+
+## New Ndarray Ducktypes
 
 ### MaskedArray
 
-`MaskedArray` provides missing-value support for numpy arrays, and mirrors and improves numpy's `np.ma.MaskedArray`. It is meant as a new iteration of numpy's MaskedArray which uses Numpy's new and powerful "ducktyped" array functionality, so that the `MaskedArray`s from this module can be used as drop-in replacements in arbitrary numpy expressions. 
+`MaskedArray` provides missing-value support for numpy arrays, and is meant as a new iteration of numpy's `np.ma.MaskedArray`. `MaskedArray`s from this module can be used as drop-in replacements in arbitrary numpy expressions. (95% complete.)
 
-See [the MakedArray documentation](doc/MaskedArray.md)
+See [the MakedArray documentation](doc/MaskedArray.md).
 
 ### ArrayCollection
 
-`ArrayCollection` mimics numpy's structured arrays but avoids binary representation issues of structured arrays and can have more optimized memory layout. `ArrayCollection` is meant for use as a "pandas-lite" for working with tabular data, which avoids the difficulties of using structured arrays for this purpose. 
+`ArrayCollection` mimics numpy's structured arrays but avoids binary representation issues of structured arrays and can have more optimized memory layout. `ArrayCollection` is meant for use as a "pandas-lite" for working with tabular data, which avoids the difficulties of using structured arrays for this purpose. (5% complete)
 
 This module also contains a `MaskedArrayCollection` type which allows you to mask individual fields in elements of an `ArrayCollection`.
 
-See [the ArrayCollection documentation](doc/ArrayCollection.md) (WIP)
+See [the ArrayCollection documentation](doc/ArrayCollection.md)
 
-### Duckprint
+### UnitArray
 
-This repository implements a helper module, `duckprint`, which provides ready-made printing routines to help implement the str/repr of ducktypes. `duckprint` is used internally by the `MaskedArray` and `ArrayCollection` classes defined in this repository.
+Will implement a ducktype which stores unit information in addition to the dtype. 0% complete.
 
+## Ducktype Helper Tools
 
-See [the duckprint documentation](doc/duckprint.md)
+This module implements helper classes and methods and mixins to help simplify defining new ducktypes, with some recommendations for implementation which are reuired by some of the helper methods, see docs linked below.
 
+To make ducktypes quicker to define, the `duckprint` provides ready-made printing routines to help implement the str/repr of ducktypes. `duckprint` is used internally by the `MaskedArray` and `ArrayCollection` classes defined in this repository.
 
+See [Main Documentation](doc/NDarray_Ducktypes.md)
