@@ -2574,15 +2574,19 @@ def where(condition, x=None, y=None):
 def argwhere(a):
     return np.transpose(np.nonzero(a))
 
-@implements(np.choose, checked_args=('choices',))
+@implements(np.choose, checked_args=lambda a,k,t,n: [type(x) for x in a[1]])
 def choose(a, choices, out=None, mode='raise'):
     if isinstance(a, (MaskedArray, MaskedScalar)):
         raise TypeError("choice indices should not be masked")
 
+    cls = get_duck_cls(*choices)
+    choices = [cls(choice) for choice in choices]
+    choices_data = [c._data for c in choices]
+    choices_mask = [c._mask for c in choices]
+
     outdata, outmask = get_maskedout(out)
-    result_data = np.choose(a, choices._data, outdata, mode)
-    result_mask = np.choose(a, choices._mask, outmask, mode)
-    cls = type(choices)
+    result_data = np.choose(a, choices_data, outdata, mode)
+    result_mask = np.choose(a, choices_mask, outmask, mode)
     return maskedarray_or_scalar(result_data, result_mask, out, cls)
 
 @implements(np.piecewise)

@@ -87,11 +87,11 @@ By default, `check_args(arg, kwarg, types, known_types)` will check that all of 
 However, in other cases you will want to only check certain args or will require a more complicated type check. For this, the decorator provides a `checked_args` optional argument to customize behavior. This may be either a tuple of strings which are argument names of the function being decorated, or a function with signature `(args, kwds, types, known_types)`. For example:
 
 ```
-@implements(np.choose, checked_args=('choices',))
-def choose(a, choices, out=None, mode='raise'):
+@implements(np.split, checked_args=('ary',))
+def split(ary, indices_or_sections, axis=0):
     ... your implementation here ...
 ```
-Here, only the `choices` argument will be checked to have your ducktype, while the argument `a` will not be checked and may be a plain python list, allowing calls like `np.choose([2, 3, 1, 0], duckarr)`. If an optional keyword arg name is given in the `checked_args` tuple, it is only checked if explicitly supplied.
+Here, only the `ary` argument will be checked to have your ducktype, while the argument `indices_or_sections` will not be checked and may be a plain python list, allowing calls like `np.split(duckarr, [3, 5, 6, 10])`. If an optional keyword arg name is given in the `checked_args` tuple, it is only checked if explicitly supplied.
 
 The most flexible way of controlling which args are checked is to provide a function, as in:
 ```
@@ -99,7 +99,9 @@ The most flexible way of controlling which args are checked is to provide a func
 def select(condlist, choicelist, default=0):
     ... your implementation here ...
 ```
-In this example, the elements of the `choicelist` argument are checked for type, and not condlist. The function returns a list of types, which the implements decorator will then automatically check to be a known type. Alternately, the function you provide may raise a `NotImplementedError` to signify that type check failed. Since you have access to all of the `__array_function__` arguments you can implement any dispatch behavior desired.
+In this example, the elements of the `choicelist` argument are checked for type, and not condlist. The function returns a list of types, which the implements decorator will then automatically check to be a known type. 
+
+Lastly, the `checked_args` function you provide may raise a `NotImplementedError` to signify that type check failed. Since you have access to all of the `__array_function__` arguments you can implement any dispatch behavior desired.
 
 Duck Scalars
 ------------
