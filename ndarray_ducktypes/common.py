@@ -104,9 +104,13 @@ def new_ducktype_implementation():
 
     return new_impl
 
-def ducktype_linkscalar(arraytype, scalartype):
+def ducktype_link(arraytype, scalartype, known_types=None):
     arraytype.ArrayType = scalartype.ArrayType = arraytype
     arraytype.ScalarType = scalartype.ScalarType = scalartype
+    known = (arraytype, scalartype, np.ndarray)
+    if known_types is not None:
+        known += tuple(known_types)
+    arraytype.known_types = scalartype.known_types = known
 
 def get_duck_cls(*args):
     """
@@ -114,7 +118,14 @@ def get_duck_cls(*args):
 
     Finds the most derived class of a ducktype
     If given both an Array and a Scalar, convert the Scalar to an array first.
-    In the case of two non-inheriting ducktypes, raise TypeError.
+
+    In the cast of two non-inheriting ducktypes (or ndarray itself), if
+    one ducktype is in the known_types of the other, and not vice-versa,
+    the class of the latter supersedes. If neither, or both, of the ducktypes
+    is within the known_types of the other, raise TypeError.
+
+    All of the ducktypes must support the ArrayType/ScalarType and known_types
+    attributes used by the ndarray_ducktypes module.
 
     Parameters
     ==========
@@ -134,12 +145,18 @@ def get_duck_cls(*args):
                 acl = np.ndarray 
             else:
                 acl = arg.ArrayType
-
+            
+            # TODO: tidy up this logic?
             if cls is None or cls == np.ndarray or issubclass(acl, cls):
                 cls = acl
             elif acl != np.ndarray and not issubclass(cls, acl):
-                raise TypeError(("Ambiguous mix of ducktypes {} and {}"
-                                ).format(cls, acl))
+                if cls in acl.known_types:
+                    cls = acl
+                elif acl in cls.known_types:
+                    pass
+                else:
+                    raise TypeError(("Ambiguous mix of ducktypes {} and {}"
+                                    ).format(cls, acl))
         elif isinstance(arg, (list, tuple)):
             tmpcls = get_duck_cls(*arg)
             if tmpcls is not None and (cls is None or issubclass(cls, tmpcls)):

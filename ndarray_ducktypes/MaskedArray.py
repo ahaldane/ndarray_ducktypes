@@ -6,7 +6,7 @@ import warnings
 from .duckprint import (duck_str, duck_repr, duck_array2string, typelessdata,
     default_duckprint_options, default_duckprint_formatters, FormatDispatcher)
 from .common import (is_ndducktype, is_duckscalar, new_ducktype_implementation,
-    ducktype_linkscalar, get_duck_cls)
+    ducktype_link, get_duck_cls)
 from .ndarray_api_mixin import NDArrayAPIMixin
 
 import numpy as np
@@ -638,8 +638,7 @@ class MaskedX:
 
 masked = X = MaskedX()
 
-ducktype_linkscalar(MaskedArray, MaskedScalar)
-MaskedOperatorMixin.known_types = (MaskedArray, MaskedScalar, MaskedX)
+ducktype_link(MaskedArray, MaskedScalar, (MaskedX,))
 
 def replace_X(data, dtype=None):
     """

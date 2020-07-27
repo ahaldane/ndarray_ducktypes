@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-from ArrayCollection import ArrayCollection
-from MaskedArray import MaskedArray, X
+from .ArrayCollection import ArrayCollection
+from .MaskedArray import MaskedArray, X
 
 class MaskedArrayCollection(ArrayCollection):
     def __init__(self, data, skip_validation=False):

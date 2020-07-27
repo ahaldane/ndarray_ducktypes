@@ -52,7 +52,7 @@ The `implements` decorator
 In order to use `__array_function__`, you will need to define implementations for all the api-functions you wish to support, arrange to have these called in your `__array_function__` implementation, and correctly dispatch based on types of the input arguments. The numpy docs on `__array_function__` give some guidance on how to do this, but this module provides an extra helper function, `new_ducktype_implementation`, provided from `ndarray_ducktypes.common`.
 
 This will return a decorator to decorate each of your api-implementations with, which will record all decorated api functions and which also will automate ducktype dispatch for you. It allows for a simple `__array_function__` implementation, as in this example:
-```
+```python
 class MyDuckType:
     def __array_function__(self, func, types, arg, kwarg):
         known_types = (MyDuckType,)
@@ -86,7 +86,7 @@ By default, `check_args(arg, kwarg, types, known_types)` will check that all of 
 
 However, in other cases you will want to only check certain args or will require a more complicated type check. For this, the decorator provides a `checked_args` optional argument to customize behavior. This may be either a tuple of strings which are argument names of the function being decorated, or a function with signature `(args, kwds, types, known_types)`. For example:
 
-```
+```python
 @implements(np.split, checked_args=('ary',))
 def split(ary, indices_or_sections, axis=0):
     ... your implementation here ...
@@ -94,7 +94,7 @@ def split(ary, indices_or_sections, axis=0):
 Here, only the `ary` argument will be checked to have your ducktype, while the argument `indices_or_sections` will not be checked and may be a plain python list, allowing calls like `np.split(duckarr, [3, 5, 6, 10])`. If an optional keyword arg name is given in the `checked_args` tuple, it is only checked if explicitly supplied.
 
 The most flexible way of controlling which args are checked is to provide a function, as in:
-```
+```python
 @implements(np.select, checked_args=lambda a,k,t,n: [type(x) for x in a[1]])
 def select(condlist, choicelist, default=0):
     ... your implementation here ...
@@ -106,7 +106,7 @@ Lastly, the `checked_args` function you provide may raise a `NotImplementedError
 Duck Scalars
 ------------
 
-Numpy distinguishes between ndarrays and numpy scalars, which are subtypes of `np.generic`. For instance, when indexing an ndarray to get a single element, the returned value is a numpy scalar, and not an ndarray. It is desirable to mimic this behavior, since ndarrays and scalars behave differently in a number of situations.
+Numpy distinguishes between ndarrays and numpy scalars, which are subtypes of `np.generic`. For instance, when indexing an ndarray to get a single element, the returned value is a numpy scalar, and not an ndarray. It is desirable to mimic this behavior in your ducktype, since ndarrays and scalars behave differently in a number of situations.
 
 While for some ducktypes it might be appropriate to simply return numpy scalars when a scalar should be returned, in most cases you want the returned scalar to retain information related to your ducktype, and therefore you will want to define duck-scalar types. How to do so is not obvious, and there are technical challengees caused by the fact that numpy scalar types cannot be subclassed.
 
@@ -114,31 +114,31 @@ The strategy used in this module is to define a single duck-scalar type associat
 
 Your duck-scalar should support `__array_function__` as well as all the ndarray attributes (just as numpy scalars do). Numpy scalars support indexing, and indexing with an empty tuple `()` should return a copy of the scalar.
 
-Furthermore, in order to use some of the helper functions, this module expects two additional attributes to be implemented: Both the ducktype and the duck-scalar need a record of each other, so they should both have an `ArrayType` attribute equal to the ducktype type, and a `ScalarType` attribute equal to the scalar ducktype. As a convenience, you can call `ndarray_ducktypes.common.ducktype_linkscalar(arraytype, scalartype)` to automatically add these attributes.
+Furthermore, in order to use some of the helper functions, this module expects two additional attributes to be implemented: Both the ducktype and the duck-scalar need a record of each other, so they should both have an `ArrayType` attribute equal to the ducktype type, and a `ScalarType` attribute equal to the scalar ducktype. As a convenience, you can call `ndarray_ducktypes.common.ducktype_linklink(arraytype, scalartype, known_types=None)` to automatically add these attributes.
 
 This module also provides methods `ndarray_ducktypes.common.is_ndducktype(val)`, which tests whether val is either an ndarray, ducktype, or duck-scalar (and not a numpy scalar), and `ndarray_ducktypes.common.is_duckscalar(val)` which tests
-whether val is specifically a duck-scalar. These can be useful when implementing the numpy api.
+whether val is a duck-scalar or a numpy scalar. These can be useful when implementing the numpy api.
 
 Subclassing Ducktypes
 ---------------------
 
 In order to combine different ndarray-ducktypes together, or provide additional behavior, it can sometimes be useful to subclass your ducktype or someone else's ducktype. It is reasonable to try to implement your ducktype's api to allow others to subclass it and still use your api function implementations.
 
-To help with this, the function `get_duck_cls(*args)` is defined in `ndarray_ducktypes.common`. Given a set of input arguments, it returns the most derived ducktype class, and counts plain `ndarray`s as the base type even if your ducktype does not subclass ndarray. If the inputs contain multiple ducktypes which are not related by inheritance, it will raise and exception. If given a scalar of duck-scalar it will return the corresponding ndarray or a duck-array type .
+To help with this, the function `get_duck_cls(*args)` is defined in `ndarray_ducktypes.common`. Given a set of input arguments, it returns the most derived ducktype class, or the ducktype which contains all others in its `known_types`. In ambiguous cases, for instance multiple ducktypes which are not related by inheritance and are both (or neither) in each other's `known_types`, it will raise a TypeError. Scalar inputs are treated as the corresponding array type.
 
-Often, by calling this at the start of your api method implementation on all the inputs and converting all inputs to the returned class, you will allow downstream users to subclass your ducktype such that your api methods preserve their subtype. [XXX should we check known types? if one ducktype knows the other but not vice-versa, use that one?]
+Often, by calling this at the start of your api method implementation on all the inputs and converting all inputs to the returned class, you will allow downstream users to subclass your ducktype such that your api methods preserve their subtype.
 
 
 Duckprint
 =========
 
 The duckprint module implements functionality for printing ndarray-ducktypes in
-the numpy output style, which is meant to be re-used by ducktype implementors.
+the numpy output style, which is intended for you to re-use when implementing your ducktype.
 
-Implementors of new ndarray ducktypes can use this module by implementing
-`__repr__` and `__str__` for their ducktype by using `duck_str` and `duck_repr` from the `ndarray_ducktypes.duckprint` submodule as follows, and optionally also
-implementing a class method `__nd_duckprint_dispatch__` in their ducktype for
-further customization:
+You use this module by implementing `__repr__` and `__str__` for your ducktype
+by using `duck_str` and `duck_repr` from the `ndarray_ducktypes.duckprint`
+submodule as follows, and optionally also implementing a class method
+`__nd_duckprint_dispatch__` in your ducktype for further customization:
 ```python
     def __str__(self):
         return duckprint.duck_str(self)
