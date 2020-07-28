@@ -18,6 +18,10 @@ from ndarray_ducktypes.common import ducktype_link
 
 pi = np.pi
 
+################################################################################
+#                         MaskedArray Testing setup
+################################################################################
+
 # For parametrized numeric testing
 num_dts = [np.dtype(dt_) for dt_ in '?bhilqBHILQefdgFD']
 num_ids = [dt_.char for dt_ in num_dts]
@@ -94,6 +98,11 @@ def assert_almost_masked_equal(actual, desired, err_msg='', anymask=False):
         else:
             assert_almost_equal(dx, dy, err_msg=err_msg)
             assert_equal(mx, my, err_msg)
+
+################################################################################
+#                         Tests ported from numpy.ma
+################################################################################
+# includes some new tests too
 
 class TestMaskedArray:
     # Base test class for MaskedArrays.
@@ -1010,6 +1019,7 @@ class TestMaskedArrayArithmetic:
         # Additional tests on max/min
         (_, _, _, _, _, xm, _, _, _, _) = self.d
         xm.shape = (xm.size,)
+        print(repr(xm))
         assert_equal(xm.max().filled(), 10)
         assert_(xm[0].max().mask)
         assert_(xm[0].max(0).mask)
@@ -3882,6 +3892,11 @@ def test_fieldless_void():
     assert_equal(mx.dtype, x.dtype)
     assert_equal(mx.shape, x.shape)
 
+
+################################################################################
+#                    New Tests of ndarray_ducktypes.MaskedArray
+################################################################################
+
 class Test_ReplaceX:
     def test_allX(self):
         assert_raises(ValueError, MaskedArray, [[X, X, X], [X, X, X]])
@@ -3905,6 +3920,9 @@ class Test_ReplaceX:
     def test_mixedndarray(self):
         arr = MaskedArray([np.array([1,2,3], dtype='i1'), [3, X, 5]])
         assert_masked_equal(arr, MaskedArray([[1,2,3],[3,X,5]], dtype='i1'))
+
+    #XXX many more situations to test here
+
 
 class MA_Subclass(MaskedArray):
     pass
@@ -4035,3 +4053,50 @@ class Test_API:
         assert_equal(type(np.argmin(d, axis=1)), np.ndarray)
         d1 = d[0,:]
         assert_equal(type(np.argmin(d1)), np.dtype('p'))
+
+    def test_sort_argsort_partition_argpartition(self):
+        maxval = _maxvals[np.dtype('int')]
+        d = MaskedArray([2, maxval, X, 1, X, 3, maxval, 0])
+        ret = MaskedArray([0, 1, 2, 3, maxval, maxval, X, X])
+        assert_masked_equal(np.sort(d), ret)
+        assert_masked_equal(d[np.argsort(d)], ret)
+
+        def compare_partitions(x, y, k):
+            xa, ya = set(x[:k]), set(y[:k])
+            xb, yb = set(x[k:]), set(y[k:])
+            assert_(len(xa.difference(ya)) == 0)
+            assert_(len(xb.difference(yb)) == 0)
+        rf = ret.filled(123)
+        compare_partitions(np.partition(d, 3).filled(123), rf, 3)
+        compare_partitions(d[np.argpartition(d, 3)].filled(123), rf, 3)
+
+        inf, nan = np.inf, np.nan
+        d = MaskedArray([2, inf, X, 1, -inf, nan, X, 3, nan, inf, 0])
+        ret = MaskedArray([-inf, 0, 1, 2, 3, inf, inf, nan, nan, X, X])
+        assert_masked_equal(np.sort(d), ret)
+        assert_masked_equal(d[np.argsort(d)], ret)
+
+        d   = MaskedArray([[2, inf, X],
+                           [X,   X, X],
+                           [1, -inf, nan],
+                           [X, 3, nan],
+                           [X, inf, nan],
+                           [X, inf, 0]])
+        ret = MaskedArray([[2, inf, X],
+                           [X,   X, X],
+                           [-inf, 1, nan],
+                           [3, nan, X],
+                           [inf, nan, X],
+                           [0, inf, X]])
+        assert_masked_equal(np.sort(d, axis=1), ret)
+        assert_masked_equal(d[np.arange(6)[:,None], np.argsort(d, axis=1)], ret)
+        # partition of 3 elements around middle elem is same as sort
+        assert_masked_equal(np.partition(d, 1, axis=1), ret)
+
+    def test_searchsorted(self):
+        inf, nan = np.inf, np.nan
+        d = MaskedArray([-inf, 0, 1, 2, 3, inf, inf, nan, nan, X, X])
+        ind = MaskedArray([inf, nan, 2.5, X, -1])
+
+        assert_equal(np.searchsorted(d, ind), [5, 7, 4, 9, 1])
+        assert_equal(np.searchsorted(d, ind, side='right'), [7, 9, 4, 11, 1])

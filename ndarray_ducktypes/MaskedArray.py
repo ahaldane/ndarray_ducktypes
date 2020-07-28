@@ -84,6 +84,12 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
                 raise Exception("Do not give fill_value if providing minmax")
             if minmax == 'max':
                 fill_value = _maxvals[self.dtype]
+            elif minmax == 'maxnan':
+                if issubclass(self.dtype.type, np.inexact):
+                    # some functions, eg np.sort, treat nan as largest
+                    fill_value = np.nan
+                else:
+                    fill_value = _maxvals[self.dtype]
             elif minmax == 'min':
                 fill_value = _minvals[self.dtype]
             else:
@@ -396,10 +402,11 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         fill_value : scalar, optional
             value to put in masked positions of the array. Defaults to 0
             if minmax is not provided.
-        minmax : string 'min' or 'max', optional
-            If 'min', fill masked elements witht the minimum value for this
+        minmax : string 'min', 'max' or 'maxnan', optional
+            If 'min', fill masked elements with the minimum value for this
             array's datatype. If 'max', fill with maximum value for this
-            datatype.
+            datatype. If 'maxnan', fill with nan if a floating type, otherwise
+            same as 'max'.
         view : boolean, optional
             If True, then the returned array is a view of the underlying data
             array rather than a copy (optimization). Be careful, as subsequent
@@ -1319,7 +1326,9 @@ def sort(a, axis=-1, kind='quicksort', order=None):
     # of the axis, we can sort the mask too and everything works out. The
     # mask-sort only swaps the mask between min_val and masked positions
     # which have the same underlying data.
-    result_data = np.sort(a.filled(minmax='max', view=1), axis, kind, order)
+
+    # np.nan should sort higher than all others, so use it as fill if floating
+    result_data = np.sort(a.filled(minmax='maxnan', view=1), axis, kind, order)
     result_mask = np.sort(a._mask, axis, kind)  #or partition for speed?
     return maskedarray_or_scalar(result_data, result_mask, cls=type(a))
     # Note: lexsort may be faster, but doesn't provide kind or order kwd
@@ -1332,7 +1341,7 @@ def argsort(a, axis=-1, kind='quicksort', order=None):
     # argsorted again to get back the sort indices. However, here we
     # modify the rank based on the mask before inverting back to indices.
     # Uses two argsorts plus a temp array.
-    inds = np.argsort(a.filled(minmax='max', view=1), axis, kind, order)
+    inds = np.argsort(a.filled(minmax='maxnan', view=1), axis, kind, order)
     # next two lines "reverse" the argsort (same as double-argsort)
     ranks = np.empty(inds.shape, dtype=inds.dtype)
     np.put_along_axis(ranks, inds, np.arange(a.shape[axis]), axis)
@@ -1340,10 +1349,15 @@ def argsort(a, axis=-1, kind='quicksort', order=None):
     ranks[a._mask] = _maxvals[ranks.dtype]
     return np.argsort(ranks, axis, kind)
 
+@implements(np.partition)
+def partition(a, kth, axis=-1, kind='introselect', order=None):
+    inds = np.argpartition(a, kth, axis, kind, order)
+    return np.take_along_axis(a, inds, axis=axis)
+
 @implements(np.argpartition)
 def argpartition(a, kth, axis=-1, kind='introselect', order=None):
     # see argsort for explanation
-    filled = a.filled(minmax='max', view=1)
+    filled = a.filled(minmax='maxnan', view=1)
     inds = np.argpartition(filled, kth, axis, kind, order)
     ranks = np.empty(inds.shape, dtype=inds.dtype)
     np.put_along_axis(ranks, inds, np.arange(a.shape[axis]), axis)
@@ -1355,24 +1369,27 @@ def searchsorted(a, v, side='left', sorter=None):
 
     if isinstance(a, MaskedArray):
         maskleft = len(a) - np.sum(a._mask)
-        aval = a.filled(minmax='max', view=1)
+        aval = a.filled(minmax='maxnan', view=1)
     else:  # plain ndarray
         maskleft = len(a)
         aval = a
 
-    inds = np.searchsorted(aval, v.filled(minmax='max', view=1),
+    inds = np.searchsorted(aval, v.filled(minmax='maxnan', view=1),
                            side, sorter)
 
-    # Line above treats mask and minval as the same, we need to fix it up
+    # Line above treats mask and maxval as the same, we need to fix it up
     if side == 'left':
         # masked vals in v need to be moved right to the left end of the
         # masked vals in a (which have to be to the right end of a).
         inds[v._mask] = maskleft
     else:
-        # minvals in v meed to be moved left to the left end of the
+        # maxvals in v meed to be moved left to the left end of the
         # masked vals in a.
-        minval = _maxvals[v.dtype]
-        inds[(v._data == minval) & ~v._mask] = maskleft
+        if issubclass(v.dtype.type, np.inexact):
+            maxinds = np.isnan(v._data)
+        else:
+            maxinds = v._data == _maxvals[v.dtype]
+        inds[maxinds & ~v._mask] = maskleft
 
     return inds
 
@@ -2152,11 +2169,6 @@ def imag(a):
     result_data = np.imag(a._data)
     result_mask = a._mask.copy()
     return maskedarray_or_scalar(result_data, result_mask, cls=type(a))
-
-@implements(np.partition)
-def partition(a, kth, axis=-1, kind='introselect', order=None):
-    inds = np.argpartition(a, kth, axis, kind, order)
-    return np.take_along_axis(a, inds, axis=axis)
 
 @implements(np.ptp)
 def ptp(a, axis=None, out=None, keepdims=False):

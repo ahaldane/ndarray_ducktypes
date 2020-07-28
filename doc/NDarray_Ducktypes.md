@@ -53,4 +53,4 @@ This module implements helper classes and methods and mixins to help simplify de
 
 To make ducktypes quicker to define, the `duckprint` provides ready-made printing routines to help implement the str/repr of ducktypes. `duckprint` is used internally by the `MaskedArray` and `ArrayCollection` classes defined in this repository.
 
-See [Defining Your Own Ducktype](doc/MakingDucktypes.md).
+See [Defining Your Own Ducktype](MakingDucktypes.md).
