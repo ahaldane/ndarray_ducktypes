@@ -2,7 +2,7 @@
 
 This module provides:
 
- 1. A set of new numpy `ndarray` ducktypes, including `MaskedArray`, `ArrayCollection`, and `UnitArray` using the [new ducktype numpy api]. See below for descriptions.
+ 1. A set of new numpy `ndarray` ducktypes, including `MaskedArray`, `ArrayCollection`, and `UnitArray` using the [new ducktype numpy api](https://numpy.org/neps/nep-0022-ndarray-duck-typing-overview.html). See below for descriptions.
  2. Helper tools to help you define your own numpy ducktypes. This including helper methods, mixins, and most importantly printing functionality in the `duckprint` submodule to help implement your ducktype's `str` and `repr`.
 
 ## Insallation and Usage

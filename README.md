@@ -16,5 +16,4 @@ The [main documentation](doc/NDarray_Ducktypes.md) has an overview of this modul
 
 ## Contributing
 
-PRs and issues are welcome. If you would like to help, right now a good way is to write tests for the MaskedArray numpy-api implementations in `tests/test_MaskedArray.py`, and fixing problems with the api implementations you find. As of writing this, over 150 api functions are implemented, but only a small fraction have a dedicated test, see [Issue #1](https://github.com/ahaldane/ndarray_ducktypes/issues/1). There are already many tests ported from `numpy.ma`, but I want to go through each api method one-by-one and add tests for it in the `TEST_API` class.
-
+PRs and issues are welcome. If you would like to help, right now a good way is to write tests for the MaskedArray numpy-api implementations in `tests/test_MaskedArray.py`, and fixing problems with the api implementations you find. As of writing this, over 150 api functions are implemented, but only a small fraction have a dedicated test, see [Issue #1](https://github.com/ahaldane/ndarray_ducktypes/issues/1). There are already many tests ported from `numpy.ma`, but I want to go through each api method one-by-one and add tests for it in the `TEST_API` class. The easiest way to run tests, without needing to "pip install", is run "python -m pytest" from the clone root.
