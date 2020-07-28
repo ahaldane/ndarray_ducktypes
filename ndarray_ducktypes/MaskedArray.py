@@ -83,9 +83,9 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
             if fill_value != np._NoValue:
                 raise Exception("Do not give fill_value if providing minmax")
             if minmax == 'max':
-                fill_value = _max_filler[self.dtype]
+                fill_value = _maxvals[self.dtype]
             elif minmax == 'min':
-                fill_value = _min_filler[self.dtype]
+                fill_value = _minvals[self.dtype]
             else:
                 raise ValueError("minmax should be 'min' or 'max'")
 
@@ -390,6 +390,27 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         return [x.tolist() for x in self]
 
     def filled(self, fill_value=np._NoValue, minmax=None, view=False):
+        """
+        Parameters
+        ==========
+        fill_value : scalar, optional
+            value to put in masked positions of the array. Defaults to 0
+            if minmax is not provided.
+        minmax : string 'min' or 'max', optional
+            If 'min', fill masked elements witht the minimum value for this
+            array's datatype. If 'max', fill with maximum value for this
+            datatype.
+        view : boolean, optional
+            If True, then the returned array is a view of the underlying data
+            array rather than a copy (optimization). Be careful, as subsequent
+            actions on the maskedarray can put nonsense data in the view.
+
+        Returns
+        =======
+        data : ndarray
+            Returns a copy of this MaskedArray with masked elements replaced
+            by the fill value. (or a view of view=True).
+        """
         if view and self._data.flags['WRITEABLE']:
             d = self._data.view()
             d[self._mask] = self._get_fill_value(fill_value, minmax)
@@ -461,7 +482,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     def sort(self, axis=-1, kind='quicksort', order=None):
         # Note: See comment in np.sort impl below for trick used here.
         # This is the inplace version
-        self._data[self._mask] = _min_filler[self.dtype]
+        self._data[self._mask] = _maxvals[self.dtype]
         self._data.sort(axis, kind, order)
         self._mask.sort(axis, kind)
 
@@ -742,15 +763,13 @@ class MaskedIterator:
 
     next = __next__
 
-# carried over from numpy's MaskedArray, but naming is somewhat confusing
-# as the max_filler is actually the minimum value. Change?
-_max_filler = ntypes._minvals
-_max_filler.update([(k, -np.inf) for k in [np.float16, np.float32, np.float64]])
-_min_filler = ntypes._maxvals
-_min_filler.update([(k, +np.inf) for k in [np.float16, np.float32, np.float64]])
+_minvals = ntypes._minvals
+_minvals.update([(k, -np.inf) for k in [np.float16, np.float32, np.float64]])
+_maxvals = ntypes._maxvals
+_maxvals.update([(k, +np.inf) for k in [np.float16, np.float32, np.float64]])
 if 'float128' in ntypes.typeDict:
-    _max_filler.update([(np.float128, -np.inf)])
-    _min_filler.update([(np.float128, +np.inf)])
+    _minvals.update([(np.float128, -np.inf)])
+    _maxvals.update([(np.float128, +np.inf)])
 
 def is_string_or_list_of_strings(val):
     if isinstance(val, str):
@@ -1125,9 +1144,9 @@ def setup_ufuncs():
 
     # fill value depends on dtype
     masked_ufuncs[umath.maximum] = _Masked_BinOp(umath.maximum,
-                                         reduce_fill=lambda dt: _max_filler[dt])
+                                         reduce_fill=lambda dt: _minvals[dt])
     masked_ufuncs[umath.minimum] = _Masked_BinOp(umath.minimum,
-                                         reduce_fill=lambda dt: _min_filler[dt])
+                                         reduce_fill=lambda dt: _maxvals[dt])
 
 setup_ufuncs()
 
@@ -1190,6 +1209,7 @@ def any(a, axis=None, out=None, keepdims=np._NoValue):
     # Note: returns boolean, not MaskedArray. If case of fully masked,
     # return False, like np.any([])
 
+@implements(np.amax)
 @implements(np.max)
 def max(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
         where=True):
@@ -1209,7 +1229,7 @@ def max(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
         initial_m = False
         initial_d = initial._data if ismasked else initial
 
-    filled = a.filled(minmax='max', view=1)
+    filled = a.filled(minmax='min', view=1)
     result_data = np.max(filled, axis, outdata, initial=initial_d, **kwarg)
     result_mask = np.logical_and.reduce(a._mask, axis, out=outmask,
                                         initial=initial_m, **kwarg)
@@ -1220,10 +1240,27 @@ def max(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
 def argmax(a, axis=None, out=None):
     if isinstance(out, MaskedArray):
         raise TypeError("out argument of argmax should be an ndarray")
-    filled = a.filled(minmax='max', view=1)
+
+    # most of the time this is enough
+    filled = a.filled(minmax='min', view=1)
     result_data = np.argmax(filled, axis, out)
+
+    # except if the only unmasked elem is minval. Have to check and do carefully
+    data_min = filled == _minvals[a.dtype]
+    is_min = data_min & ~a._mask
+    has_min = np.any(is_min, axis=axis)
+    has_no_other_data = np.all(data_min, axis=axis)
+    has_lonely_min = has_min & has_no_other_data
+    if np.any(has_lonely_min):
+        min_ind = np.argmax(is_min, axis=axis)
+        if is_duckscalar(result_data):
+            return min_ind
+        result_data[has_lonely_min] = min_ind[has_lonely_min]
+    # one day, might speed up with numba/extension. Or with np.take?
+
     return result_data
 
+@implements(np.amin)
 @implements(np.min)
 def min(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
         where=np._NoValue):
@@ -1243,7 +1280,7 @@ def min(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
         initial_m = False
         initial_d = initial._data if ismasked else initial
 
-    filled = a.filled(minmax='min', view=1)
+    filled = a.filled(minmax='max', view=1)
     result_data = np.min(filled, axis, outdata, initial=initial_d, **kwarg)
     result_mask = np.logical_and.reduce(a._mask, axis, out=outmask,
                                         initial=initial_m, **kwarg)
@@ -1254,8 +1291,23 @@ def min(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
 def argmin(a, axis=None, out=None):
     if isinstance(out, MaskedArray):
         raise TypeError("out argument of argmax should be an ndarray")
-    filled = a.filled(minmax='min', view=1)
+
+    # most of the time this is enough
+    filled = a.filled(minmax='max', view=1)
     result_data = np.argmin(filled, axis, out)
+
+    # except if the only unmasked elem is minval. Have to check and do carefully
+    data_max = filled == _maxvals[a.dtype]
+    is_max = data_max & ~a._mask
+    has_max = np.any(is_max, axis=axis)
+    has_no_other_data = np.all(data_max, axis=axis)
+    has_lonely_max = has_max & has_no_other_data
+    if np.any(has_lonely_max):
+        max_ind = np.argmax(is_max, axis=axis)
+        if is_duckscalar(result_data):
+            return max_ind
+        result_data[has_lonely_max] = max_ind[has_lonely_max]
+
     return result_data
 
 @implements(np.sort)
@@ -1267,7 +1319,7 @@ def sort(a, axis=-1, kind='quicksort', order=None):
     # of the axis, we can sort the mask too and everything works out. The
     # mask-sort only swaps the mask between min_val and masked positions
     # which have the same underlying data.
-    result_data = np.sort(a.filled(minmax='min', view=1), axis, kind, order)
+    result_data = np.sort(a.filled(minmax='max', view=1), axis, kind, order)
     result_mask = np.sort(a._mask, axis, kind)  #or partition for speed?
     return maskedarray_or_scalar(result_data, result_mask, cls=type(a))
     # Note: lexsort may be faster, but doesn't provide kind or order kwd
@@ -1280,22 +1332,22 @@ def argsort(a, axis=-1, kind='quicksort', order=None):
     # argsorted again to get back the sort indices. However, here we
     # modify the rank based on the mask before inverting back to indices.
     # Uses two argsorts plus a temp array.
-    inds = np.argsort(a.filled(minmax='min', view=1), axis, kind, order)
+    inds = np.argsort(a.filled(minmax='max', view=1), axis, kind, order)
     # next two lines "reverse" the argsort (same as double-argsort)
     ranks = np.empty(inds.shape, dtype=inds.dtype)
     np.put_along_axis(ranks, inds, np.arange(a.shape[axis]), axis)
     # prepare to resort but make masked elem highest rank
-    ranks[a._mask] = _min_filler[ranks.dtype]
+    ranks[a._mask] = _maxvals[ranks.dtype]
     return np.argsort(ranks, axis, kind)
 
 @implements(np.argpartition)
 def argpartition(a, kth, axis=-1, kind='introselect', order=None):
     # see argsort for explanation
-    filled = a.filled(minmax='min', view=1)
+    filled = a.filled(minmax='max', view=1)
     inds = np.argpartition(filled, kth, axis, kind, order)
     ranks = np.empty(inds.shape, dtype=inds.dtype)
     np.put_along_axis(ranks, inds, np.arange(a.shape[axis]), axis)
-    ranks[a._mask] = _min_filler[ranks.dtype]
+    ranks[a._mask] = _maxvals[ranks.dtype]
     return np.argpartition(ranks, kth, axis, kind)
 
 @implements(np.searchsorted, checked_args=('v',))
@@ -1303,12 +1355,12 @@ def searchsorted(a, v, side='left', sorter=None):
 
     if isinstance(a, MaskedArray):
         maskleft = len(a) - np.sum(a._mask)
-        aval = a.filled(minmax='min', view=1)
+        aval = a.filled(minmax='max', view=1)
     else:  # plain ndarray
         maskleft = len(a)
         aval = a
 
-    inds = np.searchsorted(aval, v.filled(minmax='min', view=1),
+    inds = np.searchsorted(aval, v.filled(minmax='max', view=1),
                            side, sorter)
 
     # Line above treats mask and minval as the same, we need to fix it up
@@ -1319,7 +1371,7 @@ def searchsorted(a, v, side='left', sorter=None):
     else:
         # minvals in v meed to be moved left to the left end of the
         # masked vals in a.
-        minval = _min_filler[v.dtype]
+        minval = _maxvals[v.dtype]
         inds[(v._data == minval) & ~v._mask] = maskleft
 
     return inds

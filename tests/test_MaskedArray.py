@@ -13,7 +13,7 @@ import numpy as np
 import numpy
 
 from ndarray_ducktypes.MaskedArray import (MaskedArray, MaskedScalar, X,
-    replace_X)
+    replace_X, _minvals, _maxvals)
 from ndarray_ducktypes.common import ducktype_link
 
 pi = np.pi
@@ -4001,3 +4001,37 @@ class Test_API:
         assert_(type(ret) == MA_Subclass)
         assert_(type(np.max(MA_Subclass([X, X('f8')]))) is MAscalar_Subclass)
 
+    def test_argmax_argmin(self):
+        minval = _minvals[np.dtype('int')]
+
+        d = MaskedArray([[X, minval],
+                         [minval, X],
+                         [1, minval],
+                         [minval, 1],
+                         [X,      X]])
+        assert_equal(np.argmax(d, axis=1), [1, 0, 0, 1, 0])
+
+        maxval = _maxvals[np.dtype('int')]
+        d = MaskedArray([[X, maxval],
+                         [maxval, X],
+                         [1, maxval],
+                         [maxval, 1],
+                         [X,      X]])
+        assert_equal(np.argmin(d, axis=1), [1, 0, 0, 1, 0])
+
+        out = np.empty(5, dtype='p')
+        np.argmin(d, axis=1, out=out)
+        assert_equal(out, [1, 0, 0, 1, 0])
+
+        # test without axis
+        d1 = d[0,:]
+        assert_equal(np.argmin(d1), 1)
+        d1 = d.ravel()
+        assert_equal(np.argmin(d1), 4)
+
+        # subclass
+        d = MA_Subclass(d)
+        assert_equal(np.argmin(d, axis=1), [1, 0, 0, 1, 0])
+        assert_equal(type(np.argmin(d, axis=1)), np.ndarray)
+        d1 = d[0,:]
+        assert_equal(type(np.argmin(d1)), np.dtype('p'))
