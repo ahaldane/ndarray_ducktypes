@@ -1,17 +1,20 @@
 import sys
 import pickle
 import pytest
+from functools import reduce
+import textwrap
+import operator
+import warnings
+
 from numpy.testing import (
     assert_raises, assert_warns, suppress_warnings, assert_,
     assert_equal, assert_almost_equal)
 import numpy as np
 import numpy
-from ndarray_ducktypes.MaskedArray import (MaskedArray, MaskedScalar, X, 
+
+from ndarray_ducktypes.MaskedArray import (MaskedArray, MaskedScalar, X,
     replace_X)
-from functools import reduce
-import textwrap
-import operator
-import warnings
+from ndarray_ducktypes.common import ducktype_link
 
 pi = np.pi
 
@@ -2268,7 +2271,7 @@ class TestMaskedArrayMethods:
         assert_equal(m2x2.argmin(1), [4, 4, 0, 0, 5, 3])
         assert_equal(mx2.argmax(1), [2, 4, 1, 1, 4, 1])
         assert_equal(m2x2.argmax(1), [2, 4, 1, 1, 1, 1])
-        
+
         # test all masked
         a = MaskedArray([X, X, X], dtype='f')
         assert_(a[np.argmax(a)].mask)
@@ -3065,13 +3068,13 @@ class TestMaskedArrayFunctions:
         b = MaskedArray([ 0.5,   2., 0.5,  2.,  X, 1.0])
         with pytest.warns(RuntimeWarning, match='invalid value'):
             y = np.power(x, b)
-        assert_almost_masked_equal(y, 
+        assert_almost_masked_equal(y,
                               MaskedArray([np.nan, 1.21, 1.1**0.5, 1.21, X, X]))
         b = MaskedArray([0.5, 2., 0.5, 2., -1., -1])
         with pytest.warns(RuntimeWarning) as record:
             y = np.power(x, b)
         assert(len(record) == 2) # invalid val, div by zero
-        assert_almost_masked_equal(y, 
+        assert_almost_masked_equal(y,
                          MaskedArray([np.nan, 1.21, 1.1**0.5, 1.21, np.inf, X]))
         with pytest.warns(RuntimeWarning) as record:
             z = x ** b
@@ -3345,7 +3348,7 @@ class TestMaskedArrayFunctions:
         assert_equal(u, MaskedArray([0, 2, X]))
         assert_equal(i, np.array([1, 2, 0, 2]))
         assert_equal(c, np.array([1, 1, 2]))
-        
+
         b = MaskedArray([X,X], dtype='f')
         u, i, c = np.unique(b, return_inverse=True, return_counts=True)
         assert_equal(u, MaskedArray([X], dtype=u.dtype))
@@ -3359,7 +3362,7 @@ class TestMaskedArrayFunctions:
     def test_interp(self):
         v = np.interp(np.linspace(0,12,10), [1,2,4,7,10],
                    MaskedArray([1, 2, X, 2, 10]), left=4, right=X)
-        assert_almost_masked_equal(v, MaskedArray([4., 1.33333333, X, X, X, X, 
+        assert_almost_masked_equal(v, MaskedArray([4., 1.33333333, X, X, X, X,
                                             4.66666667, 8.22222222, X, X ]))
 
     def test_quntile(self):
@@ -3375,20 +3378,20 @@ class TestMaskedArrayFunctions:
         x = MaskedArray(data)
         x[:,:,-1] = X
         d = data[:,:,:-1]
-        
+
         # test scalar case
         res = np.quantile(x, 0.2)
         assert_(isinstance(res, MaskedScalar))
         assert_equal(res.filled(), np.quantile(d, 0.2))
-    
+
         # test different combinations of axis and q
-        assert_equal(np.quantile(x, [0.2, 0.5]).filled(), 
+        assert_equal(np.quantile(x, [0.2, 0.5]).filled(),
                      np.quantile(d, [0.2, 0.5]))
-        assert_equal(np.quantile(x, [0.2, 0.5], axis=2).filled(), 
+        assert_equal(np.quantile(x, [0.2, 0.5], axis=2).filled(),
                      np.quantile(d, [0.2, 0.5], axis=2))
-        assert_equal(np.quantile(x, 0.2, axis=(1,2)).filled(), 
+        assert_equal(np.quantile(x, 0.2, axis=(1,2)).filled(),
                      np.quantile(d, 0.2, axis=(1,2)))
-        assert_equal(np.quantile(x, [0.2, 0.5], axis=(1,2)).filled(), 
+        assert_equal(np.quantile(x, [0.2, 0.5], axis=(1,2)).filled(),
                      np.quantile(d, [0.2, 0.5], axis=(1,2)))
         res = MaskedArray(np.empty((2,3,3)), mask=True)
         res[:,:,:-1] = np.quantile(d, [0.2, 0.5], axis=1)
@@ -3902,3 +3905,99 @@ class Test_ReplaceX:
     def test_mixedndarray(self):
         arr = MaskedArray([np.array([1,2,3], dtype='i1'), [3, X, 5]])
         assert_masked_equal(arr, MaskedArray([[1,2,3],[3,X,5]], dtype='i1'))
+
+class MA_Subclass(MaskedArray):
+    pass
+class MAscalar_Subclass(MaskedScalar):
+    pass
+ducktype_link(MA_Subclass, MAscalar_Subclass, known_types=(type(X),))
+
+class Test_API:
+    # tests for each ndarray-api implementation
+
+    def test_all(self):
+        # test some masked
+        # test all masked
+        assert_masked_equal(np.all(MaskedArray([True, X, True])), True)
+        assert_masked_equal(np.all(MaskedArray([True, X, False])), False)
+        assert_masked_equal(np.all(MaskedArray([X, X, X], dtype='?')), True)
+        assert_masked_equal(np.all(MaskedArray([X, X, False])), False)
+        ret = np.array([True, False, True])
+        data = [[True, True, True],
+                [True, X, False],
+                [X, X, X]]
+        assert_equal(np.all(MaskedArray(data), axis=1), ret)
+
+        # test out argument
+        out = np.array([True, True, True])
+        np.all(MaskedArray(data), axis=1, out=out)
+        assert_equal(out, ret)
+        out = MaskedArray([True, True, True])
+        np.all(MaskedArray(data), axis=1, out=out)
+        assert_masked_equal(out, ret)
+
+        # test subclasses
+        assert_equal(np.all(MA_Subclass(data), axis=1), ret)
+
+        # test kwds
+        ret = np.array([[True], [False], [True]])
+        out = MaskedArray([[True], [True], [True]])
+        np.all(MaskedArray(data), axis=1, keepdims=True, out=out)
+        assert_masked_equal(out, ret)
+
+        # test scalar
+        assert_equal(np.all(X(np.float64)), True)
+
+    def test_any(self):
+        assert_masked_equal(np.any(MaskedArray([False, X, False])), False)
+        assert_masked_equal(np.any(MaskedArray([True, X, False])), True)
+        assert_masked_equal(np.any(MaskedArray([X, X, X], dtype='?')), False)
+        assert_masked_equal(np.any(MaskedArray([X, X, False])), False)
+        assert_masked_equal(np.any(MaskedArray([X, X, True])), True)
+        # assume rest works since same impl as np.all
+
+    def test_max_min(self):
+        # scalar
+        ret = np.max(MaskedArray([1., X, 2.]))
+        assert_(isinstance(ret, MaskedScalar))
+        assert_masked_equal(ret, 2.)
+
+        ret = np.min(MaskedArray([1., X, 2.]))
+        assert_(isinstance(ret, MaskedScalar))
+        assert_masked_equal(ret, 1.)
+
+        assert_masked_equal(np.max(MaskedArray([X, X], dtype='f8')), X('f8'))
+        assert_masked_equal(np.min(MaskedArray([X, X], dtype='f8')), X('f8'))
+        assert_(type(np.max(MaskedArray([X, X], dtype='f8'))) is MaskedScalar)
+
+        data = [[1., 2., 3.],
+                [4., X , 6.],
+                [X,  X , X ]]
+        m = MaskedArray(data)
+
+        # keepdims, initial, where
+        assert_masked_equal(np.max(m, axis=1), MaskedArray([3., 6., X]))
+        assert_masked_equal(np.max(m, keepdims=True, axis=1),
+                            MaskedArray([[3.], [6.], [X]]))
+        assert_masked_equal(np.max(m, axis=1, initial=5),
+                            MaskedArray([5., 6., 5.]))
+        assert_raises(ValueError, np.max, m, axis=1, initial=X)
+        assert_raises(ValueError, np.max, m, axis=1, initial=X('f8'))
+        assert_masked_equal(np.max(m, axis=1, initial=MaskedScalar(5)),
+                            MaskedArray([5., 6., 5.]))
+        assert_masked_equal(np.max(m, axis=1, where=[1,0,0], initial=2.5),
+                            MaskedArray([2.5, 4., 2.5]))
+        assert_masked_equal(np.min(m, axis=1, where=[1,0,0], initial=5),
+                            MaskedArray([1., 4., 5.]))
+
+        # out
+        out = MaskedArray(np.zeros(3))
+        np.max(m, axis=1, out=out)
+        assert_masked_equal(out, MaskedArray([3., 6., X]))
+
+        # subclass
+        ret = np.max(MA_Subclass(m), axis=1)
+        assert_masked_equal(ret, MA_Subclass([3., 6., X]))
+        assert_(type(ret) == MA_Subclass)
+        assert_(type(np.max(MA_Subclass([X, X('f8')]))) is MAscalar_Subclass)
+

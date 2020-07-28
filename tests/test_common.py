@@ -26,10 +26,8 @@ class Test_get_duck_cls:
                 pass
         ducktype_link(B, B_scalar, known_types=(A, A_scalar))
 
-        class C(A):
-            pass
-        class C_scalar(A_scalar):
-            pass
+        class C(A): pass
+        class C_scalar(A_scalar): pass
         ducktype_link(C, C_scalar)
         
         nd, sc = np.array([1]), np.float64(1)
@@ -60,3 +58,8 @@ class Test_get_duck_cls:
 
         # TODO/question:
         #assert_raises(get_duck_cls(b, c), TypeError)
+
+        # should we not make parent classes automatically be "known_types"?
+        # Eg so someone can say that they don't want their derived class
+        # to be mixed with the parent class. Maybe add a kwd arg
+        # know_parents=True to ducktype_link

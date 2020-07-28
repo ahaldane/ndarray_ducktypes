@@ -105,8 +105,8 @@ def new_ducktype_implementation():
     return new_impl
 
 def ducktype_link(arraytype, scalartype, known_types=None):
-    arraytype.ArrayType = scalartype.ArrayType = arraytype
-    arraytype.ScalarType = scalartype.ScalarType = scalartype
+    arraytype._arraytype = scalartype._arraytype = arraytype
+    arraytype._scalartype = scalartype._scalartype = scalartype
     known = (arraytype, scalartype, np.ndarray)
     if known_types is not None:
         known += tuple(known_types)
@@ -124,7 +124,7 @@ def get_duck_cls(*args):
     the class of the latter supersedes. If neither, or both, of the ducktypes
     is within the known_types of the other, raise TypeError.
 
-    All of the ducktypes must support the ArrayType/ScalarType and known_types
+    All of the ducktypes must support the _arraytype/_scalartype and known_types
     attributes used by the ndarray_ducktypes module.
 
     Parameters
@@ -144,7 +144,7 @@ def get_duck_cls(*args):
             if isinstance(arg, (np.ndarray, np.generic)):
                 acl = np.ndarray 
             else:
-                acl = arg.ArrayType
+                acl = arg._arraytype
             
             # TODO: tidy up this logic?
             if cls is None or cls == np.ndarray or issubclass(acl, cls):

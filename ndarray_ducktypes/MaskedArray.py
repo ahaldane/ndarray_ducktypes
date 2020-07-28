@@ -727,7 +727,7 @@ class MaskedIterator:
     def __getitem__(self, indx):
         data = self.dataiter.__getitem__(indx)
         mask = self.maskiter.__getitem__(indx)
-        return maskedarray_or_scalar(data, mask, cls=type(data))
+        return maskedarray_or_scalar(data, mask, cls=type(self))
 
     def __setitem__(self, index, value):
         if value is X or (isinstance(value, MaskedScalar) and value.mask):
@@ -738,7 +738,7 @@ class MaskedIterator:
 
     def __next__(self):
         return maskedarray_or_scalar(next(self.dataiter), next(self.maskiter),
-                                     cls=type(seld))
+                                     cls=type(self))
 
     next = __next__
 
@@ -939,7 +939,7 @@ class _Masked_BinOp(_Masked_UFunc):
 
         cls = get_duck_cls(a, b)
         if is_duckscalar(result):
-            return cls.ScalarType(result, m)
+            return cls._scalartype(result, m)
         return cls(result, m)
 
     def reduce(self, a, **kwargs):
@@ -987,7 +987,7 @@ class _Masked_BinOp(_Masked_UFunc):
 
         cls = get_duck_cls(a)
         if is_duckscalar(result):
-            return cls.ScalarType(result, m)
+            return cls._scalartype(result, m)
         return cls(result, m)
 
     def accumulate(self, a, axis=0, dtype=None, out=None):
@@ -1148,8 +1148,8 @@ def maskedarray_or_scalar(data, mask, out=None, cls=MaskedArray):
     if out is not None:
         return out
     if is_duckscalar(data):
-        return cls.ScalarType(data, mask)
-    return cls.ArrayType(data, mask)
+        return cls._scalartype(data, mask)
+    return cls(data, mask)
 
 def _copy_mask(mask, outmask=None):
     if outmask is not None:
@@ -1170,6 +1170,8 @@ def _inplace_not(v):
 
 @implements(np.all)
 def all(a, axis=None, out=None, keepdims=np._NoValue):
+    # out can be maskedarray or ndarray since we never return masked elements
+    # (or.. should we only allow ndarray out?)
     if isinstance(out, MaskedArray):
         np.all(a.filled(True, view=1), axis, out._data, keepdims)
         out._mask[...] = False
@@ -1189,11 +1191,29 @@ def any(a, axis=None, out=None, keepdims=np._NoValue):
     # return False, like np.any([])
 
 @implements(np.max)
-def max(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue):
+def max(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
+        where=True):
     outdata, outmask = get_maskedout(out)
+
+    kwarg = {}
+    if keepdims is not np._NoValue:
+        kwarg['keepdims'] = keepdims
+    if where is not np._NoValue:
+        kwarg['where'] = where
+
+    initial_m = initial_d = np._NoValue
+    if initial is not np._NoValue:
+        ismasked = isinstance(initial, MaskedScalar)
+        if initial is X or ismasked and initial._mask:
+            raise ValueError("initial cannot be masked")
+        initial_m = False
+        initial_d = initial._data if ismasked else initial
+
     filled = a.filled(minmax='max', view=1)
-    result_data = np.max(filled, axis, outdata, keepdims, initial)
-    result_mask = np.all(a._mask, axis, outmask, keepdims)
+    result_data = np.max(filled, axis, outdata, initial=initial_d, **kwarg)
+    result_mask = np.logical_and.reduce(a._mask, axis, out=outmask,
+                                        initial=initial_m, **kwarg)
+
     return maskedarray_or_scalar(result_data, result_mask, out, type(a))
 
 @implements(np.argmax)
@@ -1205,11 +1225,29 @@ def argmax(a, axis=None, out=None):
     return result_data
 
 @implements(np.min)
-def min(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue):
+def min(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
+        where=np._NoValue):
     outdata, outmask = get_maskedout(out)
+
+    kwarg = {}
+    if keepdims is not np._NoValue:
+        kwarg['keepdims'] = keepdims
+    if where is not np._NoValue:
+        kwarg['where'] = where
+
+    initial_m = initial_d = np._NoValue
+    if initial is not np._NoValue:
+        ismasked = isinstance(initial, MaskedScalar)
+        if initial is X or ismasked and initial._mask:
+            raise ValueError("initial cannot be masked")
+        initial_m = False
+        initial_d = initial._data if ismasked else initial
+
     filled = a.filled(minmax='min', view=1)
-    result_data = np.min(filled, axis, outdata, keepdims, initial)
-    result_mask = np.all(a._mask, axis, outmask, keepdims)
+    result_data = np.min(filled, axis, outdata, initial=initial_d, **kwarg)
+    result_mask = np.logical_and.reduce(a._mask, axis, out=outmask,
+                                        initial=initial_m, **kwarg)
+
     return maskedarray_or_scalar(result_data, result_mask, out, type(a))
 
 @implements(np.argmin)
@@ -2502,7 +2540,7 @@ def place(arr, mask, vals):
 
 @implements(np.broadcast_to)
 def broadcast_to(array, shape, subok=False):
-    cls = type(array).ArrayType
+    cls = get_duck_cls(array)
     return cls(np.broadcast_to(array._data, shape, subok),
                np.broadcast_to(array._mask, shape))
 
@@ -2521,17 +2559,17 @@ def broadcast_arrays(*args, **kwargs):
 
 @implements(np.empty_like)
 def empty_like(prototype, dtype=None, order='K', subok=True):
-    cls = type(prototype).ArrayType
+    cls = get_duck_cls(prototype)
     return cls(np.empty_like(prototype._data, dtype, order, subok))
 
 @implements(np.ones_like)
 def ones_like(prototype, dtype=None, order='K', subok=True):
-    cls = type(prototype).ArrayType
+    cls = get_duck_cls(prototype)
     return cls(np.ones_like(prototype._data, dtype, order, subok))
 
 @implements(np.zeros_like)
 def zeros_like(prototype, dtype=None, order='K', subok=True):
-    cls = type(prototype).ArrayType
+    cls = get_duck_cls(prototype)
     return cls(np.zeros_like(prototype._data, dtype, order, subok))
 
 @implements(np.full_like)
@@ -2655,10 +2693,10 @@ def select(condlist, choicelist, default=0):
     # behaviour
     if default is X:
         dtype = np.result_type(*choicelist)
-        default = cls.ScalarType(X, dtype=dtype)
+        default = cls._scalartype(X, dtype=dtype)
         choicelist.append(default)
     else:
-        choicelist.append(cls.ScalarType(default))
+        choicelist.append(cls._scalartype(default))
         dtype = np.result_type(*choicelist)
 
     # Convert conditions to arrays and broadcast conditions and choices
@@ -2946,15 +2984,15 @@ def interp(x, xp, fp, left=None, right=None, period=None):
     if right is not None and right is not X:
         objs.append(right)
     cls = get_duck_cls(objs)
-    fp = cls.ArrayType(fp)
+    fp = cls(fp)
     if left is X:
-        left = cls.ScalarType(X, dtype=fp.dtype)
+        left = cls._scalartype(X, dtype=fp.dtype)
     elif left is not None:
-        left = cls.ScalarType(left)
+        left = cls._scalartype(left)
     if right is X:
-        right = cls.ScalarType(X, dtype=fp.dtype)
+        right = cls._scalartype(X, dtype=fp.dtype)
     elif right is not None:
-        right = cls.ScalarType(right)
+        right = cls._scalartype(right)
 
     if np.iscomplexobj(fp):
         interp_func = compiled_interp_complex
@@ -2998,7 +3036,7 @@ def interp(x, xp, fp, left=None, right=None, period=None):
     ret_nanmask = interp_func(x, xp, v[fp.mask.astype(int)], leftm, rightm)
     ret_mask = np.isnan(ret_nanmask)
 
-    return cls.ArrayType(ret_data, ret_mask)
+    return cls(ret_data, ret_mask)
 
 @implements(np.ediff1d)
 def ediff1d(ary, to_end=None, to_begin=None):
@@ -3257,7 +3295,7 @@ def shape(a):
 
 @implements(np.alen)
 def alen(a):
-    return len(type(a).ArrayType(a, ndmin=1))
+    return len(get_duck_cls(a)(a, ndmin=1))
 
 @implements(np.ndim)
 def ndim(a):

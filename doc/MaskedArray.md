@@ -158,7 +158,7 @@ Truthiness of Masked Values
 
  When a `MaskedScalar` is tested for truth, for instance in if-statements, it will return `False` if masked, or the same as the corresponding NumPy scalar if not masked. To get masked values to test as `True`, use `scalar.filled(True)` first.
 
-`np.nonzero` and `np.where` will similarly treat masked values as `False` or zero-like, and so do not return the indices of masked values.
+Indexing functions such as `np.nonzero` and `np.where` will similarly treat masked values as `False` or zero-like, and so do not return the indices of masked values.
 
 `np.any` treats masked values as `False` (since it is implemented as `np.logical_or.reduce`, whose identity value is `False`), and `np.all` treats masked values as `True`. Use `.filled` to get different behaviors.
 
@@ -179,7 +179,7 @@ Unlike most other NumPy API functions, NumPy functions which perform indexing-li
 `out` arguments
 ---------------
 
-For NumPy functions which takes an `out` argument, such as `np.sum` or `np.add`, if a `MaskedArray` is one of the inputs then the out argument must also be a `MaskedArray` if given, with exceptions for index-like operations. This is to prevent situations in which the mask is lost and uninitialized data is exposed to the user. 
+For NumPy functions which takes an `out` argument, such as `np.sum` or `np.add`, if a `MaskedArray` is one of the inputs then the out argument usually must also be a `MaskedArray` if given, with exceptions for methods which cannot return masked elements, such as indexing-like operations or `np.all`. This is to prevent situations in which the mask is lost and uninitialized data is exposed to the user. 
 
 Sorting masked values
 ---------------------
