@@ -3,9 +3,6 @@ from inspect import signature
 from collections.abc import Iterable
 import numpy as np
 
-def is_ndducktype(val):
-    return hasattr(val, '__array_function__')
-
 # Interesting Fact: The numpy arrayprint machinery (for one) depends on having
 # a separate scalar type associated with any new ducktype (or subclass). This
 # is partly why both MaskedArray and recarray have to define associated scalar
@@ -15,19 +12,29 @@ def is_ndducktype(val):
 
 #XXX consider defining an abstract "duck_scalar" class which all duck-scalar
 # implementors would be required to inherit. Then the function below could
-#be coded as "isinstance(val, [np.generic, duck_scalar])"
+#be coded as "isinstance(val, [np.generic, duck_scalar])". On the other hand,
+# using inheritance partly defeats point of ducktypes.
 
-# Or, can we just subclass np.generic?
+# should numpy make its scalars support array_function?
 
-def is_duckscalar(val):
+def is_ndducktype(val):
+    return hasattr(val, '__array_function__')
+
+def is_ndscalar(val):
     # These files assume that a scalar is a type separate from the main ducktype
     # which also has an __array_function__ attribute.
     # A simple test of whether a numpy-like type is a scalar and not a 0d array
     # is that indexing with an empty tuple gives back a scalar. Hopefully that
     # is not too fragile.
-    return (isinstance(val, np.generic) or
-            (is_ndducktype(val) and val.shape == () and
-             type(val[()]) is type(val)))
+    return (isinstance(val, np.generic) or (not isinstance(val, np.ndarray) and
+            is_ndducktype(val) and type(val) == val._scalartype))
+
+def is_ndarr(val):
+    return is_ndducktype(val) and not is_ndscalar(val)
+
+def is_ndtype(val):
+    return is_ndducktype(val) or isinstance(val, np.generic)
+
 
 class _implements:
     """
@@ -140,7 +147,7 @@ def get_duck_cls(*args):
     """
     cls = None
     for arg in args:
-        if is_ndducktype(arg):
+        if is_ndtype(arg):
             if isinstance(arg, (np.ndarray, np.generic)):
                 acl = np.ndarray 
             else:

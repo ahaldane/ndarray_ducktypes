@@ -20,7 +20,6 @@ if (NumpyVersion(np.__version__) < '1.15.10' or
         os.environ.get('NUMPY_EXPERIMENTAL_ARRAY_FUNCTION', '0') == '0'):
     raise Exception("numpy __array_function__ must be enabled")
 
-from .common import is_ndducktype, is_duckscalar
 
 # WIP: Notes.
 #

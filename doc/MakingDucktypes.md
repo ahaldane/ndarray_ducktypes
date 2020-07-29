@@ -73,6 +73,17 @@ In this example, the elements of the `choicelist` argument are checked for type,
 
 Lastly, the `checked_args` function you provide may raise a `NotImplementedError` to signify that type check failed. Since you have access to all of the `__array_function__` arguments you can implement any dispatch behavior desired.
 
+Ducktype Conventions
+--------------------
+
+The numpy ducktype api is quite flexible. But the helper functions in this module add some extra constraints on how you implement your ducktype, if you want to use them. These are described here.
+
+Your ducktype's constructor must have arguments `__init__(self, data, dtype=None, copy=False, order=None, ndmin=0, **options)`, matching the signature of `np.array`. You may add extra keyword arguments.
+
+Your ducktype must support the basic attributes `dtype`, `shape`, `ndim`.
+
+You must support scalars as in the next section.
+
 Duck Scalars
 ------------
 

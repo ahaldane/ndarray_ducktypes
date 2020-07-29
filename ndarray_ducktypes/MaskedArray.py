@@ -5,8 +5,8 @@ import warnings
 
 from .duckprint import (duck_str, duck_repr, duck_array2string, typelessdata,
     default_duckprint_options, default_duckprint_formatters, FormatDispatcher)
-from .common import (is_ndducktype, is_duckscalar, new_ducktype_implementation,
-    ducktype_link, get_duck_cls)
+from .common import (is_ndducktype, is_ndscalar, is_ndarr, is_ndtype,
+    new_ducktype_implementation, ducktype_link, get_duck_cls)
 from .ndarray_api_mixin import NDArrayAPIMixin
 
 import numpy as np
@@ -143,6 +143,16 @@ def duck_require(data, dtype=None, ndmin=0, copy=True, order='K'):
 
     return data
 
+def asarr(v, **kwarg):
+    if is_ndarr(v):
+        return duck_require(v, **kwarg)
+    else: # must be ndscalar
+        if is_ndducktype(v):
+            # convert to duck-array class using our ducktype conventions
+            return get_duck_cls(v)(v, **kwarg)
+        else: # usually, np.generic type
+            return np.array(v, **kwarg)
+
 class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     "An ndarray ducktype allowing array elements to be masked"
 
@@ -207,14 +217,19 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
         """
 
-        if isinstance(data, (MaskedArray, MaskedScalar)):
-            self._mask = np.array(data._mask, copy=copy, order=order,
-                                              ndmin=ndmin)
+        if isinstance(data, MaskedScalar):
+            self.__init__(data._data, data._mask, dtype=data.dtype,
+                          order=order, ndmin=ndmin)
+            return
+        elif isinstance(data, MaskedArray):
+            self._mask = duck_require(data._mask, copy=copy, order=order,
+                                      ndmin=ndmin)
 
             if mask is not None:
                 self._data = duck_require(data._data, copy=True, order=order,
                                                   ndmin=ndmin)
-                self._mask |= np.array(mask, copy=False)
+                mask = np.array(mask, dtype=bool, copy=False)
+                self._mask |= np.broadcast_to(mask, self._data.shape)
 
             else:
                 self._data = duck_require(data._data, copy=copy, order=order,
@@ -228,7 +243,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
             self._mask = np.array(True)
             return
 
-        # Otherwise, we convert data/mask to MaskedArray:
+        # Otherwise got non-masked type, we convert data/mask to MaskedArray:
 
         if mask is None:
             # if mask is None, user can put X in the data.
@@ -242,20 +257,14 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
                     mask.flags['WRITEABLE'] == False):
                 mask = mask.copy()
 
-        if is_ndducktype(data):
-            self._data = duck_require(data, copy=copy, order=order,
-                                      ndmin=ndmin)
-        else:
-            self._data = np.array(data, dtype=dtype, copy=copy, order=order,
-                                  ndmin=ndmin)
+        self._data = asarr(data, dtype=dtype, copy=copy,order=order,ndmin=ndmin)
 
         if mask is None:
-            self._mask = np.zeros(self._data.shape, dtype='bool',
-                                  order=order)
-        elif (is_ndducktype(mask) and mask.shape == self._data.shape and
-                issubclass(mask.dtype.type, np.bool_)):
-            self._mask = np.array(mask, copy=copy, order=order,
-                                  ndmin=ndmin)
+            self._mask = np.zeros(self._data.shape, dtype='bool', order=order)
+        elif is_ndtype(mask):
+            self._mask = asarr(mask, dtype=np.bool_, copy=copy, order=order)
+            if self._mask.shape != self._data.shape:
+                self._mask = np.broadcast_to(self._mask,self._data.shape).copy()
         else:
             self._mask = np.empty(self._data.shape, dtype='bool')
             self._mask[...] = np.broadcast_to(mask, self._data.shape)
@@ -296,9 +305,9 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         data = self._data[ind]
         mask = self._mask[ind]
 
-        if np.isscalar(mask): # test mask, not data, to account for obj arrays
-            return MaskedScalar(data, mask, dtype=self.dtype)
-        return type(self)(data, mask)
+        if is_ndscalar(mask): # test mask not data, to account for obj arrays
+            return type(self)._scalartype(data, mask, dtype=self.dtype)
+        return type(self)(data, mask, dtype=self.dtype)
 
     def __setitem__(self, ind, val):
         if not self.flags.writeable:
@@ -546,16 +555,19 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
             dtype = np.dtype(dtype)
 
         if dtype is None or dtype.type is not np.object_:
-            if is_ndducktype(data) or is_duckscalar(data):
+            if is_ndtype(data):
                 if dtype is not None and data.dtype != dtype:
                     data = data.astype(dtype, copy=False)[()]
+                if not is_ndscalar(data):
+                    data = data[()]
                 self._data = data
             else:
+                # next line is more complicated than desired due to struct
+                # types, which numpy does not have a constructor for
+                # convert to scalar
                 self._data = np.array(data, dtype=dtype)[()]
 
             self._mask = np.bool_(mask)
-            if not is_duckscalar(self._data) or not np.isscalar(self._mask):
-                raise ValueError("MaskedScalar must be called with scalars")
             self._dtype = self._data.dtype
         else:
             # object dtype treated specially
@@ -644,6 +656,9 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
             return type(self._data)(fill_value)
         return self._data
 
+    def count(self, axis=None, keepdims=False):
+        return 0 if self._mask else 1
+
 # create a special dummy object which signifies "masked", which users can put
 # in lists to pass to MaskedArray constructor, or can assign to elements of
 # a MaskedArray, to set the mask.
@@ -708,7 +723,7 @@ def replace_X(data, dtype=None):
         if data is X:
             return X
 
-        if is_ndducktype(data):
+        if is_ndtype(data):
             return data.dtype
 
         # otherwise try to coerce it to an ndarray (accounts for __array__,
@@ -735,7 +750,7 @@ def replace_X(data, dtype=None):
             return data._data, data._mask
         if isinstance(data, list):
             return (list(x) for x in zip(*(replace(d) for d in data)))
-        if is_ndducktype(data):
+        if is_ndtype(data):
             return data, np.broadcast_to(False, data.shape)
         # otherwise assume it is some kind of scalar
         return data, False
@@ -902,8 +917,9 @@ class _Masked_UniOp(_Masked_UFunc):
             out[0]._mask[...] = m
             return out[0]
 
-        if is_duckscalar(result):
-            return MaskedScalar(result, m)
+        cls = get_duck_cls(a)
+        if is_ndscalar(result):
+            return cls._scalartype(result, m)
 
         return type(a)(result, m)
 
@@ -929,7 +945,7 @@ class _Masked_BinOp(_Masked_UFunc):
             reduce_fill = ufunc.identity
 
         if (reduce_fill is not None and
-                (is_duckscalar(reduce_fill) or not callable(reduce_fill))):
+                (is_ndscalar(reduce_fill) or not callable(reduce_fill))):
             self.reduce_fill = lambda dtype: reduce_fill
         else:
             self.reduce_fill = reduce_fill
@@ -964,7 +980,7 @@ class _Masked_BinOp(_Masked_UFunc):
             return out[0]
 
         cls = get_duck_cls(a, b)
-        if is_duckscalar(result):
+        if is_ndscalar(result):
             return cls._scalartype(result, m)
         return cls(result, m)
 
@@ -1001,7 +1017,7 @@ class _Masked_BinOp(_Masked_UFunc):
             result = self.f.reduce(da, **kwargs)
             m = np.logical_and.reduce(ma, **mkwargs)
         else:
-            if not is_duckscalar(da):
+            if not is_ndscalar(da):
                 da[ma] = self.reduce_fill(da.dtype)
                 # if da is a scalar, we get correct result no matter fill
 
@@ -1012,7 +1028,7 @@ class _Masked_BinOp(_Masked_UFunc):
             return out[0]
 
         cls = get_duck_cls(a)
-        if is_duckscalar(result):
+        if is_ndscalar(result):
             return cls._scalartype(result, m)
         return cls(result, m)
 
@@ -1030,14 +1046,14 @@ class _Masked_BinOp(_Masked_UFunc):
             dataout = out[0]._data
             maskout = out[0]._mask
 
-        if not is_duckscalar(da):
+        if not is_ndscalar(da):
             da[ma] = self.reduce_fill(da.dtype)
         result = self.f.accumulate(da, axis, dtype, dataout)
         m = np.logical_and.accumulate(ma, axis, out=maskout)
 
         if out:
             return out[0]
-        if is_duckscalar(result):
+        if is_ndscalar(result):
             return MaskedScalar(result, m)
         return type(a)(result, m)
 
@@ -1065,9 +1081,9 @@ class _Masked_BinOp(_Masked_UFunc):
             kwargs['out'] = (out[0]._data,)
             mkwargs['out'] = (out[0]._mask,)
 
-        if not is_duckscalar(da):
+        if not is_ndscalar(da):
             da[ma] = self.reduce_fill(da.dtype)
-        if not is_duckscalar(db):
+        if not is_ndscalar(db):
             db[mb] = self.reduce_fill(db.dtype)
 
         result = self.f.outer(da, db, **kwargs)
@@ -1075,7 +1091,7 @@ class _Masked_BinOp(_Masked_UFunc):
 
         if out:
             return out[0]
-        if is_duckscalar(result):
+        if is_ndscalar(result):
             return MaskedScalar(result, m)
         return type(a)(result, m)
 
@@ -1101,7 +1117,7 @@ class _Masked_BinOp(_Masked_UFunc):
         if isinstance(initial, (MaskedScalar, MaskedX)):
             raise ValueError("initial should not be masked")
 
-        if not is_duckscalar(da):
+        if not is_ndscalar(da):
             da[ma] = self.reduce_fill(da.dtype)
             # if da is a scalar, we get correct result no matter fill
 
@@ -1110,7 +1126,7 @@ class _Masked_BinOp(_Masked_UFunc):
 
         if out:
             return out[0]
-        if is_duckscalar(result):
+        if is_ndscalar(result):
             return MaskedScalar(result, m)
         return type(a)(result, m)
 
@@ -1173,7 +1189,7 @@ def get_maskedout(out):
 def maskedarray_or_scalar(data, mask, out=None, cls=MaskedArray):
     if out is not None:
         return out
-    if is_duckscalar(data):
+    if is_ndscalar(data):
         return cls._scalartype(data, mask)
     return cls(data, mask)
 
@@ -1260,7 +1276,7 @@ def argmax(a, axis=None, out=None):
     has_lonely_min = has_min & has_no_other_data
     if np.any(has_lonely_min):
         min_ind = np.argmax(is_min, axis=axis)
-        if is_duckscalar(result_data):
+        if is_ndscalar(result_data):
             return min_ind
         result_data[has_lonely_min] = min_ind[has_lonely_min]
     # one day, might speed up with numba/extension. Or with np.take?
@@ -1311,7 +1327,7 @@ def argmin(a, axis=None, out=None):
     has_lonely_max = has_max & has_no_other_data
     if np.any(has_lonely_max):
         max_ind = np.argmax(is_max, axis=axis)
-        if is_duckscalar(result_data):
+        if is_ndscalar(result_data):
             return max_ind
         result_data[has_lonely_max] = max_ind[has_lonely_max]
 
@@ -1476,7 +1492,7 @@ def mean(a, axis=None, dtype=None, out=None, keepdims=np._NoValue):
     retmask = np.all(a._mask, axis=axis, out=outmask, **kwargs)
 
     with np.errstate(divide='ignore', invalid='ignore'):
-        if is_ndducktype(ret):
+        if is_ndarr(ret):
             ret = np.true_divide(
                     ret, rcount, out=ret, casting='unsafe', subok=False)
             if is_float16_result and out is None:
@@ -1524,14 +1540,14 @@ def var(a, axis=None, dtype=None, out=None, ddof=0,
     arrmean = a.filled(0).sum(axis=axis, dtype=dtype, keepdims=True)
 
     with np.errstate(divide='ignore', invalid='ignore'):
-        if (not is_ndducktype(arrmean) and hasattr(arrmean, 'dtype')):
-            arrmean = np.true_divide(arrmean, rcount, out-arrmean,
+        if not is_ndscalar(arrmean):
+            arrmean = np.true_divide(arrmean, rcount, out=arrmean,
                                      casting='unsafe', subok=False)
         else:
             arrmean = arrmean.dtype.type(arrmean / rcount)
 
     # Compute sum of squared deviations from mean
-    x = a - arrmean
+    x = get_duck_cls(a)(a - arrmean)
     if issubclass(a.dtype.type, np.complexfloating):
         x = np.multiply(x, np.conjugate(x), out=x).real
     else:
@@ -1544,7 +1560,7 @@ def var(a, axis=None, dtype=None, out=None, ddof=0,
 
     # divide by degrees of freedom
     with np.errstate(divide='ignore', invalid='ignore'):
-        if is_ndducktype(ret):
+        if is_ndarr(ret):
             ret = np.true_divide(
                     ret, rcount, out=ret, casting='unsafe', subok=False)
         elif hasattr(ret, 'dtype'):
@@ -1578,7 +1594,7 @@ def average(a, axis=None, weights=None, returned=False):
             return avg, avg.dtype.type(a.count(axis))
         return avg
 
-    wgt = weights if is_ndducktype(weights) else np.array(weights)
+    wgt = weights if is_ndtype(weights) else np.array(weights)
 
     if isinstance(wgt, MaskedArray):
         raise TypeError("weight must not be a MaskedArray")
@@ -1754,8 +1770,6 @@ def cov(m, y=None, rowvar=True, bias=False, ddof=None, fweights=None,
             "ddof must be integer")
 
     # Handles complex arrays too
-    if not is_ndducktype(m):
-        m = np.maskedarray(m)
     if m.ndim > 2:
         raise ValueError("m has more than 2 dimensions")
 
@@ -1763,7 +1777,7 @@ def cov(m, y=None, rowvar=True, bias=False, ddof=None, fweights=None,
     if y is None:
         dtype = np.result_type(m, np.float64)
     else:
-        if not is_ndducktype(y):
+        if not is_ndtype(y):
             y = cls(y)
         else:
             cls = get_duck_cls(m, y)
@@ -2503,7 +2517,7 @@ def tile(A, reps):
 # otherwise leave ducktype alone.
 
 def _asMAduck(a):
-    return a if is_ndducktype(a) else MaskedArray(a)
+    return a if is_ndtype(a) else MaskedArray(a)
 
 @implements(np.atleast_1d)
 def atleast_1d(*arys):
@@ -2698,7 +2712,7 @@ def piecewise(x, condlist, funclist, *args, **kw):
     n2 = len(funclist)
 
     # undocumented: single condition is promoted to a list of one condition
-    if is_duckscalar(condlist) or (
+    if is_ndscalar(condlist) or (
             not isinstance(condlist[0], (list, np.ndarray, MaskedArray))
             and x.ndim != 0):
         condlist = [condlist]
@@ -2993,7 +3007,7 @@ def diff(a, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
     axis = normalize_axis_index(axis, nd)
 
     inputs = [a, prepend, append]
-    inputs = [i for i in inputs if is_ndducktype(i)]
+    inputs = [i for i in inputs if is_ndtype(i)]
     cls = get_duck_cls(*inputs)
 
     combined = []
@@ -3032,11 +3046,11 @@ def diff(a, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
     return a
 
 def _interp_checkarg(args, kwds, types, known_types):
-    if builtins.any(is_ndducktype(x) and not isinstance(x, np.ndarray)
+    if builtins.any(is_ndtype(x) and not isinstance(x, np.ndarray)
                     for x in args[:2]):
         raise NotImplementedError
     kw = [type(kwds[n]) for n in ['left', 'right'] if n in kwds]
-    return [type(args[2])] + [k for k in kw if is_ndducktype(k)]
+    return [type(args[2])] + [k for k in kw if is_ndtype(k)]
 
 @implements(np.interp, checked_args=_interp_checkarg)
 def interp(x, xp, fp, left=None, right=None, period=None):

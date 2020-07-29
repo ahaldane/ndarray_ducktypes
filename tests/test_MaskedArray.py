@@ -3897,6 +3897,35 @@ def test_fieldless_void():
 #                    New Tests of ndarray_ducktypes.MaskedArray
 ################################################################################
 
+class MA_Subclass(MaskedArray):
+    pass
+class MAscalar_Subclass(MaskedScalar):
+    pass
+ducktype_link(MA_Subclass, MAscalar_Subclass, known_types=(type(X),))
+
+class dummyarr:
+    def __init__(self, data, dtype=None, copy=False, order=None, ndmin=0,
+                 **options):
+        self.dtype = np.dtype('f8')
+        self.shape = (3,)
+        self.ndim = 1
+    def __getitem__(self, ind):
+        return dummyscalar()
+    def __array_function__(self, func, types, arg, kwarg):
+        pass
+class dummyscalar:
+    def __init__(self, data, dtype=None, copy=False, order=None, ndmin=0,
+                 **options):
+        self.dtype = np.dtype('f8')
+        self.shape = ()
+        self.ndim = 0
+    def __getitem__(self, ind):
+        return self
+    def __array_function__(self, func, types, arg, kwarg):
+        pass
+ducktype_link(dummyarr, dummyscalar)
+
+
 class Test_ReplaceX:
     def test_allX(self):
         assert_raises(ValueError, MaskedArray, [[X, X, X], [X, X, X]])
@@ -3924,11 +3953,27 @@ class Test_ReplaceX:
     #XXX many more situations to test here
 
 
-class MA_Subclass(MaskedArray):
-    pass
-class MAscalar_Subclass(MaskedScalar):
-    pass
-ducktype_link(MA_Subclass, MAscalar_Subclass, known_types=(type(X),))
+class Test_MA_construction:
+    def test(self):
+        MaskedScalar(1.0)
+        MaskedScalar(np.array(1.0))
+        MaskedScalar(X('f8'))
+        MaskedScalar(np.array(X('f8')))
+
+        MaskedArray(1.0)
+        MaskedScalar(1.0)
+        MaskedArray(X('f8'))
+        MaskedArray(np.array(X('f8')))
+
+        MaskedArray(MA_Subclass([1.0]))
+        MaskedArray(MAscalar_Subclass(1.0))
+
+        MaskedArray(MaskedArray([1,X,2]))
+        MaskedArray(MaskedArray([1,X,2]), mask=[1,0,0])
+
+        MaskedArray(dummyarr(0))
+        MaskedArray(dummyscalar(0))
+
 
 class Test_API:
     # tests for each ndarray-api implementation
@@ -4100,7 +4145,7 @@ class Test_API:
 
         assert_equal(np.searchsorted(d, ind), [5, 7, 4, 9, 1])
         assert_equal(np.searchsorted(d, ind, side='right'), [7, 9, 4, 11, 1])
-        
+
         # no need to test digitize extensively - uses searchsorted
         bins = np.arange(10.)
         d = MaskedArray([-inf, 0, 1, 2, 3, inf, nan, X])
@@ -4112,4 +4157,51 @@ class Test_API:
         assert_equal(np.lexsort((b, a)), [2, 0, 7, 4, 6, 3, 1, 5])
 
     def test_mean(self):
-        a = MaskedArray([1,2,3])
+        a = MaskedArray([1,2,3,X,4])
+        assert_masked_equal(np.mean(a), 2.5)
+        assert_masked_equal(np.mean(MaskedArray([X, X('f8')])), X('f8'))
+
+        # axis, dtype, keepdims, out
+        a = MaskedArray([[2,4],[3,X],[X,X]])
+        assert_masked_equal(np.mean(a, axis=1), MaskedArray([3, 3, X]))
+        assert_masked_equal(np.mean(a, axis=1, keepdims=True),
+                            MaskedArray([[3], [3], [X]]))
+        out = MaskedArray([1,1,1])
+        np.mean(a, axis=1, out=out)
+        assert_masked_equal(out, MaskedArray([3, 3, X]))
+
+        # scalar, 0d
+        assert_masked_equal(np.mean(MaskedScalar(3)), 3)
+        assert_masked_equal(np.mean(X('f8')), X('f8'))
+
+        # subclass
+        a = MA_Subclass([1,2,3,X,4])
+        assert_masked_equal(np.mean(a), 2.5)
+        assert_equal(type(np.mean(a)), MAscalar_Subclass)
+
+    def test_var(self):
+        a = MaskedArray([1,2,3,X,4])
+        assert_masked_equal(np.var(a), 1.25)
+        assert_masked_equal(np.var(MaskedArray([X, X('f8')])), X('f8'))
+
+        # axis, dtype, keepdims, out, ddof
+        a = MaskedArray([[2,4],[3,X],[X,X]])
+        assert_masked_equal(np.var(a, axis=1), MaskedArray([1, 0, X]))
+        assert_masked_equal(np.var(a, axis=1, keepdims=True),
+                            MaskedArray([[1], [0], [X]]))
+        # question: should ddof < 0 give a nan+warning, or X?
+        assert_masked_equal(np.var(a, axis=1, ddof=1), MaskedArray([2, X, X]))
+        out = MaskedArray([1,1,1])
+        np.var(a, axis=1, out=out)
+        assert_masked_equal(out, MaskedArray([1, 0, X]))
+
+        # scalar, 0d
+        assert_masked_equal(np.var(MaskedScalar(3)), 0)
+        assert_masked_equal(np.var(MaskedArray(3)), 0)
+        assert_equal(type(np.var(MaskedArray(3))), MaskedScalar)
+        assert_masked_equal(np.var(X('f8')), X('f8'))
+
+        # subclass
+        a = MA_Subclass([1,2,3,X,4])
+        assert_masked_equal(np.var(a), 1.25)
+        assert_equal(type(np.var(a)), MAscalar_Subclass)

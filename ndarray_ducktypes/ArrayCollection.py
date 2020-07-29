@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 import numpy as np
 import warnings
-from .duckprint import duck_repr, duck_str, is_ndducktype
+from .duckprint import duck_repr, duck_str
+from .common import is_ndtype
 from .ndarray_api_mixin import NDArrayAPIMixin
 import sys
 import operator
@@ -32,7 +33,7 @@ class CollectionMixin(NDArrayAPIMixin):
     # XXX actually, why don;t we try to support more?
 
 def _asarraylike(val, dtype=None):
-    if is_ndducktype(val):
+    if is_ndtype(val):
         if dtype is not None:
             return val.astype(dtype)
         return val
@@ -125,7 +126,7 @@ class ArrayCollection(CollectionMixin):
             for name, arr in arrays.items():
                 if not isinstance(name, str):
                     raise TypeError('field names must be strings')
-                if not is_ndducktype(arr):
+                if not is_ndtype(arr):
                     raise TypeError('data was not arraylike')
             shapes = [a.shape for a in arrays.values()]
             if shapes.count(shapes[0]) != len(shapes):
