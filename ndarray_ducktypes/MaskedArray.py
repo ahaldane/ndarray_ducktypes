@@ -910,8 +910,13 @@ class _Masked_UniOp(_Masked_UFunc):
         d = getdata(a)
         m = getmask(a)
 
-        with np.errstate(divide='ignore', invalid='ignore'):
-            result = self.f(d, *args, **kwargs)
+        where = ~m
+        kwhere = kwargs.get('where', None)
+        if kwhere is not None:
+            where |= kwhere
+        kwargs['where'] = where
+
+        result = self.f(d, *args, **kwargs)
 
         if out != ():
             out[0]._mask[...] = m
@@ -960,6 +965,7 @@ class _Masked_BinOp(_Masked_UFunc):
         if db is X:
             db, mb = da.dtype.type(0), np.bool_(True)
 
+
         mkwargs = {}
         for k in ['where', 'order']:
             if k in kwargs:
@@ -973,6 +979,12 @@ class _Masked_BinOp(_Masked_UFunc):
             mkwargs['out'] = (out[0]._mask,)
 
         m = np.logical_or(ma, mb, **mkwargs)
+
+        where = ~m
+        kwhere = kwargs.get('where', None)
+        if kwhere is not None:
+            where |= kwhere
+        kwargs['where'] = where
 
         result = self.f(da, db, **kwargs)
 
@@ -1575,8 +1587,8 @@ def var(a, axis=None, dtype=None, out=None, ddof=0,
 
 @implements(np.std)
 def std(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
-    ret = np.var(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
-                 keepdims=keepdims)
+    ret = var(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
+              keepdims=keepdims)
 
     if isinstance(ret, MaskedArray):
         ret = np.sqrt(ret, out=ret)

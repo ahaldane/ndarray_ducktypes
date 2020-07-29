@@ -1775,13 +1775,13 @@ class TestMaskedArrayInPlaceArithmetics:
 
         with pytest.warns(RuntimeWarning) as record:
             z = x / y
-        assert(len(record) == 2) # invalid val, div by zero
+        assert(len(record) == 1) # div by zero
         assert_masked_equal(z, control)
 
         x = x.copy()
         with pytest.warns(RuntimeWarning) as record:
             x /= y
-        assert(len(record) == 2) # invalid val, div by zero
+        assert(len(record) == 1) # div by zero
         assert_masked_equal(x, control)
 
     def test_add(self):
@@ -4179,7 +4179,7 @@ class Test_API:
         assert_masked_equal(np.mean(a), 2.5)
         assert_equal(type(np.mean(a)), MAscalar_Subclass)
 
-    def test_var(self):
+    def test_var_std(self):
         a = MaskedArray([1,2,3,X,4])
         assert_masked_equal(np.var(a), 1.25)
         assert_masked_equal(np.var(MaskedArray([X, X('f8')])), X('f8'))
@@ -4188,6 +4188,8 @@ class Test_API:
         a = MaskedArray([[2,4],[3,X],[X,X]])
         assert_masked_equal(np.var(a, axis=1), MaskedArray([1, 0, X]))
         assert_masked_equal(np.var(a, axis=1, keepdims=True),
+                            MaskedArray([[1], [0], [X]]))
+        assert_masked_equal(np.std(a, axis=1, keepdims=True),
                             MaskedArray([[1], [0], [X]]))
         # question: should ddof < 0 give a nan+warning, or X?
         assert_masked_equal(np.var(a, axis=1, ddof=1), MaskedArray([2, X, X]))
@@ -4205,3 +4207,31 @@ class Test_API:
         a = MA_Subclass([1,2,3,X,4])
         assert_masked_equal(np.var(a), 1.25)
         assert_equal(type(np.var(a)), MAscalar_Subclass)
+
+        # std is implemented in terms of var, just check it works
+        assert_masked_equal(np.std(a), np.sqrt(1.25))
+
+    def test_average(self):
+        a = MaskedArray([1,2,3,X,4])
+        assert_masked_equal(np.average(a), 2.5)
+        avg, c = np.average(a, returned=True)
+        assert_masked_equal(avg, 2.5)
+        assert_masked_equal(c, 4)
+        avg, c = np.average(MaskedArray([X,X,X('f8')]), returned=True)
+        assert_masked_equal(avg, X('f8'))
+        assert_masked_equal(c, 0)
+
+        wgt = [0.1, 1, 0.1, 1, 0.1]
+        avg, c = np.average(a, weights=wgt, returned=True)
+        ret = (0.1*1+2+0.1*3+0.1*4)/(0.1*3+1)
+        assert_almost_equal(c, 1.3)
+        assert_almost_equal(avg, ret)
+        assert_almost_masked_equal(np.average(a, weights=wgt), ret)
+
+        # subclasses, axis, weights
+        a = MA_Subclass([[1,2,X], [X,X,X], [X,X,1]])
+        wgt = [0.1, 0.2, 0.3]
+        avg, c = np.average(a, axis=1, weights=wgt, returned=True)
+        assert_almost_masked_equal(avg, MA_Subclass([0.5/0.3, X, 1]))
+        assert_equal(c, [0.3, 0, 0.3])
+

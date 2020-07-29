@@ -23,9 +23,6 @@ def is_ndducktype(val):
 def is_ndscalar(val):
     # These files assume that a scalar is a type separate from the main ducktype
     # which also has an __array_function__ attribute.
-    # A simple test of whether a numpy-like type is a scalar and not a 0d array
-    # is that indexing with an empty tuple gives back a scalar. Hopefully that
-    # is not too fragile.
     return (isinstance(val, np.generic) or (not isinstance(val, np.ndarray) and
             is_ndducktype(val) and type(val) == val._scalartype))
 

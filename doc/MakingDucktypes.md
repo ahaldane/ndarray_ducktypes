@@ -200,6 +200,3 @@ The default formatter list is available in the `duckprint` module
 variable `default_duckprint_formatters`, the default printing options in
 `default_duckprint_options`, and the default dispatcher is
 `default_duckprint_dispatcher`.
-
-New Ndarray Ducktypes
----------------------
