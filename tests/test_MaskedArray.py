@@ -4100,3 +4100,16 @@ class Test_API:
 
         assert_equal(np.searchsorted(d, ind), [5, 7, 4, 9, 1])
         assert_equal(np.searchsorted(d, ind, side='right'), [7, 9, 4, 11, 1])
+        
+        # no need to test digitize extensively - uses searchsorted
+        bins = np.arange(10.)
+        d = MaskedArray([-inf, 0, 1, 2, 3, inf, nan, X])
+        assert_equal(np.digitize(d, bins), [ 0,  1,  2,  3,  4, 10, 10, 10])
+
+    def test_lexsort(self):
+        a = MaskedArray([1,5,1,4,3,X,4,1])
+        b = MaskedArray([9,4,0,4,0,0,1,X])
+        assert_equal(np.lexsort((b, a)), [2, 0, 7, 4, 6, 3, 1, 5])
+
+    def test_mean(self):
+        a = MaskedArray([1,2,3])
