@@ -78,9 +78,11 @@ Ducktype Conventions
 
 The numpy ducktype api is quite flexible. But the helper functions in this module add some extra constraints on how you implement your ducktype, if you want to use them. These are described here.
 
-Your ducktype's constructor must have arguments `__init__(self, data, dtype=None, copy=False, order=None, ndmin=0, **options)`, matching the signature of `np.array`. You may add extra keyword arguments.
+Your ducktype's constructor must have arguments `__init__(self, data, dtype=None, copy=False, order=None, ndmin=0, **options)`, matching the signature of `np.array`. You may add extra keyword arguments anywhere, but when calling another ducktype's constructor must bind all kwd arguments by name, not by position.
 
 Your ducktype must support the basic attributes `dtype`, `shape`, `ndim`.
+
+Your ducktype must have a class attribure `known_types` which is used in `__array_function__` to check dispatch (can be added automatically using link function described below).
 
 You must support scalars as in the next section.
 
@@ -91,14 +93,14 @@ Numpy distinguishes between ndarrays and numpy scalars. For instance, when index
 
 While for some ducktypes it might be possible to simply return numpy scalars when a scalar should be returned, in most cases you want the returned scalar to retain information related to your ducktype, and therefore you will want to define duck-scalar types. How to do so is not obvious, and there are technical challenges caused by the fact that numpy scalar types cannot be subclassed.
 
-The strategy used in this module is to define a single duck-scalar type associated to each ducktype, whose datatype is determined by the `.dtype` attribute rather than by class like `np.float64`, `np.complex128`, etc. This is a compromise, as your duck-scalars will not be part of the numpy type hierarchy and will fail checks like `np.isinstance(val, np.float64)`, However, in order to fully use this module's helper functions, in particular its printing functionality, you must follow this strategy for scalars.
+The strategy used in this module is to define a single duck-scalar type associated to each ducktype, whose instance's datatype is determined by the `.dtype` attribute rather than by subclass like `np.float64`, `np.complex128`, etc. This is a compromise, as your duck-scalars will not be part of the numpy type hierarchy and will fail checks like `np.isinstance(val, np.float64)`, However, in order to fully use this module's helper functions, in particular its printing functionality, you must follow this strategy for scalars.
 
-Your duck-scalar should support `__array_function__` as well as all the ndarray attributes, just as numpy scalars do. Numpy scalars support indexing, and indexing with an empty tuple `()` should return a copy of the scalar.
+Your duck-scalar should support `__array_function__` as well as all the ndarray attributes, just as numpy scalars do. Numpy scalars support indexing, and indexing with an empty tuple `()` should return a copy of the scalar, and with Ellipsis (...) a 0d array.
 
-Furthermore, in order to use some of the helper functions, this module expects two additional attributes to be implemented: Both the ducktype and the duck-scalar need a record of each other, so they should both have an `_arraytype` attribute equal to the ducktype type, and a `_scalartype` attribute equal to the scalar ducktype. As a convenience, you can call `ndarray_ducktypes.common.ducktype_link(arraytype, scalartype, known_types=None)` to automatically add these attributes.
+Furthermore, in order to use some of the helper functions, this module expects two additional attributes to be implemented: Both the ducktype and the duck-scalar need a record of each other, so they should both have an `_arraytype` attribute equal to the ducktype type, and a `_scalartype` attribute equal to the scalar ducktype type. As a convenience, you can call `ndarray_ducktypes.common.ducktype_link(arraytype, scalartype, known_types=None)` to automatically add these attributes, and to add any extra types to the `known_args` attribute of your ducktype.
 
 This module also provides methods `ndarray_ducktypes.common.is_ndducktype(val)`, which tests whether val is either an ndarray, ducktype, or duck-scalar (and not a numpy scalar), and `ndarray_ducktypes.common.is_duckscalar(val)` which tests
-whether val is a duck-scalar or a numpy scalar. These can be useful when implementing the numpy api.
+whether val is a duck-scalar or a numpy scalar. These can be useful when implementing the numpy api. [XXX This paragraph is out of date]
 
 Subclassing Ducktypes
 ---------------------
@@ -200,3 +202,8 @@ The default formatter list is available in the `duckprint` module
 variable `default_duckprint_formatters`, the default printing options in
 `default_duckprint_options`, and the default dispatcher is
 `default_duckprint_dispatcher`.
+
+Complete Example
+================
+
+Once all behavior above is fleshed out, this section will have a toy example ducktype with all the features.

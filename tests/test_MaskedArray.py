@@ -4280,3 +4280,41 @@ class Test_API:
         assert_masked_equal(val, 4.)
         assert_(type(val) == MaskedScalar)
         assert_masked_equal(np.quantile(X('f8'), 0.5), X('f8'))
+
+    def test_cov_corrcoef(self):
+        x = MaskedArray([-2.1, -1,  4.3, X, 1.2, 2, X])
+        y = MaskedArray([3,  1.1,  0.12, 1, 0.5, X, X])
+        xy = np.stack((x, y), axis=0)
+
+        # compute expected result with ndarrays:
+        dx = x._data - np.mean(x._data[~x.mask])
+        dy = y._data - np.mean(y._data[~y.mask])
+        mx, my = ~(x.mask), ~(y.mask)
+        mxy = mx & my
+        c = np.array([[np.sum((dx*dx)[mx]), np.sum((dx*dy)[mxy])],
+                      [np.sum((dy*dx)[mxy]), np.sum((dy*dy)[my])]])
+        d = np.array([[np.sum(mx), np.sum(mxy)],
+                      [np.sum(mxy), np.sum(my)]])
+        ret = c/(d-1)
+        stddev = np.sqrt(np.diag(ret))
+        cc = (ret/stddev[:,None]/stddev[None,:]).clip(-1,1)
+
+        assert_almost_masked_equal(np.cov(xy), ret)
+        assert_almost_masked_equal(np.cov(xy, rowvar=True), ret)
+        assert_almost_masked_equal(np.cov(xy.T, rowvar=False), ret)
+        assert_almost_masked_equal(np.cov(x, y), ret)
+        assert_almost_masked_equal(np.corrcoef(xy), cc)
+
+        # result values below not checked carefully for correctness... this
+        # test is for consistency after code changes.
+
+        ret2 = [[ 8.4893333, -4.57816  ],
+                [-4.57816  ,  1.6435733]]
+        assert_almost_masked_equal(np.cov(xy, ddof=2), ret2)
+
+        fweights = [1,2,3,4,5,6,7]
+        aweights = np.arange(7)*0.1
+        ret = np.array([[ 1.2378581, -0.3981544],
+                        [-0.3981544,  0.118843 ]])
+        val = np.cov(xy, ddof=2, fweights=fweights, aweights=aweights)
+        assert_almost_masked_equal(val, ret)

@@ -76,8 +76,9 @@ class _implements:
         if isinstance(checked_args, Iterable):
             sig = signature(func)
             def checked_args_func(args, kwargs, types, known_types):
-                bound = sig.bind(*args, *kwargs).arguments
-                types = (type(bound[a]) for a in checked_args if a in bound)
+                bound = sig.bind(*args, **kwargs).arguments
+                args = (bound.get(a, None) for a in checked_args)
+                types = (type(v) for v in args if v not in (None, np._NoValue))
                 return self.check_types(types, known_types)
 
         elif callable(checked_args):
@@ -146,10 +147,10 @@ def get_duck_cls(*args):
     for arg in args:
         if is_ndtype(arg):
             if isinstance(arg, (np.ndarray, np.generic)):
-                acl = np.ndarray 
+                acl = np.ndarray
             else:
                 acl = arg._arraytype
-            
+
             # TODO: tidy up this logic?
             if cls is None or cls == np.ndarray or issubclass(acl, cls):
                 cls = acl
