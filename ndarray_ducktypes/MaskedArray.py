@@ -12,6 +12,7 @@ from .ndarray_api_mixin import NDArrayAPIMixin
 import numpy as np
 import numpy.core.umath as umath
 from numpy.lib.mixins import NDArrayOperatorsMixin
+from numpy.lib.function_base import _quantile_is_valid
 import numpy.core.numerictypes as ntypes
 from numpy.core.multiarray import (normalize_axis_index,
     interp as compiled_interp, interp_complex as compiled_interp_complex)
@@ -593,6 +594,11 @@ class MaskedScalar(MaskedOperatorMixin, NDArrayAPIMixin):
 
         if ind == ():
             return self
+
+        if ind == Ellipsis or ind == (Ellipsis,):
+            return MaskedArray(self)
+
+        raise IndexError("invalid index to scalar variable.")
 
     def __setitem__(self, ind, val):
         # non-masked structured scalars normally allow assignment (eg, to
@@ -1739,9 +1745,14 @@ def _quantile_unchecked(a, q, axis=None, out=None, overwrite_input=False,
 
     if out is None:
         dt = np.promote_types(a.dtype, np.float64)
-        out = type(a)(np.empty(out_shape, dtype=dt))
-    elif out.shape != out_shape:
-        raise ValueError('out has wrong shape')
+        outarr = get_duck_cls(a)(np.empty(out_shape, dtype=dt))
+    else:
+        if out.shape == out_shape:
+            outarr = out
+        elif q.size == 1 and (1,)+out.shape == out_shape:
+            outarr = out[None,...]
+        else:
+            raise ValueError('out has wrong shape')
 
     inds = np.ndindex(a.shape[:-1])
     inds = (ind + (Ellipsis,) for ind in inds)
@@ -1750,28 +1761,19 @@ def _quantile_unchecked(a, q, axis=None, out=None, overwrite_input=False,
         dat = ai._data[~ai.mask]
         oind = (slice(None),) + ind
         if dat.size == 0:
-            out[oind] = X
+            outarr[oind] = X
         else:
-            out[oind] = np.quantile(dat, q, interpolation=interpolation)
+            outarr[oind] = np.quantile(dat, q, interpolation=interpolation)
+
+    if out is not None:
+        return out
 
     # return a scalar in simple case
     if q.shape == () and axis is None:
-        return out[0]
+        return outarr[0]
 
     out_dim = kdim if keepdims else a.shape[:-1]
-    return out.reshape(q.shape + out_dim)
-
-def _quantile_is_valid(q):
-    # avoid expensive reductions, eg for arrays with < O(1000) elements
-    if q.ndim == 1 and q.size < 10:
-        for i in range(q.size):
-            if q[i] < 0.0 or q[i] > 1.0:
-                return False
-    else:
-        # faster than any()
-        if np.count_nonzero(q < 0.0) or np.count_nonzero(q > 1.0):
-            return False
-    return True
+    return outarr.reshape(q.shape + out_dim)
 
 @implements(np.cov, checked_args=('m', 'y'))
 def cov(m, y=None, rowvar=True, bias=False, ddof=None, fweights=None,

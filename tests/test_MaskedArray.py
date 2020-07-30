@@ -4235,3 +4235,48 @@ class Test_API:
         assert_almost_masked_equal(avg, MA_Subclass([0.5/0.3, X, 1]))
         assert_equal(c, [0.3, 0, 0.3])
 
+    def test_quantile(self):
+        # median, percentile implemented in terms of quantile
+        a = MaskedArray([2,1,4,X,3])
+        assert_masked_equal(np.quantile(a, 0.5), 2.5)
+        assert_masked_equal(np.quantile(a, 0.5, interpolation='lower'), 2)
+        assert_masked_equal(np.quantile(a, 0.5, interpolation='higher'), 3)
+        assert_masked_equal(np.percentile(a, 50), 2.5)
+        assert_masked_equal(np.median(a), 2.5)
+        assert_masked_equal(np.quantile(MaskedArray([X,X('f8')]), 0.5), X('f8'))
+
+        assert_almost_masked_equal(np.quantile(a, [0.5,0.8]), [2.5, 3.4])
+
+        a = MaskedArray([[2,1,4,X,3],
+                         [5,6,X,X,1],
+                         [X,X,X,X,X]])
+        ret = MaskedArray([2.5, 5., X])
+        assert_almost_masked_equal(np.quantile(a, 0.5, axis=1), ret)
+        assert_almost_masked_equal(np.quantile(a, 0.5, axis=0),
+                                   MaskedArray([7/2, 7/2, 4, X, 2]))
+        assert_almost_masked_equal(np.quantile(a, 0.5, axis=1, keepdims=True),
+                                   MaskedArray([[2.5], [5.], [X]]))
+        out = MaskedArray([0.,0,0])
+        np.quantile(a, 0.5, axis=1, out=out)
+        assert_almost_masked_equal(out, ret)
+        out = MaskedArray(np.zeros((2,5)))
+        np.quantile(a, np.array([0.1, 0.9]), axis=0, out=out)
+        ret2 = MaskedArray([[2.3, 1.5, 4., X, 1.2],
+                            [4.7, 5.5, 4., X, 2.8]])
+        assert_almost_masked_equal(out, ret2)
+
+        # subclasses
+        b = MA_Subclass(a)
+        val = np.quantile(b, 0.5, axis=1)
+        assert_almost_masked_equal(val, ret)
+        assert_(type(val) == MA_Subclass)
+
+        # scalars
+        val = np.quantile(MaskedArray(4), 0.5)
+        assert_masked_equal(val, 4.)
+        assert_(type(val) == MaskedScalar)
+        assert_masked_equal(np.quantile(MaskedArray(X('f8')), 0.5), X('f8'))
+        val = np.quantile(MaskedScalar(4), 0.5)
+        assert_masked_equal(val, 4.)
+        assert_(type(val) == MaskedScalar)
+        assert_masked_equal(np.quantile(X('f8'), 0.5), X('f8'))
