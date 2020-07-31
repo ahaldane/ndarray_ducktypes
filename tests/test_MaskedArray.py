@@ -4318,7 +4318,7 @@ class Test_API:
                         [-0.3981544,  0.118843 ]])
         val = np.cov(xy, ddof=2, fweights=fweights, aweights=aweights)
         assert_almost_masked_equal(val, ret)
-    
+
     def test_clip(self):
         a = MaskedArray([[2.1, X, 3.1], [0.5, 1.0, 6.0]])
         ret = MaskedArray([[2.1, X, 3.1], [2., 2.0, 5.0]])
@@ -4344,3 +4344,50 @@ class Test_API:
         assert_(a is not b)
         assert_equal(type(np.copy(MA_Subclass(a))), MA_Subclass)
         assert_equal(type(np.copy(X('f8'))), MaskedArray)
+
+    def test_prod_cumprod(self):
+        a = MaskedArray([[X, 2.1, 3.1], [0.5, 1.0, 6.0], [X, X, X]])
+        assert_almost_masked_equal(np.prod(a), MaskedArray(19.53))
+        assert_almost_masked_equal(np.prod(a, axis=1),
+                                   MaskedArray([6.51, 3.0, X]))
+        assert_almost_masked_equal(np.prod(a, axis=1, keepdims=True),
+                                   MaskedArray([[6.51], [3.0], [X]]))
+        assert_almost_masked_equal(
+            np.prod(a, axis=1, keepdims=True, dtype=np.complex128),
+            MaskedArray([[6.51], [3.0], [X]], dtype=np.complex128))
+
+        assert_masked_equal(np.prod(X('f8')), X('f8'))
+        assert_masked_equal(np.product(X('f8')), X('f8'))
+
+        out = MaskedArray([1., 1, 1])
+        np.prod(a, axis=1, out=out)
+        assert_almost_masked_equal(out, MaskedArray([6.51, 3.0, X]))
+
+        assert_almost_masked_equal(
+            np.cumprod(a, axis=1, dtype=np.complex128),
+            MaskedArray([[X  , 2.1, 6.51],
+                         [0.5, 0.5, 3. ],
+                         [X  , X  , X  ]], dtype=np.complex128))
+
+    def test_sum_cumsum(self):
+        a = MaskedArray([[X, 2.1, 3.1], [0.5, 1.0, 6.0], [X, X, X]])
+        assert_almost_masked_equal(np.sum(a), MaskedArray(12.7))
+        assert_almost_masked_equal(np.sum(a, axis=1),
+                                   MaskedArray([5.2, 7.5, X]))
+        assert_almost_masked_equal(np.sum(a, axis=1, keepdims=True),
+                                   MaskedArray([[5.2], [7.5], [X]]))
+        assert_almost_masked_equal(
+            np.sum(a, axis=1, keepdims=True, dtype=np.complex128),
+            MaskedArray([[5.2], [7.5], [X]], dtype=np.complex128))
+
+        assert_masked_equal(np.sum(X('f8')), X('f8'))
+
+        out = MaskedArray([1., 1, 1])
+        np.sum(a, axis=1, out=out)
+        assert_almost_masked_equal(out, MaskedArray([5.2, 7.5, X]))
+
+        assert_almost_masked_equal(
+            np.cumsum(a, axis=1, dtype=np.complex128),
+            MaskedArray([[X  , 2.1, 5.2],
+                         [0.5, 1.5, 7.5],
+                         [X  , X  , X  ]], dtype=np.complex128))

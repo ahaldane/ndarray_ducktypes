@@ -1932,6 +1932,7 @@ def copy(a, order='K'):
     cls = get_duck_cls(a)
     return maskedarray_or_scalar(result_data, result_mask, cls=cls)
 
+@implements(np.product)
 @implements(np.prod)
 def prod(a, axis=None, dtype=None, out=None, keepdims=False):
     outdata, outmask = get_maskedout(out)
@@ -1940,10 +1941,7 @@ def prod(a, axis=None, dtype=None, out=None, keepdims=False):
     result_mask = np.all(a._mask, axis=axis, out=outmask, keepdims=keepdims)
     return maskedarray_or_scalar(result_data, result_mask, out, type(a))
 
-@implements(np.product)
-def product(*args, **kwargs):
-    return prod(*args, **kwargs)
-
+@implements(np.cumproduct)
 @implements(np.cumprod)
 def cumprod(a, axis=None, dtype=None, out=None):
     outdata, outmask = get_maskedout(out)
@@ -1952,10 +1950,6 @@ def cumprod(a, axis=None, dtype=None, out=None):
     result_mask = np.logical_or.accumulate(~a._mask, axis, out=outmask)
     result_mask =_inplace_not(result_mask)
     return maskedarray_or_scalar(result_data, result_mask, out, type(a))
-
-@implements(np.cumproduct)
-def cumproduct(*args, **kwargs):
-    return cumprod(*args, **kwargs)
 
 @implements(np.sum)
 def sum(a, axis=None, dtype=None, out=None, keepdims=False):
@@ -3409,6 +3403,8 @@ def copyto(dst, src, casting='same_kind', where=True):
 
 @implements(np.putmask)
 def putmask(a, mask, values):
+    if isinstance(mask, MaskedArray):
+        mask = mask.filled(False)
     np.putmask(a._data, mask, values._data)
     np.putmask(a._mask, mask, values._mask)
 
