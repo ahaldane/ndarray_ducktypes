@@ -1929,7 +1929,8 @@ def compress(condition, a, axis=None, out=None):
 def copy(a, order='K'):
     result_data = np.copy(a._data, order=order)
     result_mask = np.copy(a._mask, order=order)
-    return maskedarray_or_scalar(result_data, result_mask, cls=type(a))
+    cls = get_duck_cls(a)
+    return maskedarray_or_scalar(result_data, result_mask, cls=cls)
 
 @implements(np.prod)
 def prod(a, axis=None, dtype=None, out=None, keepdims=False):

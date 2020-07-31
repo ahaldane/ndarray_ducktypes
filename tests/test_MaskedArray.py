@@ -4318,3 +4318,29 @@ class Test_API:
                         [-0.3981544,  0.118843 ]])
         val = np.cov(xy, ddof=2, fweights=fweights, aweights=aweights)
         assert_almost_masked_equal(val, ret)
+    
+    def test_clip(self):
+        a = MaskedArray([[2.1, X, 3.1], [0.5, 1.0, 6.0]])
+        ret = MaskedArray([[2.1, X, 3.1], [2., 2.0, 5.0]])
+        assert_masked_equal(np.clip(a, 2, 5), ret)
+        out = a[::-1].copy()
+        np.clip(a, 2, 5, out=out)
+        assert_masked_equal(out, ret)
+        assert_masked_equal(np.clip(MA_Subclass(a), 2, 5), ret)
+        assert_equal(type(np.clip(MA_Subclass(a), 2, 5)), MA_Subclass)
+        assert_masked_equal(np.clip(X('f8'), 2, 5), X('f8'))
+
+    def test_compress(self):
+        a = MaskedArray([[2.1, X, 3.1], [0.5, 1.0, 6.0]])
+        ret = MaskedArray([[X, 3.1], [1.0, 6.0]])
+        assert_masked_equal(np.compress([0,1,1], a, axis=1), ret)
+        ret = MaskedArray([[X], [1.0]])
+        assert_masked_equal(np.compress([0,1,X], a, axis=1), ret)
+
+    def test_copy(self):
+        a = MaskedArray([[2.1, X, 3.1], [0.5, 1.0, 6.0]])
+        b = np.copy(a)
+        assert_masked_equal(a, b)
+        assert_(a is not b)
+        assert_equal(type(np.copy(MA_Subclass(a))), MA_Subclass)
+        assert_equal(type(np.copy(X('f8'))), MaskedArray)
