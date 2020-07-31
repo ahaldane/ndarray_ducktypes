@@ -4391,3 +4391,27 @@ class Test_API:
             MaskedArray([[X  , 2.1, 5.2],
                          [0.5, 1.5, 7.5],
                          [X  , X  , X  ]], dtype=np.complex128))
+
+    def test_diagonal(self):
+        a = MaskedArray([[X,1,2], [X,X,X], [1, X, 2]])
+        assert_masked_equal(np.diagonal(a), MaskedArray([X, X, 2]))
+        assert_equal(np.diagonal(a).filled(), [0, 0, 2])
+        assert_masked_equal(np.diagonal(a, offset=1), MaskedArray([1, X]))
+
+    def test_diag(self):
+        a = MaskedArray([[X,1,2], [X,X,X], [1, X, 2]])
+        assert_masked_equal(np.diag(a), MaskedArray([X, X, 2]))
+        assert_masked_equal(np.diag(np.diag(a)),
+                            MaskedArray([[X,0,0], [0,X,0], [0, 0, 2]]))
+        assert_masked_equal(np.diag(np.diag(a, k=1), k=1),
+                            MaskedArray([[0,1,0], [0,0,X], [0, 0, 0]]))
+
+
+    def test_diagflat(self):
+        a = MaskedArray([[X,1], [X,X], [2, X]])
+        assert_masked_equal(np.diagflat(a), MaskedArray([[X, 0, 0, 0, 0, 0],
+                                                         [0, 1, 0, 0, 0, 0],
+                                                         [0, 0, X, 0, 0, 0],
+                                                         [0, 0, 0, X, 0, 0],
+                                                         [0, 0, 0, 0, 2, 0],
+                                                         [0, 0, 0, 0, 0, X]]))

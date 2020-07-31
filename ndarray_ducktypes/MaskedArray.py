@@ -1972,8 +1972,6 @@ def cumsum(a, axis=None, dtype=None, out=None):
 def diagonal(a, offset=0, axis1=0, axis2=1):
     result = np.diagonal(a._data, offset=offset, axis1=axis1, axis2=axis2)
     rmask = np.diagonal(a._mask, offset=offset, axis1=axis1, axis2=axis2)
-    # Unlike np.diagonal, we make a copy to make it writeable, so "filled"
-    # works on it.
     return maskedarray_or_scalar(result, rmask, cls=type(a))
 
 @implements(np.diag)
