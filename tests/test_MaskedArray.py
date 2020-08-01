@@ -3993,11 +3993,13 @@ class Test_API:
 
         # test out argument
         out = np.array([True, True, True])
-        np.all(MaskedArray(data), axis=1, out=out)
+        o = np.all(MaskedArray(data), axis=1, out=out)
         assert_equal(out, ret)
+        assert_(out is o)
         out = MaskedArray([True, True, True])
-        np.all(MaskedArray(data), axis=1, out=out)
+        o = np.all(MaskedArray(data), axis=1, out=out)
         assert_masked_equal(out, ret)
+        assert_(out is o)
 
         # test subclasses
         assert_equal(np.all(MA_Subclass(data), axis=1), ret)
@@ -4005,8 +4007,9 @@ class Test_API:
         # test kwds
         ret = np.array([[True], [False], [True]])
         out = MaskedArray([[True], [True], [True]])
-        np.all(MaskedArray(data), axis=1, keepdims=True, out=out)
+        o = np.all(MaskedArray(data), axis=1, keepdims=True, out=out)
         assert_masked_equal(out, ret)
+        assert_(out is o)
 
         # test scalar
         assert_equal(np.all(X(np.float64)), True)
@@ -4055,8 +4058,9 @@ class Test_API:
 
         # out
         out = MaskedArray(np.zeros(3))
-        np.max(m, axis=1, out=out)
+        o = np.max(m, axis=1, out=out)
         assert_masked_equal(out, MaskedArray([3., 6., X]))
+        assert_(out is o)
 
         # subclass
         ret = np.max(MA_Subclass(m), axis=1)
@@ -4083,8 +4087,9 @@ class Test_API:
         assert_equal(np.argmin(d, axis=1), [1, 0, 0, 1, 0])
 
         out = np.empty(5, dtype='p')
-        np.argmin(d, axis=1, out=out)
+        o = np.argmin(d, axis=1, out=out)
         assert_equal(out, [1, 0, 0, 1, 0])
+        assert_(out is o)
 
         # test without axis
         d1 = d[0,:]
@@ -4167,8 +4172,9 @@ class Test_API:
         assert_masked_equal(np.mean(a, axis=1, keepdims=True),
                             MaskedArray([[3], [3], [X]]))
         out = MaskedArray([1,1,1])
-        np.mean(a, axis=1, out=out)
+        o = np.mean(a, axis=1, out=out)
         assert_masked_equal(out, MaskedArray([3, 3, X]))
+        assert_(out is o)
 
         # scalar, 0d
         assert_masked_equal(np.mean(MaskedScalar(3)), 3)
@@ -4194,8 +4200,9 @@ class Test_API:
         # question: should ddof < 0 give a nan+warning, or X?
         assert_masked_equal(np.var(a, axis=1, ddof=1), MaskedArray([2, X, X]))
         out = MaskedArray([1,1,1])
-        np.var(a, axis=1, out=out)
+        o = np.var(a, axis=1, out=out)
         assert_masked_equal(out, MaskedArray([1, 0, X]))
+        assert_(out is o)
 
         # scalar, 0d
         assert_masked_equal(np.var(MaskedScalar(3)), 0)
@@ -4257,13 +4264,15 @@ class Test_API:
         assert_almost_masked_equal(np.quantile(a, 0.5, axis=1, keepdims=True),
                                    MaskedArray([[2.5], [5.], [X]]))
         out = MaskedArray([0.,0,0])
-        np.quantile(a, 0.5, axis=1, out=out)
+        o = np.quantile(a, 0.5, axis=1, out=out)
         assert_almost_masked_equal(out, ret)
+        assert_(out is o)
         out = MaskedArray(np.zeros((2,5)))
-        np.quantile(a, np.array([0.1, 0.9]), axis=0, out=out)
+        o = np.quantile(a, np.array([0.1, 0.9]), axis=0, out=out)
         ret2 = MaskedArray([[2.3, 1.5, 4., X, 1.2],
                             [4.7, 5.5, 4., X, 2.8]])
         assert_almost_masked_equal(out, ret2)
+        assert_(out is o)
 
         # subclasses
         b = MA_Subclass(a)
@@ -4324,8 +4333,9 @@ class Test_API:
         ret = MaskedArray([[2.1, X, 3.1], [2., 2.0, 5.0]])
         assert_masked_equal(np.clip(a, 2, 5), ret)
         out = a[::-1].copy()
-        np.clip(a, 2, 5, out=out)
+        o = np.clip(a, 2, 5, out=out)
         assert_masked_equal(out, ret)
+        assert_(out is o)
         assert_masked_equal(np.clip(MA_Subclass(a), 2, 5), ret)
         assert_equal(type(np.clip(MA_Subclass(a), 2, 5)), MA_Subclass)
         assert_masked_equal(np.clip(X('f8'), 2, 5), X('f8'))
@@ -4360,8 +4370,9 @@ class Test_API:
         assert_masked_equal(np.product(X('f8')), X('f8'))
 
         out = MaskedArray([1., 1, 1])
-        np.prod(a, axis=1, out=out)
+        o = np.prod(a, axis=1, out=out)
         assert_almost_masked_equal(out, MaskedArray([6.51, 3.0, X]))
+        assert_(out is o)
 
         assert_almost_masked_equal(
             np.cumprod(a, axis=1, dtype=np.complex128),
@@ -4383,8 +4394,9 @@ class Test_API:
         assert_masked_equal(np.sum(X('f8')), X('f8'))
 
         out = MaskedArray([1., 1, 1])
-        np.sum(a, axis=1, out=out)
+        o = np.sum(a, axis=1, out=out)
         assert_almost_masked_equal(out, MaskedArray([5.2, 7.5, X]))
+        assert_(out is o)
 
         assert_almost_masked_equal(
             np.cumsum(a, axis=1, dtype=np.complex128),
@@ -4406,7 +4418,6 @@ class Test_API:
         assert_masked_equal(np.diag(np.diag(a, k=1), k=1),
                             MaskedArray([[0,1,0], [0,0,X], [0, 0, 0]]))
 
-
     def test_diagflat(self):
         a = MaskedArray([[X,1], [X,X], [2, X]])
         assert_masked_equal(np.diagflat(a), MaskedArray([[X, 0, 0, 0, 0, 0],
@@ -4415,3 +4426,21 @@ class Test_API:
                                                          [0, 0, 0, X, 0, 0],
                                                          [0, 0, 0, 0, 2, 0],
                                                          [0, 0, 0, 0, 0, X]]))
+    def test_tril_triu(self):
+        a = MaskedArray([[X, 2.1, 3.1], [0.5, 1.0, 6.0], [X, X, X]])
+        r = MaskedArray([[X, 2.1, 3.1], [0  , 1.0, 6.0], [0, 0, X]])
+        assert_masked_equal(np.triu(a), r)
+        r = MaskedArray([[X, 2.1, 3.1], [0.5, 1.0, 6.0], [0, X, X]])
+        assert_masked_equal(np.triu(a, k=-1), r)
+        assert_equal(type(np.triu(MA_Subclass(a), k=1)), MA_Subclass)
+
+    def test_trace(self):
+        a = MaskedArray(np.arange(27).reshape((3,3,3)))
+        a[2,2,1] = X
+        a[0,0,2] = a[1,1,2] = a[2,2,2] = X
+
+        assert_masked_equal(np.trace(a), MaskedArray([36, 14, X]))
+        out = MaskedArray([0,0,0])
+        o = np.trace(a, out=out)
+        assert_masked_equal(out, MaskedArray([36, 14, X]))
+        assert_(out is o)
