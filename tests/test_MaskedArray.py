@@ -4444,3 +4444,37 @@ class Test_API:
         o = np.trace(a, out=out)
         assert_masked_equal(out, MaskedArray([36, 14, X]))
         assert_(out is o)
+
+    def test_dot_vdot(self):
+        a = MaskedArray([[1,2,3],
+                         [4,X,6]])
+        b = MaskedArray([[7,  X],
+                         [9, 10],
+                         [11, X]])
+        ret = MaskedArray([[58, 20], [94, X]])
+        assert_masked_equal(np.dot(a, b), ret)
+        out = MaskedArray([[0,0],[0,0]])
+        o = np.dot(a, b, out=out)
+        assert_masked_equal(out, ret)
+        assert_(out is o)
+
+        b = MA_Subclass(b)
+        c = np.dot(a, b)
+        assert_(type(c) is MA_Subclass)
+        assert_masked_equal(c, ret)
+    
+    def test_vdot(self):
+        a = MaskedArray([1+1j, 2+2j, X])
+        b = MaskedArray([1+2j, X   , X])
+        assert_masked_equal(np.vdot(a, b), 3+1j)
+    
+    def test_cross(self):
+        a = MaskedArray([[1,2,3],
+                         [4,X,6],
+                         [4,5,X]])
+        b = MaskedArray([[7,  X],
+                         [9, 10],
+                         [9, 10]])
+        assert_masked_equal(np.cross(a, b), MaskedArray([[X, 21,  X],
+                                                         [X, 54,  X],
+                                                         [X,  X, -5]]))

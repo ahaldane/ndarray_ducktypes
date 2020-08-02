@@ -153,6 +153,11 @@ X(int64)
 
 `MaskedArray` reductions are implemented by replacing all masked elements by the appropriate identity element and then performing the NumPy reduction. For instance, `np.sum(arr)` is implemented using the "ufunc" reduction  `np.add.reduce(arr)` after replacing all masked elements by `np.add.identity`, which is 0. In consequence `MaskedArray` does not support reductions for "ufuncs" that do not have an identity element.
 
+Linear Algebra
+--------------
+
+For functions related to linear algebra, such as `np.dot` and `np.cross`, `MaskedASrray` follows the algebraic (rather than geometric) definitions of the operation, so that output elements are only masked if all the input elements needed to compute it are masked, and any reductions needed behave as described above. For instance, the dot product follows the definition `dot(a,b) => np.sum(a*b)`, so that masked elements do not contribute to the sum.
+
 Truthiness of Masked Values
 ----------------------------
 

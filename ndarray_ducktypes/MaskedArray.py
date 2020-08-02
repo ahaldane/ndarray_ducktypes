@@ -1275,8 +1275,6 @@ def max(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
     result_mask = np.logical_and.reduce(a._mask, axis, out=outmask,
                                         initial=initial_m, **kwarg)
 
-    if out is not None:
-        return out
     return maskedarray_or_scalar(result_data, result_mask, out, type(a))
 
 @implements(np.argmax)
@@ -1328,8 +1326,6 @@ def min(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
     result_mask = np.logical_and.reduce(a._mask, axis, out=outmask,
                                         initial=initial_m, **kwarg)
 
-    if out is not None:
-        return out
     return maskedarray_or_scalar(result_data, result_mask, out, type(a))
 
 @implements(np.argmin)
@@ -1916,8 +1912,6 @@ def clip(a, a_min, a_max, out=None):
     outdata, outmask = get_maskedout(out)
     result_data = np.clip(a._data, a_min, a_max, outdata)
     result_mask = _copy_mask(a._mask, outmask)
-    if out is not None:
-        return out
     return maskedarray_or_scalar(result_data, result_mask, out, type(a))
 
 @implements(np.compress)
@@ -1929,8 +1923,6 @@ def compress(condition, a, axis=None, out=None):
     a = cls(a)
     result_data = np.compress(cond, a._data, axis, outdata)
     result_mask = np.compress(cond, a._mask, axis, outmask)
-    if out is not None:
-        return out
     return maskedarray_or_scalar(result_data, result_mask, out, cls)
 
 @implements(np.copy)
@@ -1947,8 +1939,6 @@ def prod(a, axis=None, dtype=None, out=None, keepdims=False):
     result_data = np.prod(a.filled(1, view=1), axis=axis, dtype=dtype,
                           out=outdata, keepdims=keepdims)
     result_mask = np.all(a._mask, axis=axis, out=outmask, keepdims=keepdims)
-    if out is not None:
-        return out
     return maskedarray_or_scalar(result_data, result_mask, out, type(a))
 
 @implements(np.cumproduct)
@@ -1959,8 +1949,6 @@ def cumprod(a, axis=None, dtype=None, out=None):
                              out=outdata)
     result_mask = np.logical_or.accumulate(~a._mask, axis, out=outmask)
     result_mask =_inplace_not(result_mask)
-    if out is not None:
-        return out
     return maskedarray_or_scalar(result_data, result_mask, out, type(a))
 
 @implements(np.sum)
@@ -1969,8 +1957,6 @@ def sum(a, axis=None, dtype=None, out=None, keepdims=False):
     result_data = np.sum(a.filled(0, view=1), axis, dtype=dtype,
                          out=outdata, keepdims=keepdims)
     result_mask = np.all(a._mask, axis, out=outmask, keepdims=keepdims)
-    if out is not None:
-        return out
     return maskedarray_or_scalar(result_data, result_mask, out, type(a))
 
 @implements(np.cumsum)
@@ -1980,8 +1966,6 @@ def cumsum(a, axis=None, dtype=None, out=None):
                             out=outdata)
     result_mask = np.logical_or.accumulate(~a._mask, axis, out=outmask)
     result_mask =_inplace_not(result_mask)
-    if out is not None:
-        return out
     return maskedarray_or_scalar(result_data, result_mask, out, type(a))
 
 @implements(np.diagonal)
@@ -2024,17 +2008,12 @@ def triu(m, k=0):
 @implements(np.trace)
 def trace(a, offset=0, axis1=0, axis2=1, dtype=None, out=None):
     outdata, outmask = get_maskedout(out)
-    result = np.trace(a.filled(0, view=1), offset=offset, axis1=axis1,
+    result_data = np.trace(a.filled(0, view=1), offset=offset, axis1=axis1,
                       axis2=axis2, dtype=dtype, out=outdata)
-    mask_trace = np.trace(~a._mask, offset=offset, axis1=axis1, axis2=axis2,
+    result_mask = np.trace(~a._mask, offset=offset, axis1=axis1, axis2=axis2,
                           dtype=bool, out=outmask)
-    if not is_ndscalar(mask_trace):
-        np.invert(mask_trace, out=mask_trace)
-    else:
-        mask_trace = np.invert(mask_trace)
-    if out is not None:
-        return out
-    return maskedarray_or_scalar(result, mask_trace, cls=type(a))
+    result_mask = _inplace_not(result_mask)
+    return maskedarray_or_scalar(result_data, result_mask, out, type(a))
 
 @implements(np.dot)
 def dot(a, b, out=None):
@@ -2060,10 +2039,36 @@ def vdot(a, b):
 def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
     cls = get_duck_cls(a, b)
     a, b = cls(a), cls(b)
+
+    # because of mask calculation, we don't support vectors of length 2. 
+    # convert them if present. First have to do axis manip as in np.cross
+
+    if axis is not None:
+        axisa, axisb, axisc = (axis,) * 3
+        axis = None
+    # Check axisa and axisb are within bounds
+    axisa = normalize_axis_index(axisa, a.ndim, msg_prefix='axisa')
+    axisb = normalize_axis_index(axisb, b.ndim, msg_prefix='axisb')
+
+    # Move working axis to the end of the shape
+    a = moveaxis(a, axisa, -1)
+    b = moveaxis(b, axisb, -1)
+    msg = ("incompatible dimensions for cross product\n"
+           "(dimension must be 2 or 3)")
+    if a.shape[-1] not in (2, 3) or b.shape[-1] not in (2, 3):
+        raise ValueError(msg)
+    if a.shape[-1] == 2:
+        a = np.append(a, np.broadcast_to(0, a.shape[:-1] + (1,)), axis=-1)
+    if b.shape[-1] == 2:
+        b = np.append(b, np.broadcast_to(0, b.shape[:-1] + (1,)), axis=-1)
+
     result_data = np.cross(a.filled(0, view=1), b.filled(0, view=1), axisa,
                            axisb, axisc, axis)
-    result_mask = np.cross(~a._mask, ~b._mask, axisa, axisb, axisc, axis)
-    result_mask = _inplace_not(result_mask)
+    # trick: use nan behavior to compute mask
+    ma = np.where(a._mask, np.nan, 0)
+    mb = np.where(b._mask, np.nan, 0)
+    mab = np.cross(ma, mb, axisa, axisb, axisc, axis)
+    result_mask = np.isnan(mab)
     return maskedarray_or_scalar(result_data, result_mask, cls=cls)
 
 @implements(np.inner)
