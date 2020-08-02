@@ -4462,12 +4462,12 @@ class Test_API:
         c = np.dot(a, b)
         assert_(type(c) is MA_Subclass)
         assert_masked_equal(c, ret)
-    
+
     def test_vdot(self):
         a = MaskedArray([1+1j, 2+2j, X])
         b = MaskedArray([1+2j, X   , X])
         assert_masked_equal(np.vdot(a, b), 3+1j)
-    
+
     def test_cross(self):
         a = MaskedArray([[1,2,3],
                          [4,X,6],
@@ -4478,3 +4478,24 @@ class Test_API:
         assert_masked_equal(np.cross(a, b), MaskedArray([[X, 21,  X],
                                                          [X, 54,  X],
                                                          [X,  X, -5]]))
+
+    def test_inner(self):
+        a = MaskedArray([[1,2,3],
+                         [4,X,6]])
+        b = MaskedArray([[7,8,X],
+                         [X,11,X]])
+        assert_masked_equal(np.inner(a, b), MaskedArray([[23, 22], [28, X]]))
+
+    def test_outer(self):
+        a = MaskedArray([1,2,X])
+        b = MaskedArray([X,5,6])
+        ret = MaskedArray([[X,  5,  6],
+                           [X, 10, 12],
+                           [X,  X,  X]])
+        assert_masked_equal(np.outer(a, b), ret)
+
+    def test_kron(self):
+        a = MaskedArray([1,X,100])
+        b = MaskedArray([5,6,X])
+        ret = MaskedArray([5, 6, X, X, X, X, 500, 600, X])
+        assert_masked_equal(np.kron(a, b), ret)

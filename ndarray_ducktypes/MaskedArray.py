@@ -2095,12 +2095,13 @@ def outer(a, b, out=None):
 def kron(a, b):
     cls = get_duck_cls(a, b)
     a = cls(a, copy=False, subok=True, ndmin=b.ndim)
-    if (a.ndim == 0 or b.ndim == 0):
+    nda, ndb = a.ndim, b.ndim
+    if (nda == 0 or ndb == 0):
         return np.multiply(a, b)
     a_shape = a.shape
     b_shape = b.shape
     nd = ndb
-    if b.ndim > a.ndim:
+    if ndb > nda:
         a_shape = (1,)*(ndb-nda) + a_shape
     elif b.ndim < a.ndim:
         b_shape = (1,)*(nda-ndb) + b_shape

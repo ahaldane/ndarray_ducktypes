@@ -156,7 +156,7 @@ X(int64)
 Linear Algebra
 --------------
 
-For functions related to linear algebra, such as `np.dot` and `np.cross`, `MaskedASrray` follows the algebraic (rather than geometric) definitions of the operation, so that output elements are only masked if all the input elements needed to compute it are masked, and any reductions needed behave as described above. For instance, the dot product follows the definition `dot(a,b) => np.sum(a*b)`, so that masked elements do not contribute to the sum.
+For functions related to linear algebra, such as `np.dot`, `np.inner`, and `np.cross`, `MaskedASrray` follows the algebraic (rather than geometric) definitions of the operation, so that output elements are only masked if all the input elements needed to compute it are masked, and any reductions behave as described above. For instance, the dot product follows the definition `dot(a,b) => np.sum(a*b)` and masked elements do not contribute to the sum.
 
 Truthiness of Masked Values
 ----------------------------
