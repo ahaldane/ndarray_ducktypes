@@ -4499,3 +4499,53 @@ class Test_API:
         b = MaskedArray([5,6,X])
         ret = MaskedArray([5, 6, X, X, X, X, 500, 600, X])
         assert_masked_equal(np.kron(a, b), ret)
+
+    def test_tensordot(self):
+        a = MaskedArray(np.arange(60.).reshape(3,4,5))
+        a[0,1,2] = X
+        a[-1,:,:] = X
+        b = MaskedArray(np.arange(24.).reshape(4,3,2))
+        b[3,2,1] = X
+        b[-1,:,:] = X
+        ret = [[ 810.,  900.],
+               [ 852.,  948.],
+               [ 852.,  947.],
+               [ 936., 1044.],
+               [ 978., 1092.]]
+        assert_masked_equal(np.tensordot(a, b, axes=([1,0],[0,1])), ret)
+
+        a = MaskedArray([[1,2,3],
+                         [4,X,6]])
+        b = MaskedArray([[7,  X],
+                         [9, 10],
+                         [11, X]])
+        ret = MaskedArray([[58, 20], [94, X]])
+        assert_masked_equal(np.tensordot(a, b, axes=1), ret)
+
+    def test_einsum(self):
+        a = MaskedArray(np.arange(25).reshape(5,5))
+        a[-1,:] = X
+        a[1,1] = X
+        b = MaskedArray(np.arange(5))
+        b[-1] = X
+        c = MaskedArray(np.arange(6).reshape(2,3))
+        c[:,-1] = X
+        c[1,1] = X
+
+        assert_masked_equal(np.einsum('ii', a), 30)
+        assert_masked_equal(np.einsum(a, [0,0]), 30)
+        assert_masked_equal(np.einsum('ii->i', a),
+                            MaskedArray([ 0,  X, 12, 18,  X]))
+        assert_masked_equal(np.einsum('ji', c), c.T)
+        assert_masked_equal(np.einsum('ij,j', a, b),
+                            MaskedArray([ 14,  38,  74, 104,   X]))
+
+    def test_correlate_convolve(self):
+        a = MaskedArray([1, 2, 3, X])
+        b = MaskedArray([0, 1, X, 0.5])
+        assert_masked_equal(np.correlate(a, b), [2.])
+        assert_masked_equal(np.correlate(a, b, "same"),
+                            MaskedArray([1. , 2.5, 2. , X ]))
+
+        assert_masked_equal(np.convolve(a, b),
+                            MaskedArray([0. , 1. , 2. , 3.5, 1. , 1.5, X]))

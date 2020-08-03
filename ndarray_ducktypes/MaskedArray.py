@@ -2158,7 +2158,7 @@ def tensordot(a, b, axes=2):
     N2 = 1
     for axis in axes_a:
         N2 *= ashape[axis]
-    newshape_a = (int(multiply.reduce([ashape[ax] for ax in notin])), N2)
+    newshape_a = (int(np.multiply.reduce([ashape[ax] for ax in notin])), N2)
     olda = [ashape[axis] for axis in notin]
 
     notin = [k for k in range(ndb) if k not in axes_b]
@@ -2174,28 +2174,52 @@ def tensordot(a, b, axes=2):
     res = np.dot(at, bt)
     return res.reshape(olda + oldb)
 
+def _process_einsum_operands(operands):
+    # operands can either start with a strong, followed by op arrays,
+    # or can alternate op arrays and axes
+    if isinstance(operands[0], str):
+        arrs = operands[1:]
+        cls = get_duck_cls(*arrs)
+        arrs = tuple(cls(x) for x in arrs)
+        data_ops = (operands[0],) + tuple(a.filled(0) for a in arrs)
+        imask_ops = (operands[0],) + tuple(~a._mask for a in arrs)
+    else:
+        cls = get_duck_cls(*operands[0::2])
+        ops = tuple(o if n%2 else cls(o) for n,o in enumerate(operands))
+        data_ops = tuple(o if n%2 else o.filled(0) for n,o in enumerate(ops))
+        imask_ops = tuple(o if n%2 else ~o._mask for n,o in enumerate(ops))
+    return data_ops, imask_ops, cls
+
 @implements(np.einsum)
 def einsum(*operands, **kwargs):
-    out = None
-    if 'out' in kwargs:
-        out = kwargs.pop('out')
-        outdata, outmask = get_maskedout(out)
+    out = kwargs.pop('out', None)
+    outdata, outmask = get_maskedout(out)
+    dtype = kwargs.pop('dtype', None)
 
-    data, nmask = zip(*((x._data, ~x._mask) for x in operands))
-    cls = get_duck_cls(*operands)
-
-    result_data = np.einsum(data, out=outdata, **kwargs)
-    result_mask = np.einsum(nmask, out=outmask, **kwargs)
+    data_ops, imask_ops, cls = _process_einsum_operands(operands)
+    result_data = np.einsum(*data_ops, out=outdata, dtype=dtype, **kwargs)
+    result_mask = np.einsum(*imask_ops, out=outmask, **kwargs)
     result_mask = _inplace_not(result_mask)
     return maskedarray_or_scalar(result_data, result_mask, out, cls)
 
-#@implements(np.einsum_path)
+@implements(np.einsum_path)
+def einsum_path(*operands, **kwargs):
+    out = kwargs.pop('out', None)
+    outdata, outmask = get_maskedout(out)
+    dtype = kwargs.pop('dtype', None)
+
+    data_ops, imask_ops, cls = _process_einsum_operands(operands)
+    result_data = np.einsum_path(*data_ops, out=outdata, dtype=dtyle, **kwargs)
+    result_mask = np.einsum_path(*imask_ops, out=outmask, **kwargs)
+    result_mask = _inplace_not(result_mask)
+    return maskedarray_or_scalar(result_data, result_mask, out, cls)
 
 @implements(np.correlate)
 def correlate(a, v, mode='valid'):
     cls = get_duck_cls(a, v)
     result_data = np.correlate(a.filled(view=1), v.filled(view=1), mode)
-    result_mask = ~np.correlate(~a._mask, v._mask, mode)
+    result_mask = np.correlate(~a._mask, v._mask, mode)
+    result_mask = _inplace_not(result_mask)
     return maskedarray_or_scalar(result_data, result_mask, cls=cls)
 
 @implements(np.convolve)
@@ -2203,7 +2227,8 @@ def convolve(a, v, mode='full'):
     cls = get_duck_cls(a, v)
     a, v = cls(a), cls(v)
     result_data = np.convolve(a.filled(view=1), v.filled(view=1), mode)
-    result_mask = ~np.convolve(~a._mask, ~v._mask, mode)
+    result_mask = np.convolve(~a._mask, ~v._mask, mode)
+    result_mask = _inplace_not(result_mask)
     return maskedarray_or_scalar(result_data, result_mask, cls=cls)
 
 @implements(np.real)
