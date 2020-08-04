@@ -4651,3 +4651,19 @@ class Test_API:
                             MaskedArray([-5., -2, -1, 1, 2, 5, X]))
 
 
+    def test_axis_maneuvers(self):
+        # squeese, swapaxes, transpose, roll, rollaxis, moveaxis, flip
+        a = MaskedArray(np.arange(2*3*4).reshape((1,2,3,4)))
+        a[0,0,0,0] = X
+        a[0,:,-1,:] = X
+        a[0,-1,:,:] = X
+
+        assert_masked_equal(np.squeeze(a), a[0])
+        assert_masked_equal(np.swapaxes(a, 0, 1), a.reshape((2,1,3,4)))
+        assert_masked_equal(np.transpose(a, (1,0,2,3)), a.reshape((2,1,3,4)))
+
+        assert_masked_equal(np.roll(a, 1, axis=1), a[:,[1,0],:,:])
+        assert_masked_equal(np.rollaxis(a, 0, 2), a.reshape((2,1,3,4)))
+        assert_masked_equal(np.moveaxis(a, 0, 1), a.reshape((2,1,3,4)))
+        assert_masked_equal(np.moveaxis(a, 0, 1), a.reshape((2,1,3,4)))
+        assert_masked_equal(np.flip(a, 1), a[:,::-1,:,:])
