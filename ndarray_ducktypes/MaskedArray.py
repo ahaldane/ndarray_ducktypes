@@ -420,7 +420,9 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         view : boolean, optional
             If True, then the returned array is a view of the underlying data
             array rather than a copy (optimization). Be careful, as subsequent
-            actions on the maskedarray can put nonsense data in the view.
+            actions on the maskedarray can put nonsense data in the view. 
+            If the array is writeonly, this option is ignored and a copy is
+            always returned.
 
         Returns
         =======
@@ -2234,13 +2236,15 @@ def convolve(a, v, mode='full'):
 @implements(np.real)
 def real(a):
     result_data = np.real(a._data)
+    result_data.flags['WRITEABLE'] = False
     result_mask = a._mask.copy()
     return maskedarray_or_scalar(result_data, result_mask, cls=type(a))
 
 @implements(np.imag)
 def imag(a):
     result_data = np.imag(a._data)
-    result_mask = a._mask.copy()
+    result_data.flags['WRITEABLE'] = False
+    result_mask = a._mask
     return maskedarray_or_scalar(result_data, result_mask, cls=type(a))
 
 @implements(np.ptp)
@@ -2276,10 +2280,9 @@ def take_along_axis(arr, indices, axis):
 
 @implements(np.put_along_axis, checked_args=('arr',))
 def put_along_axis(arr, indices, values, axis):
-    if isinstance(values, (MaskedArray, MaskedScalar)):
-        np.put_along_axis(arr._mask, indices, values._mask, axis)
-        values = values._data
-    np.put_along_axis(arr._data, indices, values, axis)
+    data, mask, _ = replace_X(values, dtype=arr.dtype)
+    np.put_along_axis(arr._data, indices, data, axis)
+    np.put_along_axis(arr._mask, indices, mask, axis)
 
 @implements(np.apply_along_axis)
 def apply_along_axis(func1d, axis, arr, *args, **kwargs):

@@ -574,7 +574,9 @@ class TestMaskedArray:
         assert_equal(z.real, x)
         assert_equal(z.imag, 10 * x)
         assert_equal((z * np.conjugate(z)).real, 101 * x * x)
-        z.imag[...] = 0.0
+        def setimag():
+            z.imag[...] = 0.0
+        assert_raises(ValueError, setimag)
 
         x = MaskedArray(np.arange(10))
         x[3] = X
@@ -4549,3 +4551,67 @@ class Test_API:
 
         assert_masked_equal(np.convolve(a, b),
                             MaskedArray([0. , 1. , 2. , 3.5, 1. , 1.5, X]))
+
+    def test_real_imag(self):
+        a = MaskedArray([1+1j, 2+2j, 3+3j, X])
+        assert_(np.real(a).flags['WRITEABLE'] == False)
+        assert_masked_equal(np.real(a), MaskedArray([1,2,3,X]))
+        assert_(np.imag(a).flags['WRITEABLE'] == False)
+        assert_masked_equal(np.imag(a), MaskedArray([1,2,3,X]))
+
+    def test_ptp(self):
+        a = MaskedArray([[0,1,X],[4,5,X]])
+        assert_masked_equal(np.ptp(a, axis=0), MaskedArray([4,4, X]))
+        assert_masked_equal(np.ptp(a, axis=1), MaskedArray([1,1]))
+
+    def test_take(self):
+        a = MaskedArray([[0,1,X],[4,5,X]], dtype='f8')
+        assert_masked_equal(np.take(a, [1,2]), MaskedArray([1,X]))
+        assert_masked_equal(np.take(a, [1,2], axis=1),
+                            MaskedArray([[1,X],[5,X]]))
+        out = MaskedArray(np.zeros((2,3), dtype='f8'))
+        o = np.take(a, [1,2,3], axis=1, mode='wrap', out=out)
+        assert_masked_equal(out, MaskedArray([[1,X,0],[5,X,4]]))
+        assert_(out is o)
+
+        assert_raises(ValueError, np.take, a, MaskedArray([1,2]))
+
+    def test_put(self):
+        a = MaskedArray([1,2,3,4,X])
+        np.put(a, [0, 2], [X,10])
+        assert_masked_equal(a, MaskedArray([X,2,10,4,X]))
+
+    def test_along_axis(self):
+        a = MaskedArray([[10, X, 30], [X, 50, 40]])
+        ai = np.argsort(a, axis=1)
+
+        assert_masked_equal(np.take_along_axis(a, ai, axis=1),
+                            MaskedArray([[10, 30, X],
+                                         [40, 50, X]]))
+
+        ai = np.expand_dims(np.argmax(a, axis=1), axis=1)
+        ac = a.copy()
+        np.put_along_axis(ac, ai, 99, axis=1)
+        assert_masked_equal(ac,
+                            MaskedArray([[10,  X, 99],
+                                         [ X, 99, 40]]))
+        ac = a.copy()
+        np.put_along_axis(ac, ai, X, axis=1)
+        assert_masked_equal(ac,
+                            MaskedArray([[10,  X,  X],
+                                         [ X,  X, 40]]))
+
+        def my_func(a):
+            """Average first and last element of a 1-D array"""
+            return (a[0] + a[-1]) * 0.5
+        b = MaskedArray([[1,2,3], [4,5,X], [X,8,X]])
+        assert_masked_equal(np.apply_along_axis(my_func, 1, b),
+                            MaskedArray([2, X, X]))
+
+        a = MaskedArray(np.arange(24).reshape(2,3,4))
+        a[0,0,0] = X
+        a[:,-1,:] = X
+        a[-1,:,:] = X
+        assert_masked_equal(np.apply_over_axes(np.sum, a, [0,2]),
+                            MaskedArray([[[ 6], [22], [X]]]))
+
