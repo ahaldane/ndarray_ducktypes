@@ -4615,3 +4615,17 @@ class Test_API:
         assert_masked_equal(np.apply_over_axes(np.sum, a, [0,2]),
                             MaskedArray([[[ 6], [22], [X]]]))
 
+    def test_ravel_reshape_repeat_resize(self):
+        a = MaskedArray([[1,X,3], [4,5,X]])
+        assert_masked_equal(np.ravel(a), MaskedArray([1,X,3,4,5,X]))
+        assert_masked_equal(np.reshape(a, (3,2)),
+                            MaskedArray([[1,X],[3,4],[5,X]]))
+        assert_masked_equal(np.resize(a, (3,3)),
+                            MaskedArray([[1,X,3],[4,5,X],[1,X,3]]))
+        assert_masked_equal(np.repeat(a, 2, axis=1),
+                            MaskedArray([[1,1,X,X,3,3],[4,4,5,5,X,X]]))
+        assert_masked_equal(np.repeat(a, 2, axis=0),
+                            MaskedArray([[1,X,3],[1,X,3],[4,5,X],[4,5,X]]))
+        a.resize(3,3)
+        assert_masked_equal(a, MaskedArray([[1,X,3],[4,5,X],[0,0,0]]))
+
