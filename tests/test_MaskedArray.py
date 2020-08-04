@@ -4629,3 +4629,25 @@ class Test_API:
         a.resize(3,3)
         assert_masked_equal(a, MaskedArray([[1,X,3],[4,5,X],[0,0,0]]))
 
+    def test_meshgrid(self):
+        a = MaskedArray([1,2,X])
+        b = MaskedArray([4,X,6])
+        aa, bb = np.meshgrid(a, b)
+        assert_masked_equal(aa, MaskedArray([[1,2,X]]*3))
+        assert_masked_equal(bb, MaskedArray([[4,X,6]]*3).T)
+
+    def test_round_around_fix(self):
+        a = MaskedArray([1.234,2.345, 3.456, 4.567, 5.678, X])
+        ret = MaskedArray([1.23,2.35, 3.46, 4.57, 5.68, X])
+        assert_masked_equal(np.around(a, decimals=2), ret)
+        assert_masked_equal(np.round(a, decimals=2), ret)
+        out = MaskedArray([0.,0,0,0,0,0])
+        o = np.around(a, decimals=2, out=out)
+        assert_masked_equal(out, ret)
+        assert_(out is o)
+
+        a = MaskedArray([-5.6, -2.3, -1.2, 1.2, 2.3, 5.6, X])
+        assert_masked_equal(np.fix(a),
+                            MaskedArray([-5., -2, -1, 1, 2, 5, X]))
+
+

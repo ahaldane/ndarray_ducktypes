@@ -910,6 +910,8 @@ class _Masked_UniOp(_Masked_UFunc):
 
     def __call__(self, a, *args, **kwargs):
         out = kwargs.get('out', ())
+        if not isinstance(out, tuple):
+            out = (out,)
         if out:
             if not isinstance(out[0], MaskedArray):
                 raise ValueError("out must be a MaskedArray")
@@ -920,8 +922,13 @@ class _Masked_UniOp(_Masked_UFunc):
 
         where = ~m
         kwhere = kwargs.get('where', None)
+        if isinstance(kwhere, (MaskedArray, MaskedScalar)):
+            if kwhere.dtype.type != np.bool_:
+                raise ValueError("'where' only supports masks for boolean "
+                                 "dtype")
+            kwhere = kwhere.filled(False)
         if kwhere is not None:
-            where |= kwhere
+            where &= kwhere
         kwargs['where'] = where
 
         result = self.f(d, *args, **kwargs)
@@ -980,6 +987,8 @@ class _Masked_BinOp(_Masked_UFunc):
                 mkwargs[k] = kwargs[k]
 
         out = kwargs.get('out', ())
+        if not isinstance(out, tuple):
+            out = (out,)
         if out:
             if not isinstance(out[0], MaskedArray):
                 raise ValueError("out must be a MaskedArray")
@@ -990,8 +999,13 @@ class _Masked_BinOp(_Masked_UFunc):
 
         where = ~m
         kwhere = kwargs.get('where', None)
+        if isinstance(kwhere, (MaskedArray, MaskedScalar)):
+            if kwhere.dtype.type != np.bool_:
+                raise ValueError("'where' only supports masks for boolean "
+                                 "dtype")
+            kwhere = kwhere.filled(False)
         if kwhere is not None:
-            where |= kwhere
+            where &= kwhere
         kwargs['where'] = where
 
         result = self.f(da, db, **kwargs)
@@ -2395,7 +2409,6 @@ def round(a, decimals=0, out=None):
 
 @implements(np.fix)
 def fix(x, out=None):
-    outdata, outmask = get_maskedout(out)
     res = np.ceil(x, out=out)
     res = np.floor(x, out=res, where=np.greater_equal(x, 0))
     return out or res
