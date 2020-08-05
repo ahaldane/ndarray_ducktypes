@@ -6,7 +6,7 @@ import warnings
 from .duckprint import (duck_str, duck_repr, duck_array2string, typelessdata,
     default_duckprint_options, default_duckprint_formatters, FormatDispatcher)
 from .common import (is_ndducktype, is_ndscalar, is_ndarr, is_ndtype,
-    new_ducktype_implementation, ducktype_link, get_duck_cls)
+    new_ducktype_implementation, ducktype_link, get_duck_cls, as_duck_cls)
 from .ndarray_api_mixin import NDArrayAPIMixin
 
 import numpy as np
@@ -909,6 +909,11 @@ class _Masked_UniOp(_Masked_UFunc):
         super().__init__(ufunc)
 
     def __call__(self, a, *args, **kwargs):
+        if a is X:
+            raise ValueError("must supply dtype if all inputs are X")
+
+        a = as_duck_cls(a, base=MaskedArray)
+
         out = kwargs.get('out', ())
         if not isinstance(out, tuple):
             out = (out,)
@@ -917,8 +922,7 @@ class _Masked_UniOp(_Masked_UFunc):
                 raise ValueError("out must be a MaskedArray")
             kwargs['out'] = (out[0]._data,)
 
-        d = getdata(a)
-        m = getmask(a)
+        d, m = a._data, a._mask
 
         where = ~m
         kwhere = kwargs.get('where', None)
@@ -937,9 +941,9 @@ class _Masked_UniOp(_Masked_UFunc):
             out[0]._mask[...] = m
             return out[0]
 
-        cls = get_duck_cls(a)
+        cls = get_duck_cls(a, base=MaskedArray)
         if is_ndscalar(result):
-            return cls._scalartype(result, m)
+            return type(a)._scalartype(result, m)
 
         return type(a)(result, m)
 
@@ -971,15 +975,15 @@ class _Masked_BinOp(_Masked_UFunc):
             self.reduce_fill = reduce_fill
 
     def __call__(self, a, b, **kwargs):
-        da, db = getdata(a), getdata(b)
-        ma, mb = getmask(a), getmask(b)
-
         # treat X as a masked value of the other array's dtype
-        if da is X:
-            da, ma = db.dtype.type(0), np.bool_(True)
-        if db is X:
-            db, mb = da.dtype.type(0), np.bool_(True)
+        if a is X:
+            a = X(b.dtype)
+        if b is X:
+            b = X(a.dtype)
 
+        a, b = as_duck_cls(a, b, base=MaskedArray)
+        da, db = a._data, b._data
+        ma, mb = a._mask, b._mask
 
         mkwargs = {}
         for k in ['where', 'order']:
@@ -1013,10 +1017,9 @@ class _Masked_BinOp(_Masked_UFunc):
         if out:
             return out[0]
 
-        cls = get_duck_cls(a, b)
         if is_ndscalar(result):
-            return cls._scalartype(result, m)
-        return cls(result, m)
+            return type(a)._scalartype(result, m)
+        return type(a)(result, m)
 
     def reduce(self, a, **kwargs):
         if self.reduce_fill is None:
@@ -1061,7 +1064,7 @@ class _Masked_BinOp(_Masked_UFunc):
         if out:
             return out[0]
 
-        cls = get_duck_cls(a)
+        cls = get_duck_cls(a, base=MaskedArray)
         if is_ndscalar(result):
             return cls._scalartype(result, m)
         return cls(result, m)
@@ -1246,6 +1249,7 @@ def _inplace_not(v):
 
 @implements(np.all)
 def all(a, axis=None, out=None, keepdims=np._NoValue):
+    a = as_duck_cls(a, base=MaskedArray)
     # out can be maskedarray or ndarray since we never return masked elements
     # (or.. should we only allow ndarray out?)
     if isinstance(out, MaskedArray):
@@ -1258,6 +1262,7 @@ def all(a, axis=None, out=None, keepdims=np._NoValue):
 
 @implements(np.any)
 def any(a, axis=None, out=None, keepdims=np._NoValue):
+    a = as_duck_cls(a, base=MaskedArray)
     if isinstance(out, MaskedArray):
         np.any(a.filled(False, view=1), axis, out._data, keepdims)
         out._mask[...] = False
@@ -1270,6 +1275,7 @@ def any(a, axis=None, out=None, keepdims=np._NoValue):
 @implements(np.max)
 def max(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
         where=True):
+    a = as_duck_cls(a, base=MaskedArray)
     outdata, outmask = get_maskedout(out)
 
     kwarg = {}
@@ -1297,6 +1303,7 @@ def max(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
 def argmax(a, axis=None, out=None):
     if isinstance(out, MaskedArray):
         raise TypeError("out argument of argmax should be an ndarray")
+    a = as_duck_cls(a, base=MaskedArray)
 
     # most of the time this is enough
     filled = a.filled(minmax='min', view=1)
@@ -1321,6 +1328,7 @@ def argmax(a, axis=None, out=None):
 @implements(np.min)
 def min(a, axis=None, out=None, keepdims=np._NoValue, initial=np._NoValue,
         where=np._NoValue):
+    a = as_duck_cls(a, base=MaskedArray)
     outdata, outmask = get_maskedout(out)
 
     kwarg = {}
@@ -1349,6 +1357,8 @@ def argmin(a, axis=None, out=None):
     if isinstance(out, MaskedArray):
         raise TypeError("out argument of argmax should be an ndarray")
 
+    a = as_duck_cls(a, base=MaskedArray)
+
     # most of the time this is enough
     filled = a.filled(minmax='max', view=1)
     result_data = np.argmin(filled, axis, out)
@@ -1369,6 +1379,7 @@ def argmin(a, axis=None, out=None):
 
 @implements(np.sort)
 def sort(a, axis=-1, kind='quicksort', order=None):
+    a = as_duck_cls(a, base=MaskedArray)
     # Note: This is trickier than it looks. The first line sorts the mask
     # together with any min_vals which may be present, so there appears to
     # be a problem ordering mask vs min_val elements.
@@ -1385,6 +1396,7 @@ def sort(a, axis=-1, kind='quicksort', order=None):
 
 @implements(np.argsort)
 def argsort(a, axis=-1, kind='quicksort', order=None):
+    a = as_duck_cls(a, base=MaskedArray)
     # Similar to mask-sort trick in sort above, here after sorting data we
     # re-sort based on mask. Use the property that if you argsort the index
     # array produced by argsort you get the element rank, which can be
@@ -1401,12 +1413,14 @@ def argsort(a, axis=-1, kind='quicksort', order=None):
 
 @implements(np.partition)
 def partition(a, kth, axis=-1, kind='introselect', order=None):
+    a = as_duck_cls(a, base=MaskedArray)
     inds = np.argpartition(a, kth, axis, kind, order)
     return np.take_along_axis(a, inds, axis=axis)
 
 @implements(np.argpartition)
 def argpartition(a, kth, axis=-1, kind='introselect', order=None):
     # see argsort for explanation
+    a = as_duck_cls(a, base=MaskedArray)
     filled = a.filled(minmax='maxnan', view=1)
     inds = np.argpartition(filled, kth, axis, kind, order)
     ranks = np.empty(inds.shape, dtype=inds.dtype)
@@ -1416,14 +1430,9 @@ def argpartition(a, kth, axis=-1, kind='introselect', order=None):
 
 @implements(np.searchsorted, checked_args=('v',))
 def searchsorted(a, v, side='left', sorter=None):
-
-    if isinstance(a, MaskedArray):
-        maskleft = len(a) - np.sum(a._mask)
-        aval = a.filled(minmax='maxnan', view=1)
-    else:  # plain ndarray
-        maskleft = len(a)
-        aval = a
-
+    a = as_duck_cls(a, base=MaskedArray)
+    maskleft = len(a) - np.sum(a._mask)
+    aval = a.filled(minmax='maxnan', view=1)
     inds = np.searchsorted(aval, v.filled(minmax='maxnan', view=1),
                            side, sorter)
 
@@ -1445,6 +1454,8 @@ def searchsorted(a, v, side='left', sorter=None):
 
 @implements(np.digitize)
 def digitize(x, bins, right=False):
+    x = as_duck_cls(x, base=MaskedArray)
+
     # Original comment:
     # here for compatibility, searchsorted below is happy to take this
     if np.issubdtype(x.dtype, np.complexfloating):
@@ -1471,6 +1482,9 @@ def digitize(x, bins, right=False):
 def lexsort(keys, axis=-1):
     if not isinstance(keys, tuple):
         keys = tuple(keys)
+
+    cls = get_duck_cls(*keys, base=MaskedArray)
+    keys = (cls(a) if type(a) != cls else a for a in keys)
 
     # strategy: for each key, split into a mask and data key.
     # So, we end up sorting twice as many keys. Mask is primary key (last).
@@ -1506,7 +1520,12 @@ def mean(a, axis=None, dtype=None, out=None, keepdims=np._NoValue):
     """
     kwargs = {} if keepdims is np._NoValue else {'keepdims': keepdims}
 
+    a = as_duck_cls(a, base=MaskedArray)
     outdata, outmask = get_maskedout(out)
+
+    cls = get_duck_cls(a, base=MaskedArray)
+    if type(a) is not cls:
+        a = cls(a)
 
     # code partly copied from _mean in numpy/core/_methods.py
 
@@ -1559,6 +1578,7 @@ def var(a, axis=None, dtype=None, out=None, ddof=0,
     """
     kwargs = {} if keepdims is np._NoValue else {'keepdims': keepdims}
 
+    a = as_duck_cls(a, base=MaskedArray)
     outdata, outmask = get_maskedout(out)
 
     # code largely copied from _methods.var
@@ -1581,7 +1601,7 @@ def var(a, axis=None, dtype=None, out=None, ddof=0,
             arrmean = arrmean.dtype.type(arrmean / rcount)
 
     # Compute sum of squared deviations from mean
-    x = get_duck_cls(a)(a - arrmean)
+    x = type(a)(a - arrmean)
     if issubclass(a.dtype.type, np.complexfloating):
         x = np.multiply(x, np.conjugate(x), out=x).real
     else:
@@ -1609,6 +1629,7 @@ def var(a, axis=None, dtype=None, out=None, ddof=0,
 
 @implements(np.std)
 def std(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
+    a = as_duck_cls(a, base=MaskedArray)
     ret = var(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
               keepdims=keepdims)
 
@@ -1622,6 +1643,8 @@ def std(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
 
 @implements(np.average, checked_args=('a',))
 def average(a, axis=None, weights=None, returned=False):
+    a = as_duck_cls(a, base=MaskedArray)
+
     if weights is None:
         avg = a.mean(axis)
         if returned:
@@ -1752,6 +1775,7 @@ def _quantile_unchecked(a, q, axis=None, out=None, overwrite_input=False,
                         interpolation='linear', keepdims=False):
     """Assumes that q is in [0, 1], and is an ndarray"""
 
+    a = as_duck_cls(a, base=MaskedArray)
     a, kdim = _move_reduction_axis_last(a, axis)
 
     if len(q.shape) > 1:
@@ -1803,14 +1827,17 @@ def cov(m, y=None, rowvar=True, bias=False, ddof=None, fweights=None,
     if m.ndim > 2:
         raise ValueError("m has more than 2 dimensions")
 
-    cls = type(m)
+    cls = get_duck_cls(m, base=MaskedArray)
+    if type(m) is not cls:
+        m = cls(m)
+
     if y is None:
         dtype = np.result_type(m, np.float64)
     else:
         if not is_ndtype(y):
             y = cls(y)
         else:
-            cls = get_duck_cls(m, y)
+            cls = get_duck_cls(m, y, base=MaskedArray)
         if y.ndim > 2:
             raise ValueError("y has more than 2 dimensions")
         dtype = np.result_type(m, y, np.float64)
@@ -1925,6 +1952,7 @@ def corrcoef(x, y=None, rowvar=True, bias=np._NoValue, ddof=np._NoValue):
 
 @implements(np.clip)
 def clip(a, a_min, a_max, out=None):
+    a = as_duck_cls(a, base=MaskedArray)
     outdata, outmask = get_maskedout(out)
     result_data = np.clip(a._data, a_min, a_max, outdata)
     result_mask = _copy_mask(a._mask, outmask)
@@ -1934,7 +1962,7 @@ def clip(a, a_min, a_max, out=None):
 def compress(condition, a, axis=None, out=None):
     # Note: masked values in condition treated as False
     outdata, outmask = get_maskedout(out)
-    cls = get_duck_cls(condition, a)
+    cls = get_duck_cls(condition, a, base=MaskedArray)
     cond = cls(condition).filled(False, view=1)
     a = cls(a)
     result_data = np.compress(cond, a._data, axis, outdata)
@@ -1943,14 +1971,15 @@ def compress(condition, a, axis=None, out=None):
 
 @implements(np.copy)
 def copy(a, order='K'):
+    a = as_duck_cls(a, base=MaskedArray)
     result_data = np.copy(a._data, order=order)
     result_mask = np.copy(a._mask, order=order)
-    cls = get_duck_cls(a)
-    return maskedarray_or_scalar(result_data, result_mask, cls=cls)
+    return maskedarray_or_scalar(result_data, result_mask, cls=type(a))
 
 @implements(np.product)
 @implements(np.prod)
 def prod(a, axis=None, dtype=None, out=None, keepdims=False):
+    a = as_duck_cls(a, base=MaskedArray)
     outdata, outmask = get_maskedout(out)
     result_data = np.prod(a.filled(1, view=1), axis=axis, dtype=dtype,
                           out=outdata, keepdims=keepdims)
@@ -1960,6 +1989,7 @@ def prod(a, axis=None, dtype=None, out=None, keepdims=False):
 @implements(np.cumproduct)
 @implements(np.cumprod)
 def cumprod(a, axis=None, dtype=None, out=None):
+    a = as_duck_cls(a, base=MaskedArray)
     outdata, outmask = get_maskedout(out)
     result_data = np.cumprod(a.filled(1, view=1), axis, dtype=dtype,
                              out=outdata)
@@ -1969,6 +1999,7 @@ def cumprod(a, axis=None, dtype=None, out=None):
 
 @implements(np.sum)
 def sum(a, axis=None, dtype=None, out=None, keepdims=False):
+    a = as_duck_cls(a, base=MaskedArray)
     outdata, outmask = get_maskedout(out)
     result_data = np.sum(a.filled(0, view=1), axis, dtype=dtype,
                          out=outdata, keepdims=keepdims)
@@ -1977,6 +2008,7 @@ def sum(a, axis=None, dtype=None, out=None, keepdims=False):
 
 @implements(np.cumsum)
 def cumsum(a, axis=None, dtype=None, out=None):
+    a = as_duck_cls(a, base=MaskedArray)
     outdata, outmask = get_maskedout(out)
     result_data = np.cumsum(a.filled(0, view=1), axis, dtype=dtype,
                             out=outdata)
@@ -1986,12 +2018,14 @@ def cumsum(a, axis=None, dtype=None, out=None):
 
 @implements(np.diagonal)
 def diagonal(a, offset=0, axis1=0, axis2=1):
+    a = as_duck_cls(a, base=MaskedArray)
     result = np.diagonal(a._data, offset=offset, axis1=axis1, axis2=axis2)
     rmask = np.diagonal(a._mask, offset=offset, axis1=axis1, axis2=axis2)
     return maskedarray_or_scalar(result, rmask, cls=type(a))
 
 @implements(np.diag)
 def diag(v, k=0):
+    v = as_duck_cls(v, base=MaskedArray)
     s = v.shape
     if len(s) == 1:
         n = s[0]+abs(k)
@@ -2009,21 +2043,25 @@ def diag(v, k=0):
 
 @implements(np.diagflat)
 def diagflat(v, k=0):
+    v = as_duck_cls(v, base=MaskedArray)
     return np.diag(v.ravel(), k)
 
 @implements(np.tril)
 def tril(m, k=0):
+    m = as_duck_cls(m, base=MaskedArray)
     mask = np.tri(*m.shape[-2:], k=k, dtype=bool)
     return np.where(mask, m, np.zeros(1, m.dtype))
 
 @implements(np.triu)
 def triu(m, k=0):
+    m = as_duck_cls(m, base=MaskedArray)
     mask = np.tri(*m.shape[-2:], k=k-1, dtype=bool)
     return np.where(mask, np.zeros(1, m.dtype), m)
 
 @implements(np.trace)
 def trace(a, offset=0, axis1=0, axis2=1, dtype=None, out=None):
     outdata, outmask = get_maskedout(out)
+    a = as_duck_cls(a, base=MaskedArray)
     result_data = np.trace(a.filled(0, view=1), offset=offset, axis1=axis1,
                       axis2=axis2, dtype=dtype, out=outdata)
     result_mask = np.trace(~a._mask, offset=offset, axis1=axis1, axis2=axis2,
@@ -2034,7 +2072,7 @@ def trace(a, offset=0, axis1=0, axis2=1, dtype=None, out=None):
 @implements(np.dot)
 def dot(a, b, out=None):
     outdata, outmask = get_maskedout(out)
-    cls = get_duck_cls(a, b)
+    cls = get_duck_cls(a, b, base=MaskedArray)
     a, b = cls(a), cls(b)
     result_data = np.dot(a.filled(0, view=1), b.filled(0, view=1),
                          out=outdata)
@@ -2044,7 +2082,7 @@ def dot(a, b, out=None):
 
 @implements(np.vdot)
 def vdot(a, b):
-    cls = get_duck_cls(a, b)
+    cls = get_duck_cls(a, b, base=MaskedArray)
     a, b = cls(a), cls(b)
     result_data = np.vdot(a.filled(0, view=1), b.filled(0, view=1))
     result_mask = np.vdot(~a._mask, ~b._mask)
@@ -2053,7 +2091,7 @@ def vdot(a, b):
 
 @implements(np.cross)
 def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
-    cls = get_duck_cls(a, b)
+    cls = get_duck_cls(a, b, base=MaskedArray)
     a, b = cls(a), cls(b)
 
     # because of mask calculation, we don't support vectors of length 2. 
@@ -2089,7 +2127,7 @@ def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
 
 @implements(np.inner)
 def inner(a, b):
-    cls = get_duck_cls(a, b)
+    cls = get_duck_cls(a, b, base=MaskedArray)
     a, b = cls(a), cls(b)
     result_data = np.inner(a.filled(0, view=1), b.filled(0, view=1))
     result_mask = np.inner(~a._mask, ~b._mask)
@@ -2099,7 +2137,7 @@ def inner(a, b):
 @implements(np.outer)
 def outer(a, b, out=None):
     outdata, outmask = get_maskedout(out)
-    cls = get_duck_cls(a, b)
+    cls = get_duck_cls(a, b, base=MaskedArray)
     a, b = cls(a), cls(b)
     result_data = np.outer(a.filled(0, view=1), b.filled(0, view=1),
                            out=outdata)
@@ -2109,7 +2147,7 @@ def outer(a, b, out=None):
 
 @implements(np.kron)
 def kron(a, b):
-    cls = get_duck_cls(a, b)
+    cls = get_duck_cls(a, b, base=MaskedArray)
     a = cls(a, copy=False, subok=True, ndmin=b.ndim)
     nda, ndb = a.ndim, b.ndim
     if (nda == 0 or ndb == 0):
@@ -2148,7 +2186,7 @@ def tensordot(a, b, axes=2):
     na, axes_a = nax(axes_a)
     nb, axes_b = nax(axes_b)
 
-    cls = get_duck_cls(a, b)
+    cls = get_duck_cls(a, b, base=MaskedArray)
     a, b = cls(a), cls(b)
     ashape, bshape = a.shape, b.shape
     nda, ndb = a.ndim, b.ndim
@@ -2195,12 +2233,12 @@ def _process_einsum_operands(operands):
     # or can alternate op arrays and axes
     if isinstance(operands[0], str):
         arrs = operands[1:]
-        cls = get_duck_cls(*arrs)
+        cls = get_duck_cls(*arrs, base=MaskedArray)
         arrs = tuple(cls(x) for x in arrs)
         data_ops = (operands[0],) + tuple(a.filled(0) for a in arrs)
         imask_ops = (operands[0],) + tuple(~a._mask for a in arrs)
     else:
-        cls = get_duck_cls(*operands[0::2])
+        cls = get_duck_cls(*operands[0::2], base=MaskedArray)
         ops = tuple(o if n%2 else cls(o) for n,o in enumerate(operands))
         data_ops = tuple(o if n%2 else o.filled(0) for n,o in enumerate(ops))
         imask_ops = tuple(o if n%2 else ~o._mask for n,o in enumerate(ops))
@@ -2499,12 +2537,12 @@ def expand_dims(a, axis):
 @implements(np.concatenate)
 def concatenate(arrays, axis=0, out=None):
     outdata, outmask = get_maskedout(out)
-    cls = get_duck_cls(arrays)
+    cls = get_duck_cls(arrays, base=MaskedArray)
     arrays = (cls(a) for a in arrays)
     data, mask = zip(*((x._data, x._mask) for x in arrays))
     result_data = np.concatenate(data, axis, outdata)
     result_mask = np.concatenate(mask, axis, outmask)
-    return maskedarray_or_scalar(result_data, result_mask, cls=cls)
+    return maskedarray_or_scalar(result_data, result_mask, out, cls=cls)
 
 @implements(np.block)
 def block(arrays):
@@ -2515,7 +2553,7 @@ def block(arrays):
 
 @implements(np.column_stack)
 def column_stack(tup):
-    cls = get_duck_cls(tup)
+    cls = get_duck_cls(tup, base=MaskedArray)
     arrays = []
     for v in tup:
         arr = cls(v, copy=False, subok=True)
@@ -2674,7 +2712,7 @@ def insert(arr, obj, values, axis=None):
 
 @implements(np.append)
 def append(arr, values, axis=None):
-    cls = get_duck_cls(arr, values)
+    cls = get_duck_cls(arr, values, base=MaskedArray)
     arr, values = cls(arr), cls(values)
     return cls(np.append(arr._data, values._data, axis),
                np.append(arr._mask, values._mask, axis))
@@ -2693,7 +2731,7 @@ def place(arr, mask, vals):
 
 @implements(np.broadcast_to)
 def broadcast_to(array, shape, subok=False):
-    cls = get_duck_cls(array)
+    cls = get_duck_cls(array, base=MaskedArray)
     return cls(np.broadcast_to(array._data, shape, subok),
                np.broadcast_to(array._mask, shape))
 
@@ -2712,17 +2750,17 @@ def broadcast_arrays(*args, **kwargs):
 
 @implements(np.empty_like)
 def empty_like(prototype, dtype=None, order='K', subok=True):
-    cls = get_duck_cls(prototype)
+    cls = get_duck_cls(prototype, base=MaskedArray)
     return cls(np.empty_like(prototype._data, dtype, order, subok))
 
 @implements(np.ones_like)
 def ones_like(prototype, dtype=None, order='K', subok=True):
-    cls = get_duck_cls(prototype)
+    cls = get_duck_cls(prototype, base=MaskedArray)
     return cls(np.ones_like(prototype._data, dtype, order, subok))
 
 @implements(np.zeros_like)
 def zeros_like(prototype, dtype=None, order='K', subok=True):
-    cls = get_duck_cls(prototype)
+    cls = get_duck_cls(prototype, base=MaskedArray)
     return cls(np.zeros_like(prototype._data, dtype, order, subok))
 
 @implements(np.full_like)
@@ -2735,7 +2773,7 @@ def where(condition, x=None, y=None):
     if x is None and y is None:
         return np.nonzero(condition)
 
-    cls = get_duck_cls(condition, x, y)
+    cls = get_duck_cls(condition, x, y, base=MaskedArray)
 
     # convert x, y to MaskedArrays, using the other's dtype if one is X
     if x is X:
@@ -2769,7 +2807,7 @@ def choose(a, choices, out=None, mode='raise'):
     if isinstance(a, (MaskedArray, MaskedScalar)):
         raise TypeError("choice indices should not be masked")
 
-    cls = get_duck_cls(*choices)
+    cls = get_duck_cls(*choices, base=MaskedArray)
     choices = [cls(choice) for choice in choices]
     choices_data = [c._data for c in choices]
     choices_mask = [c._mask for c in choices]
@@ -2840,7 +2878,7 @@ def select(condlist, choicelist, default=0):
         if isinstance(c, (MaskedArray, MaskedScalar)):
             raise TypeError("condlist arrays should not be masked")
 
-    cls = get_duck_cls(choicelist)
+    cls = get_duck_cls(choicelist, base=MaskedArray)
     choicelist = [cls(choice) for choice in choicelist]
     # need to get the result type before broadcasting for correct scalar
     # behaviour
@@ -3083,7 +3121,7 @@ def diff(a, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
 
     inputs = [a, prepend, append]
     inputs = [i for i in inputs if is_ndtype(i)]
-    cls = get_duck_cls(*inputs)
+    cls = get_duck_cls(*inputs, base=MaskedArray)
 
     combined = []
     if prepend is not np._NoValue:
@@ -3136,7 +3174,7 @@ def interp(x, xp, fp, left=None, right=None, period=None):
         objs.append(left)
     if right is not None and right is not X:
         objs.append(right)
-    cls = get_duck_cls(objs)
+    cls = get_duck_cls(objs, base=MaskedArray)
     fp = cls(fp)
     if left is X:
         left = cls._scalartype(X, dtype=fp.dtype)
@@ -3198,7 +3236,7 @@ def ediff1d(ary, to_end=None, to_begin=None):
         inputs.append(to_end)
     if to_begin is not None:
         inputs.append(to_begin)
-    cls = get_duck_cls(*inputs)
+    cls = get_duck_cls(*inputs, base=MaskedArray)
 
     # force a 1d array
     ary = cls(ary).ravel()
@@ -3244,7 +3282,7 @@ def ediff1d(ary, to_end=None, to_begin=None):
 
 @implements(np.gradient)
 def gradient(f, *varargs, axis=None, edge_order=1):
-    cls = get_duck_cls(*((f,) + varargs))
+    cls = get_duck_cls(*((f,) + varargs), base=MaskedArray)
     varargs = [cls(v) for v in varargs]
 
     N = f.ndim  # number of dimensions
@@ -3448,7 +3486,7 @@ def shape(a):
 
 @implements(np.alen)
 def alen(a):
-    return len(get_duck_cls(a)(a, ndmin=1))
+    return len(get_duck_cls(a)(a, ndmin=1), base=MaskedArray)
 
 @implements(np.ndim)
 def ndim(a):
@@ -3521,7 +3559,7 @@ def real_if_close(a, tol=100):
 
 @implements(np.isclose)
 def isclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False):
-    cls = get_duck_cls(a, b)
+    cls = get_duck_cls(a, b, base=MaskedArray)
     a, b = cls(a), cls(b)
     result_data = np.isclose(a._data, b._data, rtol, atol, equal_nan)
     result_mask = a._mask | b._mask
@@ -3573,6 +3611,8 @@ def sinc(x):
 
 @implements(np.unwrap)
 def unwrap(p, discont=np.pi, axis=-1):
+    cls = get_duck_cls(p, base=MaskedArray)
+    p = cls(p)
     pi = np.pi
     nd = p.ndim
     dd = np.diff(p, axis=axis)
@@ -3583,7 +3623,7 @@ def unwrap(p, discont=np.pi, axis=-1):
     np.copyto(ddmod, pi, where=(ddmod == -pi) & (dd > 0))
     ph_correct = ddmod - dd
     np.copyto(ph_correct, 0, where=abs(dd) < discont)
-    up = get_duck_cls(p)(p, copy=True, dtype='d')
+    up = cls(p, copy=True, dtype='d')
     up[slice1] = p[slice1] + ph_correct.cumsum(axis)
     return up
 

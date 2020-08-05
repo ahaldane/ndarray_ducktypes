@@ -128,7 +128,7 @@ MaskedArray([2, X, X])
 MaskedArray([True, X, X])
 ```
 
-Note that after invalid mathematical operations such as division-by-zero the resulting output element is *not* automatically masked and can lead to `inf` or `nan` in your data, with the standard numpy warning in such cases. To avoid invalid operations you must apply appropriate masks, depending on the situation:
+Note that after invalid mathematical operations such as division-by-zero the resulting output element is *not* automatically masked and can lead to `inf` or `nan` in your data, with the standard numpy warning in such cases. To avoid invalid operations you must apply appropriate masks depending on the situation:
 ```python
 >>> arr = MaskedArray([2, 0, 4, X])
 >>> 1.0 / arr
@@ -156,7 +156,7 @@ X(int64)
 Linear Algebra
 --------------
 
-For functions related to linear algebra, such as `np.dot`, `np.inner`, and `np.cross`, `MaskedASrray` follows the algebraic (rather than geometric) definitions of the operation, so that output elements are only masked if all the input elements needed to compute it are masked, and any reductions behave as described above. For instance, the dot product follows the definition `dot(a,b) => np.sum(a*b)` and masked elements do not contribute to the sum.
+For functions related to linear algebra, such as `np.dot`, `np.inner`, and `np.cross`, `MaskedArray` follows the algebraic (rather than geometric) definitions of the operation, so that output elements are only masked if all the input elements needed to compute it are masked, and any reductions behave as described above. For instance, the dot product follows the algebraic definition `dot(a,b) => np.sum(a*b)` and masked elements do not contribute to the sum.
 
 Truthiness of Masked Values
 ----------------------------
@@ -204,14 +204,17 @@ The `.mask` attribute of a `MaskedArray` is a readonly view of the internal mask
 
 Unlike `ndarray`s, `MaskedArray`s do not support a `.base` attribute which can be used to tell if an array is a view. However, it is possible to check the `.base` attribute of the `ndarray`s returned by `.mask`, or `.filled` with `view=True`.
 
-Subclasses and Coercion
------------------------
+Subclasses of MaskedArray
+-------------------------
 
 As described further below, you can subclass MaskedArray to create derived and composite ndarray ducktypes. This module aims to preserve MaskedArray subclasses provided as inputs to its implementations of the Numpy API functions. The API functions, such as `np.concatenate`, will detect the most-derived MaskedArray subclass in the inputs using the usual Python subclass rules, and convert all the inputs to that class before performing the computation, and the result will have that subclass.
 
 Similarly, the result of arithmetic operations and other ufuncs will have type equal to the most derived MaskedArray subclass of the inputs.
 
-Note that the normal Numpy-API functions are not aware of the `X` placeholder, so cannot auto-convert arguments which are list/tuples containing X into MaskedArrays. I.e, code such as `np.sin([1,2,X])` will fail, and must be corrected to `np.sin(MaskedArray([1,2,X]))`. However, you can also import the MaskedArray implementation of the api function, and it can autoconvert list input containing `X`, as in `import MaskedArray as ma; ma.sin([1,2,X])`.
+Automatic Coercion of List/Tuple inputs
+---------------------------------------
+
+The normal Numpy-API functions are not aware of the `X` placeholder, so cannot auto-convert arguments which are list/tuples containing X into MaskedArrays. I.e, code such as `np.sin([1,2,X])` will fail, though `np.sin(MaskedArray([1,2,X]))`works. However, you can import the MaskedArray implementation of the api function, and it can autoconvert list input containing `X`, as in `import MaskedArray as ma; ma.sin([1,2,X])`.
 
 Differences in behavior between MaskedArray and ndarray
 -------------------------------------------------------

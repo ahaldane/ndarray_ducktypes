@@ -14,6 +14,7 @@ import numpy
 
 from ndarray_ducktypes.MaskedArray import (MaskedArray, MaskedScalar, X,
     replace_X, _minvals, _maxvals)
+import ndarray_ducktypes.MaskedArray as ma
 from ndarray_ducktypes.common import ducktype_link
 
 pi = np.pi
@@ -4029,10 +4030,12 @@ class Test_API:
         ret = np.max(MaskedArray([1., X, 2.]))
         assert_(isinstance(ret, MaskedScalar))
         assert_masked_equal(ret, 2.)
+        assert_masked_equal(ma.max([1., X, 2.]), 2.)
 
         ret = np.min(MaskedArray([1., X, 2.]))
         assert_(isinstance(ret, MaskedScalar))
         assert_masked_equal(ret, 1.)
+        assert_masked_equal(ma.min([1., X, 2.]), 1.)
 
         assert_masked_equal(np.max(MaskedArray([X, X], dtype='f8')), X('f8'))
         assert_masked_equal(np.min(MaskedArray([X, X], dtype='f8')), X('f8'))
@@ -4447,6 +4450,8 @@ class Test_API:
         assert_masked_equal(out, MaskedArray([36, 14, X]))
         assert_(out is o)
 
+        assert_masked_equal(ma.trace([[X,1],[2,3]]), MaskedArray([3]))
+
     def test_dot_vdot(self):
         a = MaskedArray([[1,2,3],
                          [4,X,6]])
@@ -4650,7 +4655,6 @@ class Test_API:
         assert_masked_equal(np.fix(a),
                             MaskedArray([-5., -2, -1, 1, 2, 5, X]))
 
-
     def test_axis_maneuvers(self):
         # squeese, swapaxes, transpose, roll, rollaxis, moveaxis, flip*, rot90
         a = MaskedArray(np.arange(2*3*4).reshape((1,2,3,4)))
@@ -4671,3 +4675,21 @@ class Test_API:
         assert_masked_equal(np.flipud(a), a[::-1,:,:,:])
         assert_masked_equal(np.rot90(a, k=1),  a[:,::-1,:,:].reshape((2,1,3,4)))
         assert_masked_equal(np.expand_dims(a,1), a[:,None,:,:,:])
+
+    def test_concatenate(self):
+        a = MaskedArray([1,2,X])
+        b = MaskedArray([4,X,6])
+        ret = MaskedArray([1,2,X,4,X,6])
+        assert_masked_equal(np.concatenate([a,b]), ret)
+        assert_masked_equal(ma.concatenate([[1,2,X], [4,X,6]]), ret)
+
+        a = MaskedArray([[1,2,X],[4,X,6]])
+        b = MaskedArray([[5,6,7],[X,X,X]])
+        ret = MaskedArray([[1,2,X,5,6,7],[4,X,6,X,X,X]])
+        assert_masked_equal(np.concatenate([a,b], axis=1), ret)
+        ret = MaskedArray([[1,2,X],[4,X,6],[5,6,7],[X,X,X]])
+        assert_masked_equal(np.concatenate([a,b], axis=0), ret)
+        out = MaskedArray([[0,0,0]]*4)
+        o = np.concatenate([a,b], axis=0, out=out)
+        assert_masked_equal(out, ret)
+        assert_(out is o)

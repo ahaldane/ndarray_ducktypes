@@ -117,7 +117,7 @@ def ducktype_link(arraytype, scalartype, known_types=None):
         known += tuple(known_types)
     arraytype.known_types = scalartype.known_types = known
 
-def get_duck_cls(*args):
+def get_duck_cls(*args, base=None):
     """
     Helper to make ducktypes Subclass-friendly.
 
@@ -143,7 +143,7 @@ def get_duck_cls(*args):
     arraytype : type
         The derived class of all of the inputs
     """
-    cls = None
+    cls = base
     for arg in args:
         if is_ndtype(arg):
             if isinstance(arg, (np.ndarray, np.generic)):
@@ -171,3 +171,9 @@ def get_duck_cls(*args):
         return None
     return cls
 
+def as_duck_cls(*args, base=None):
+    cls = get_duck_cls(*args, base)
+    if len(args) == 1:
+        a = args[0]
+        return cls(a) if type(a) != cls else a
+    return tuple(cls(a) if type(a) != cls else a for a in args)
