@@ -74,10 +74,10 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
         return impl(*arg, **kwarg)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        if ufunc not in masked_ufuncs:
+        if ufunc not in _masked_ufuncs:
             return NotImplemented
 
-        return getattr(masked_ufuncs[ufunc], method)(*inputs, **kwargs)
+        return getattr(_masked_ufuncs[ufunc], method)(*inputs, **kwargs)
 
     def _get_fill_value(self, fill_value, minmax):
         if minmax is not None:
@@ -874,7 +874,7 @@ masked_dispatcher = FormatDispatcher(masked_formatters, default_options)
 #                               Ufunc setup
 ################################################################################
 
-masked_ufuncs = {}
+_masked_ufuncs = {}
 
 class _Masked_UFunc:
     def __init__(self, ufunc):
@@ -1180,35 +1180,38 @@ class _Masked_BinOp(_Masked_UFunc):
         self.f.at(da, indices, db)
         np.logical_or.at(ma, indices, mb)
 
+def _add_ufunc(ufunc, uni=False, glob=globals(), **kwargs):
+    if uni:
+        impl = _Masked_UniOp(ufunc, **kwargs)
+    else:
+        impl = _Masked_BinOp(ufunc, **kwargs)
+    _masked_ufuncs[ufunc] = impl
+    glob[ufunc.__name__] = impl
 
-def setup_ufuncs():
-    # unary funcs
-    for ufunc in [umath.exp, umath.conjugate, umath.sin, umath.cos, umath.tan,
-                  umath.arctan, umath.arcsinh, umath.sinh, umath.cosh,
-                  umath.tanh, umath.absolute, umath.fabs, umath.negative,
-                  umath.floor, umath.ceil, umath.logical_not, umath.isfinite,
-                  umath.isinf, umath.isnan, umath.invert, umath.sqrt, umath.log,
-                  umath.log2, umath.log10, umath.tan, umath.arcsin,
-                  umath.arccos, umath.arccosh, umath.arctanh]:
-        masked_ufuncs[ufunc] = _Masked_UniOp(ufunc)
+# unary funcs
+for ufunc in [umath.exp, umath.conjugate, umath.sin, umath.cos, umath.tan,
+              umath.arctan, umath.arcsinh, umath.sinh, umath.cosh,
+              umath.tanh, umath.absolute, umath.fabs, umath.negative,
+              umath.floor, umath.ceil, umath.logical_not, umath.isfinite,
+              umath.isinf, umath.isnan, umath.invert, umath.sqrt, umath.log,
+              umath.log2, umath.log10, umath.tan, umath.arcsin,
+              umath.arccos, umath.arccosh, umath.arctanh]:
+    _add_ufunc(ufunc, uni=True)
 
-    # binary ufuncs
-    for ufunc in [umath.add, umath.subtract, umath.multiply,
-                  umath.arctan2, umath.hypot, umath.equal, umath.not_equal,
-                  umath.less_equal, umath.greater_equal, umath.less,
-                  umath.greater, umath.logical_and, umath.logical_or,
-                  umath.logical_xor, umath.bitwise_and, umath.bitwise_or,
-                  umath.bitwise_xor, umath.true_divide, umath.floor_divide,
-                  umath.remainder, umath.fmod, umath.mod, umath.power]:
-        masked_ufuncs[ufunc] = _Masked_BinOp(ufunc)
+# binary ufuncs
+for ufunc in [umath.add, umath.subtract, umath.multiply,
+              umath.arctan2, umath.hypot, umath.equal, umath.not_equal,
+              umath.less_equal, umath.greater_equal, umath.less,
+              umath.greater, umath.logical_and, umath.logical_or,
+              umath.logical_xor, umath.bitwise_and, umath.bitwise_or,
+              umath.bitwise_xor, umath.true_divide, umath.floor_divide,
+              umath.remainder, umath.fmod, umath.mod, umath.power]:
+    _add_ufunc(ufunc)
 
-    # fill value depends on dtype
-    masked_ufuncs[umath.maximum] = _Masked_BinOp(umath.maximum,
-                                         reduce_fill=lambda dt: _minvals[dt])
-    masked_ufuncs[umath.minimum] = _Masked_BinOp(umath.minimum,
-                                         reduce_fill=lambda dt: _maxvals[dt])
+# fill value depends on dtype
+_add_ufunc(umath.maximum, reduce_fill=lambda dt: _minvals[dt])
+_add_ufunc(umath.minimum, reduce_fill=lambda dt: _maxvals[dt])
 
-setup_ufuncs()
 
 ################################################################################
 #                         __array_function__ setup
@@ -1313,13 +1316,14 @@ def argmax(a, axis=None, out=None):
     data_min = filled == _minvals[a.dtype]
     is_min = data_min & ~a._mask
     has_min = np.any(is_min, axis=axis)
-    has_no_other_data = np.all(data_min, axis=axis)
-    has_lonely_min = has_min & has_no_other_data
-    if np.any(has_lonely_min):
-        min_ind = np.argmax(is_min, axis=axis)
-        if is_ndscalar(result_data):
-            return min_ind
-        result_data[has_lonely_min] = min_ind[has_lonely_min]
+    if np.any(has_min):
+        has_no_other_data = np.all(data_min, axis=axis)
+        has_lonely_min = has_min & has_no_other_data
+        if np.any(has_lonely_min):
+            min_ind = np.argmax(is_min, axis=axis)
+            if is_ndscalar(result_data):
+                return min_ind
+            result_data[has_lonely_min] = min_ind[has_lonely_min]
     # one day, might speed up with numba/extension. Or with np.take?
 
     return result_data
@@ -1363,17 +1367,18 @@ def argmin(a, axis=None, out=None):
     filled = a.filled(minmax='max', view=1)
     result_data = np.argmin(filled, axis, out)
 
-    # except if the only unmasked elem is minval. Have to check and do carefully
+    # except if the only unmasked elem is maxval. Have to check and do carefully
     data_max = filled == _maxvals[a.dtype]
     is_max = data_max & ~a._mask
     has_max = np.any(is_max, axis=axis)
-    has_no_other_data = np.all(data_max, axis=axis)
-    has_lonely_max = has_max & has_no_other_data
-    if np.any(has_lonely_max):
-        max_ind = np.argmax(is_max, axis=axis)
-        if is_ndscalar(result_data):
-            return max_ind
-        result_data[has_lonely_max] = max_ind[has_lonely_max]
+    if np.any(has_max):
+        has_no_other_data = np.all(data_max, axis=axis)
+        has_lonely_max = has_max & has_no_other_data
+        if np.any(has_lonely_max):
+            max_ind = np.argmax(is_max, axis=axis)
+            if is_ndscalar(result_data):
+                return max_ind
+            result_data[has_lonely_max] = max_ind[has_lonely_max]
 
     return result_data
 
