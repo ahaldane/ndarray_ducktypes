@@ -158,6 +158,15 @@ Linear Algebra
 
 For functions related to linear algebra, such as `np.dot`, `np.inner`, and `np.cross`, `MaskedArray` follows the algebraic (rather than geometric) definitions of the operation, so that output elements are only masked if all the input elements needed to compute it are masked, and any reductions behave as described above. For instance, the dot product follows the algebraic definition `dot(a,b) => np.sum(a*b)` and masked elements do not contribute to the sum.
 
+Statistical Functions
+---------------------
+
+It is often ambiguous how to implement missing values in many of the more complex statistical functions, such correlation coefficients. This MaskedArray implementation makes choices which might not be appropriate for some applications.
+
+For `np.mean` and `np.average` MaskedArray will ignore masked elements and will normalize only according to the unmasked elements, including when weights are used in `np.average`.
+
+For `np.cov` MaskedArray computes each covariance value separately by leaving out the masked datapoints when taking expectation values. If the normalization factor is less than or equal to 0, the corresponding output element will be masked. While simple, this method can lead to a covariance matrix which is not positive semi-definite causing problems in some applications. Depending on your use-case, you may want to instead implement one of the many alternate methods to estimate covariance matrices with missing data documented in the scientific literature, as suitable for your application. `np.corrcoef` behaves likewise.
+
 Truthiness of Masked Values
 ----------------------------
 
@@ -276,16 +285,6 @@ my_arr
 Encapsulation is easy to implement, but it is missing  some desirable features: Attributes of the encapsulated type are not exposed on the masked instance, the `repr` and `str` of the `MaskedArray` do not display anything about the contained type, and numpy functions which create new masked arrays may lose the contained ducktype class information. 
 
 To control these behaviors we recommend you combine or subclass `MaskedArray` and the other ducktype to create a composite type. [TODO: example subclass]
-
-
-Statistical Functions
-=====================
-
-It is often ambiguous how to implement missing values in many of the more complex statistical functions, such correlation coefficients. This MaskedArray implementation makes choices which might not be appropriate for some applications.
-
-For `np.mean` and `np.average` MaskedArray will ignore masked elements and will normalize only according to the unmasked elements, including when weights are used in `np.average`.
-
-For `np.cov` MaskedArray computes each covariance value separately by leaving out the masked datapoints when taking expectation values. If the normalization factor is less than or equal to 0, the corresponding output element will be masked. While simple, this method can lead to a covariance matrix which is not positive semi-definite causing problems in some applications. Depending on your use-case, you may want to instead implement one of the many alternate methods to estimate covariance matrices with missing data documented in the scientific literature, as suitable for your application. `np.corrcoef` behaves likewise.
 
 
 Appendix: Behavior Changes relative to np.ma.MaskedArray

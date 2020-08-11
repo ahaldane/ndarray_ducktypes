@@ -4693,3 +4693,36 @@ class Test_API:
         o = np.concatenate([a,b], axis=0, out=out)
         assert_masked_equal(out, ret)
         assert_(out is o)
+    
+    def test_block_stack(self):
+        A = MaskedArray([[2,X],[0,X]])
+        B = MaskedArray([[3,0,0],[0,X,0],[0,0,3]])
+        C = MaskedArray([[0,X,X],[0,X,X]])
+        D = MaskedArray([[1,1],[1,1],[1,1]])
+
+        ret = MaskedArray([[2., X , 0., X , X ],
+                           [0., X , 0., X , X ],
+                           [1., 1., 3., 0., 0.],
+                           [1., 1., 0., X , 0.],
+                           [1., 1., 0., 0., 3.]]) 
+        assert_masked_equal(np.block([[A,C],[D,B]]), ret)
+        ret = MaskedArray([[X , 1 , 0., X , 0 ],
+                           [1., 1., 3., 0., 0.],
+                           [1., 1., 0., X , 0.],
+                           [1., 1., 0., 0., 3.]]) 
+        assert_masked_equal(np.block([[X, MaskedArray([1,0,X,0])],[D,B]]), ret)
+
+        assert_masked_equal(ma.column_stack([[1,2,X],[3,X,5]]),
+                            MaskedArray([[1,3],
+                                         [2,X],
+                                         [X,5]]))
+        assert_masked_equal(np.column_stack([B[:2],C]), np.block([B[:2],C]))
+
+        assert_masked_equal(ma.hstack(([1,2,X],[3,X,5])),
+                            MaskedArray([1,2,X,3,X,5]))
+        assert_masked_equal(ma.vstack(([1,2,X],[3,X,5])),
+                            MaskedArray([[1,2,X],[3,X,5]]))
+        assert_masked_equal(ma.dstack(([1,2,X],[3,X,5])),
+                            MaskedArray([[[1,3],
+                                          [2,X],
+                                          [X,5]]]))

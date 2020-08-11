@@ -10,6 +10,7 @@ from .common import (is_ndducktype, is_ndscalar, is_ndarr, is_ndtype,
 from .ndarray_api_mixin import NDArrayAPIMixin
 
 import numpy as np
+from numpy import newaxis
 import numpy.core.umath as umath
 from numpy.lib.mixins import NDArrayOperatorsMixin
 from numpy.lib.function_base import _quantile_is_valid
@@ -1488,8 +1489,7 @@ def lexsort(keys, axis=-1):
     if not isinstance(keys, tuple):
         keys = tuple(keys)
 
-    cls = get_duck_cls(*keys, base=MaskedArray)
-    keys = (cls(a) if type(a) != cls else a for a in keys)
+    keys = as_duck_cls(*keys, base=MaskedArray, single=False)
 
     # strategy: for each key, split into a mask and data key.
     # So, we end up sorting twice as many keys. Mask is primary key (last).
@@ -2542,11 +2542,11 @@ def expand_dims(a, axis):
 @implements(np.concatenate)
 def concatenate(arrays, axis=0, out=None):
     outdata, outmask = get_maskedout(out)
-    cls = get_duck_cls(arrays, base=MaskedArray)
-    arrays = (cls(a) for a in arrays)
+    arrays = as_duck_cls(*arrays, base=MaskedArray, single=False)
     data, mask = zip(*((x._data, x._mask) for x in arrays))
     result_data = np.concatenate(data, axis, outdata)
     result_mask = np.concatenate(mask, axis, outmask)
+    cls = type(arrays[0])
     return maskedarray_or_scalar(result_data, result_mask, out, cls=cls)
 
 @implements(np.block)
@@ -2569,15 +2569,28 @@ def column_stack(tup):
 
 @implements(np.dstack)
 def dstack(tup):
-    return np.dstack.__wrapped__(tup)
+    arrs = atleast_3d(*tup)
+    if not isinstance(arrs, list):
+        arrs = [arrs]
+    return concatenate(arrs, 2)
 
 @implements(np.vstack)
 def vstack(tup):
-    return np.vstack.__wrapped__(tup)
+    arrs = atleast_2d(*tup)
+    if not isinstance(arrs, list):
+        arrs = [arrs]
+    return concatenate(arrs, 0)
 
 @implements(np.hstack)
 def hstack(tup):
-    return np.hstack.__wrapped__(tup)
+    arrs = atleast_1d(*tup)
+    if not isinstance(arrs, list):
+        arrs = [arrs]
+    # As a special case, dimension 0 of 1-dimensional arrays is "horizontal"
+    if arrs and arrs[0].ndim == 1:
+        return concatenate(arrs, 0)
+    else:
+        return concatenate(arrs, 1)
 
 @implements(np.array_split, checked_args=('ary',))
 def array_split(ary, indices_or_sections, axis=0):

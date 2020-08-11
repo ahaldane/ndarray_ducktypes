@@ -171,9 +171,11 @@ def get_duck_cls(*args, base=None):
         return None
     return cls
 
-def as_duck_cls(*args, base=None):
+def as_duck_cls(*args, base=None, single=True):
+    # single=True means return the arg if only 1 arg. i
+    # single=False always returns a tuple.
     cls = get_duck_cls(*args, base)
-    if len(args) == 1:
+    if single and len(args) == 1:
         a = args[0]
         return cls(a) if type(a) != cls else a
     return tuple(cls(a) if type(a) != cls else a for a in args)
