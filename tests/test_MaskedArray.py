@@ -4790,3 +4790,32 @@ class Test_API:
                              [X]]], dtype='f8'),
                MaskedArray([], dtype='float64').reshape((2,2,0))]
         compare_results(np.dsplit(a3, np.array([3,6])), ret)
+
+    def test_tile(self):
+        a = MaskedArray([0, 1, X])
+        assert_masked_equal(np.tile(a, 2), MaskedArray([0,1,X,0,1,X]))
+        assert_masked_equal(ma.tile([0, 1, X], 2), MaskedArray([0,1,X,0,1,X]))
+        b = MaskedArray([[1, 2], [3, X]])
+        assert_masked_equal(np.tile(b, (2, 1)), MaskedArray([[1, 2],
+                                                             [3, X],
+                                                             [1, 2],
+                                                             [3, X]]))
+
+    def test_atleast(self):
+        assert_masked_equal(np.atleast_1d(X('f8')), X('f8'))
+        a = MaskedArray(np.arange(9.).reshape(3,3))
+        a[0,0] = X
+        assert_(np.atleast_1d(a) is a)
+        assert_(np.atleast_2d(a) is a)
+        b = MaskedArray([1,2,X])
+        assert_masked_equal(np.atleast_2d(b), MaskedArray([[1,2,X]]))
+        assert_masked_equal(ma.atleast_2d([1,2,X]), MaskedArray([[1,2,X]]))
+        assert_masked_equal(np.atleast_3d(b),
+                            MaskedArray([[[1],[2],[X]]]))
+        assert_masked_equal(ma.atleast_3d([1,2,X]), 
+                            MaskedArray([[[1],[2],[X]]]))
+        
+        r1, r2, r3 = np.atleast_2d(X('f8'), b, [1,4,X])
+        assert_masked_equal(r1, MaskedArray([[X('f8')]]))
+        assert_masked_equal(r2, MaskedArray([[1,2,X]]))
+        assert_masked_equal(r3, MaskedArray([[1,4,X]]))

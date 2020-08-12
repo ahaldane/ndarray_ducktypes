@@ -2424,6 +2424,7 @@ def repeat(a, repeats, axis=None):
 
 @implements(np.reshape)
 def reshape(a, shape, order='C'):
+    a = as_duck_cls(a, base=MaskedArray)
     return type(a)(np.reshape(a._data, shape, order=order),
                    np.reshape(a._mask, shape, order=order))
 
@@ -2630,6 +2631,7 @@ def tile(A, reps):
         tup = (reps,)
     d = len(tup)
 
+    A = as_duck_cls(A, base=MaskedArray)
     if builtins.all(x == 1 for x in tup):
         return type(A)(A, copy=True, subok=True, ndmin=d)
     else:
@@ -2657,14 +2659,12 @@ def tile(A, reps):
 # I think least-bad approach right now is to convert lists to MaskedArray,
 # otherwise leave ducktype alone.
 
-def _asMAduck(a):
-    return a if is_ndtype(a) else MaskedArray(a)
 
 @implements(np.atleast_1d)
 def atleast_1d(*arys):
     res = []
     for ary in arys:
-        ary = _asMAduck(ary)
+        ary = ary if is_ndtype(ary) else MaskedArray(ary)
         if ary.ndim == 0:
             result = ary.reshape(1)
         else:
@@ -2679,7 +2679,7 @@ def atleast_1d(*arys):
 def atleast_2d(*arys):
     res = []
     for ary in arys:
-        ary = _asMAduck(ary)
+        ary = ary if is_ndtype(ary) else MaskedArray(ary)
         if ary.ndim == 0:
             result = ary.reshape(1, 1)
         elif ary.ndim == 1:
@@ -2696,7 +2696,7 @@ def atleast_2d(*arys):
 def atleast_3d(*arys):
     res = []
     for ary in arys:
-        ary = _asMAduck(ary)
+        ary = ary if is_ndtype(ary) else MaskedArray(ary)
         if ary.ndim == 0:
             result = ary.reshape(1, 1, 1)
         elif ary.ndim == 1:
@@ -2713,7 +2713,7 @@ def atleast_3d(*arys):
 
 @implements(np.stack)
 def stack(arrays, axis=0, out=None):
-    arrays = [_asMAduck(arr) for arr in arrays]
+    arrays = [ary if is_ndtype(ary) else MaskedArray(ary) for ary in arrays]
     if not arrays:
         raise ValueError('need at least one array to stack')
 
