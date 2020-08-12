@@ -159,7 +159,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
     "An ndarray ducktype allowing array elements to be masked"
 
     def __init__(self, data, mask=None, dtype=None, copy=False,
-                order=None, ndmin=0, **options):
+                order=None, subok=False, ndmin=0):
         """
         Constructs a MaskedArray given data and optional mask.
 
@@ -421,7 +421,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
         view : boolean, optional
             If True, then the returned array is a view of the underlying data
             array rather than a copy (optimization). Be careful, as subsequent
-            actions on the maskedarray can put nonsense data in the view. 
+            actions on the maskedarray can put nonsense data in the view.
             If the array is writeonly, this option is ignored and a copy is
             always returned.
 
@@ -712,6 +712,9 @@ def replace_X(data, dtype=None):
     cls : type
         The most derived MaskedArray subtype seen in the inputs
     """
+
+    if isinstance(data, (list, tuple)) and len(data) == 0:
+        return data, [], MaskedArray
 
     # we do two passes: First we figure out the output dtype, then we replace
     # all masked values by the filler "type(0)".
@@ -2099,7 +2102,7 @@ def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
     cls = get_duck_cls(a, b, base=MaskedArray)
     a, b = cls(a), cls(b)
 
-    # because of mask calculation, we don't support vectors of length 2. 
+    # because of mask calculation, we don't support vectors of length 2.
     # convert them if present. First have to do axis manip as in np.cross
 
     if axis is not None:
@@ -2594,10 +2597,17 @@ def hstack(tup):
 
 @implements(np.array_split, checked_args=('ary',))
 def array_split(ary, indices_or_sections, axis=0):
+    # array_split is the only *split function that accepts list input
+    # as first arg if indices is an integer
+    if not is_ndtype(ary):
+        ary = MaskedArray(ary)
     return np.array_split.__wrapped__(ary, indices_or_sections, axis)
 
 @implements(np.split, checked_args=('ary',))
 def split(ary, indices_or_sections, axis=0):
+    # ary can be list if indices_or_sections is not an integer
+    if not isinstance(indices_or_sections, int) and not is_ndtype(ary):
+        ary = MaskedArray(ary)
     return np.split.__wrapped__(ary, indices_or_sections, axis)
 
 @implements(np.hsplit)

@@ -784,7 +784,7 @@ def duck_repr(arr, name=None, extra_args=None, **options):
         lst = duck_array2string(arr, separator=', ', prefix=prefix,
                                 suffix=',', **options)
     else:  # show zero-length shape unless it is (0,)
-        lst = "[]", 
+        lst = "[]"
         extra_args.insert(0, "shape=%s" % (repr(arr.shape),))
 
     arr_str = prefix + lst

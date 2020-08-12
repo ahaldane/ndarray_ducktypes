@@ -78,7 +78,7 @@ Ducktype Conventions
 
 The numpy ducktype api is quite flexible. But the helper functions in this module add some extra constraints on how you implement your ducktype, if you want to use them. These are described here.
 
-Your ducktype's constructor must have arguments `__init__(self, data, dtype=None, copy=False, order=None, ndmin=0, **options)`, matching the signature of `np.array`. You may add extra keyword arguments anywhere, but when calling another ducktype's constructor must bind all kwd arguments by name, not by position.
+Your ducktype's constructor must have arguments `__init__(self, data, dtype=None, copy=False, order=None, subok=False, ndmin=0)`, matching the signature of `np.array`. You may add extra keyword arguments anywhere, but when calling another ducktype's constructor must bind all kwd arguments by name, not by position.
 
 Your ducktype must support the basic attributes `dtype`, `shape`, `ndim`.
 

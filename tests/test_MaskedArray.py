@@ -4693,7 +4693,7 @@ class Test_API:
         o = np.concatenate([a,b], axis=0, out=out)
         assert_masked_equal(out, ret)
         assert_(out is o)
-    
+
     def test_block_stack(self):
         A = MaskedArray([[2,X],[0,X]])
         B = MaskedArray([[3,0,0],[0,X,0],[0,0,3]])
@@ -4704,12 +4704,12 @@ class Test_API:
                            [0., X , 0., X , X ],
                            [1., 1., 3., 0., 0.],
                            [1., 1., 0., X , 0.],
-                           [1., 1., 0., 0., 3.]]) 
+                           [1., 1., 0., 0., 3.]])
         assert_masked_equal(np.block([[A,C],[D,B]]), ret)
         ret = MaskedArray([[X , 1 , 0., X , 0 ],
                            [1., 1., 3., 0., 0.],
                            [1., 1., 0., X , 0.],
-                           [1., 1., 0., 0., 3.]]) 
+                           [1., 1., 0., 0., 3.]])
         assert_masked_equal(np.block([[X, MaskedArray([1,0,X,0])],[D,B]]), ret)
 
         assert_masked_equal(ma.column_stack([[1,2,X],[3,X,5]]),
@@ -4726,3 +4726,67 @@ class Test_API:
                             MaskedArray([[[1,3],
                                           [2,X],
                                           [X,5]]]))
+
+    def test_split_funcs(self):
+        def compare_results(res, desired):
+            for i in range(len(desired)):
+                assert_masked_equal(res[i], desired[i])
+
+        # note: the *split functions in numpy only support list input for the
+        # first argument if the second argument is also a list. Numpy bug?
+        # (except for array_split, which supports list input always)
+
+        d = [1,2,X,4,5,X,X]
+        a = MaskedArray(d)
+        ret = [a[0:3], a[3:5], a[5:]]
+        compare_results(ma.array_split(d, 3), ret)
+        compare_results(np.array_split(a, 3), ret)
+        compare_results(ma.array_split(d, [3,5]), ret)
+        compare_results(np.array_split(a, [3,5]), ret)
+
+        assert_raises(ValueError, np.split, a, 3)
+        a = MaskedArray([1,2,X,4,5,X])
+        ret = [a[0:2], a[2:4], a[4:]]
+        compare_results(np.split(a, 3), ret)
+        compare_results(np.split(a, [2,4]), ret)
+        res = np.split(a, [2,4])
+        # make sure it is a view
+        for r in res:
+            r[:] = 99
+        res[-1][:] = X
+        assert_masked_equal(a, MaskedArray([99,99,99,99,X,X]))
+
+        dat = [[1,2,X,4],
+               [5,X,6,7],
+               [X,X,X,X]]
+        a2 = MaskedArray(dat)
+        ret = [a2[0,None], a2[1,None], a2[2,None]]
+        compare_results(np.split(a2, 3), ret)
+        compare_results(np.split(a2, [1,2]), ret)
+        # raw data input allowed if second arg is list
+        compare_results(ma.split(dat, [1,2]), ret)
+        compare_results(np.vsplit(a2, 3), ret)
+        compare_results(np.hsplit(a2, 2), np.split(a2, 2, axis=1))
+
+        a3 = MaskedArray(np.arange(16.0).reshape(2, 2, 4))
+        a3[:,:,-1] = X
+        a3[0,0,0] = X
+        ret = [MaskedArray([[[ X ,  1.],
+                             [ 4.,  5.]],
+                            [[ 8.,  9.],
+                             [12., 13.]]]),
+               MaskedArray([[[ 2.,  X ],
+                             [ 6.,  X ]],
+                            [[10.,  X ],
+                             [14.,  X ]]])]
+        compare_results(np.dsplit(a3, 2), ret)
+        ret = [MaskedArray([[[ X ,   1.,   2.],
+                             [ 4.,   5.,   6.]],
+                            [[ 8.,   9.,  10.],
+                             [12.,  13.,  14.]]]),
+               MaskedArray([[[X],
+                             [X]],
+                            [[X],
+                             [X]]], dtype='f8'),
+               MaskedArray([], dtype='float64').reshape((2,2,0))]
+        compare_results(np.dsplit(a3, np.array([3,6])), ret)
