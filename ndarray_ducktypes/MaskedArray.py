@@ -2784,42 +2784,42 @@ def place(arr, mask, vals):
 
 @implements(np.broadcast_to)
 def broadcast_to(array, shape, subok=False):
-    cls = get_duck_cls(array, base=MaskedArray)
-    return cls(np.broadcast_to(array._data, shape, subok),
-               np.broadcast_to(array._mask, shape))
+    array = as_duck_cls(array, base=MaskedArray)
+    return type(array)(np.broadcast_to(array._data, shape, subok),
+                       np.broadcast_to(array._mask, shape))
 
 @implements(np.broadcast_arrays)
 def broadcast_arrays(*args, **kwargs):
     if kwargs:
         raise TypeError('broadcast_arrays() got an unexpected keyword '
                         'argument {!r}'.format(list(kwargs.keys())[0]))
+    args = as_duck_cls(*args, base=MaskedArray, single=False)
     shape = _broadcast_shape(*args)
 
     if builtins.all(array.shape == shape for array in args):
         return args
 
-    return [np.broadcast_to(array, shape, **kwargs)
-            for array in args]
+    return [broadcast_to(array, shape, **kwargs) for array in args]
 
 @implements(np.empty_like)
 def empty_like(prototype, dtype=None, order='K', subok=True):
-    cls = get_duck_cls(prototype, base=MaskedArray)
-    return cls(np.empty_like(prototype._data, dtype, order, subok))
+    p = as_duck_cls(prototype, base=MaskedArray)
+    return type(p)(np.empty_like(p._data, dtype, order, subok))
 
 @implements(np.ones_like)
 def ones_like(prototype, dtype=None, order='K', subok=True):
-    cls = get_duck_cls(prototype, base=MaskedArray)
-    return cls(np.ones_like(prototype._data, dtype, order, subok))
+    p = as_duck_cls(prototype, base=MaskedArray)
+    return type(p)(np.ones_like(p._data, dtype, order, subok))
 
 @implements(np.zeros_like)
 def zeros_like(prototype, dtype=None, order='K', subok=True):
-    cls = get_duck_cls(prototype, base=MaskedArray)
-    return cls(np.zeros_like(prototype._data, dtype, order, subok))
+    p = as_duck_cls(prototype, base=MaskedArray)
+    return type(p)(np.zeros_like(p._data, dtype, order, subok))
 
 @implements(np.full_like)
 def full_like(a, fill_value, dtype=None, order='K', subok=True):
-    return cls(np.full_like(a._data, fill_value, dtype, order,
-                       subok))
+    p = as_duck_cls(a, base=MaskedArray)
+    return type(p)(np.full_like(p._data, fill_value, dtype, order, subok))
 
 @implements(np.where)
 def where(condition, x=None, y=None):

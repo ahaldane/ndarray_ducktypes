@@ -4860,15 +4860,43 @@ class Test_API:
         assert_masked_equal(ma.insert(d, [1,3], [X,9]),
                             MaskedArray([1,X,2,X,9,X,X,1]))
 
-        assert_masked_equal(np.append(a, [X,5]), MaskedArray([1,2,X,X,X,1,X,5]))
-        assert_masked_equal(ma.append(d, [X,5]), MaskedArray([1,2,X,X,X,1,X,5]))
-        assert_masked_equal(np.append(a, [[X],[5]], axis=1),
-                            MaskedArray([[1,2,X,X],[X,X,1,5]]))
-        assert_masked_equal(ma.append(d, [[X],[5]], axis=1),
-                            MaskedArray([[1,2,X,X],[X,X,1,5]]))
+    def test_broadcast(self):
+        d = [1,2,X]
+        a = MaskedArray(d)
 
-        assert_masked_equal(np.extract(a < 2, a), MaskedArray([1,1]))
-        assert_masked_equal(ma.extract(a < 2, d), MaskedArray([1,1]))
+        assert_masked_equal(np.broadcast_to(a, (3,3)), MaskedArray([[1, 2, X],
+                                                                    [1, 2, X],
+                                                                    [1, 2, X]]))
+        assert_masked_equal(ma.broadcast_to(d, (3,3)), MaskedArray([[1, 2, X],
+                                                                    [1, 2, X],
+                                                                    [1, 2, X]]))
 
-        np.place(a, (a < 2).filled(), X)
-        assert_masked_equal(a, MaskedArray([[X,2,X],[X,X,X]]))
+        f = [[4],[X]]
+        b = MaskedArray(f)
+        assert_masked_equal(np.broadcast_arrays(a, b),
+                            [MaskedArray([[1, 2, X], [1, 2, X]]),
+                             MaskedArray([[4,4,4],[X,X,X]])])
+        assert_masked_equal(ma.broadcast_arrays(d, f),
+                            [MaskedArray([[1, 2, X], [1, 2, X]]),
+                             MaskedArray([[4,4,4],[X,X,X]])])
+
+    def test_x_like(self):
+        d = [[1,2,X], [4,X,X]]
+        a = MaskedArray(d)
+
+        r = np.empty_like(a)
+        rd = ma.empty_like(d)
+        assert_(r.shape == a.shape)
+        assert_(r.dtype == a.dtype)
+        assert_(rd.shape == a.shape)
+        assert_(rd.dtype == a.dtype)
+
+        assert_masked_equal(np.ones_like(a), MaskedArray([[1,1,1],[1,1,1]]))
+        assert_masked_equal(ma.ones_like(d), MaskedArray([[1,1,1],[1,1,1]]))
+
+        assert_masked_equal(np.zeros_like(a), MaskedArray([[0,0,0],[0,0,0]]))
+        assert_masked_equal(ma.zeros_like(d), MaskedArray([[0,0,0],[0,0,0]]))
+
+        assert_masked_equal(np.full_like(a, 2), MaskedArray([[2,2,2],[2,2,2]]))
+        assert_masked_equal(ma.full_like(d, 2), MaskedArray([[2,2,2],[2,2,2]]))
+
