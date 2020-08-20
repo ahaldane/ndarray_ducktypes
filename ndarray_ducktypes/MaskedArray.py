@@ -2834,14 +2834,13 @@ def where(condition, x=None, y=None):
             # why would anyone do this? But it is in unit tests, so...
             raise ValueError("must supply dtype if x and y are both X, "
                              "eg using X(dtype)")
-        y = cls(y)
-        x = cls(X, dtype=y.dtype)
+        x, y = cls(X, dtype=y.dtype), cls(y)
     elif y is X:
-        x = cls(x)
-        y = cls(X, dtype=x.dtype)
+        x, y = cls(x), cls(X, dtype=x.dtype)
     else:
-        y = cls(y)
-        x = cls(x)
+        x, y = cls(x), cls(y)
+    # Note: we do not help the user if they supply something like [X,X,X], they
+    # have to supply a dtype to one of the Xs then.
 
     if isinstance(condition, (MaskedArray, MaskedScalar)):
         condition = condition.filled(False, view=1)
@@ -2853,7 +2852,13 @@ def where(condition, x=None, y=None):
 
 @implements(np.argwhere)
 def argwhere(a):
-    return np.transpose(np.nonzero(a))
+    a = as_duck_cls(a, base=MaskedArray)
+    # nonzero does not behave well on 0d, so promote to 1d
+    if ndim(a) == 0:
+        a = atleast_1d(a)
+        # then remove the added dimension
+        return argwhere(a)[:,:0]
+    return transpose(nonzero(a))
 
 @implements(np.choose, checked_args=lambda a,k,t,n: [type(x) for x in a[1]])
 def choose(a, choices, out=None, mode='raise'):
@@ -3543,6 +3548,7 @@ def alen(a):
 
 @implements(np.ndim)
 def ndim(a):
+    a = as_duck_cls(a, base=MaskedArray)
     return a.ndim
 
 @implements(np.size)

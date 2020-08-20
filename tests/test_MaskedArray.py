@@ -4900,3 +4900,18 @@ class Test_API:
         assert_masked_equal(np.full_like(a, 2), MaskedArray([[2,2,2],[2,2,2]]))
         assert_masked_equal(ma.full_like(d, 2), MaskedArray([[2,2,2],[2,2,2]]))
 
+    def test_where_argwhere(self):
+        d = [0, 1, 2, 3, X, X, 6, 7, 8, 9]
+        a = MaskedArray(d)
+        assert_masked_equal(np.where(a < 5, a, 10*a), 
+                            MaskedArray([0,1,2,3,X,X,60,70,80,90]))
+        assert_masked_equal(np.where(a < 5, X, a), 
+                            MaskedArray([X,X,X,X,X,X,6,7,8,9]))
+
+        assert_masked_equal(ma.where([[True, False], [True, True]],
+                                     [[1, 2], [3, 4]],
+                                     [[9, X], [7, 6]]),
+                            MaskedArray([[1,X],[3,4]]))
+
+        assert_masked_equal(np.argwhere(a), np.array([[1,2,3,6,7,8,9]]).T)
+        assert_masked_equal(ma.argwhere(d), np.array([[1,2,3,6,7,8,9]]).T)
