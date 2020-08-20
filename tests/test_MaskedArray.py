@@ -4621,13 +4621,20 @@ class Test_API:
                             MaskedArray([[[ 6], [22], [X]]]))
 
     def test_ravel_reshape_repeat_resize(self):
+        d = [[1,X,3], [4,5,X]]
         a = MaskedArray([[1,X,3], [4,5,X]])
         assert_masked_equal(np.ravel(a), MaskedArray([1,X,3,4,5,X]))
         assert_masked_equal(np.reshape(a, (3,2)),
                             MaskedArray([[1,X],[3,4],[5,X]]))
+        assert_masked_equal(ma.reshape(d, (3,2)),
+                            MaskedArray([[1,X],[3,4],[5,X]]))
         assert_masked_equal(np.resize(a, (3,3)),
                             MaskedArray([[1,X,3],[4,5,X],[1,X,3]]))
+        assert_masked_equal(ma.resize(d, (3,3)),
+                            MaskedArray([[1,X,3],[4,5,X],[1,X,3]]))
         assert_masked_equal(np.repeat(a, 2, axis=1),
+                            MaskedArray([[1,1,X,X,3,3],[4,4,5,5,X,X]]))
+        assert_masked_equal(ma.repeat(d, 2, axis=1),
                             MaskedArray([[1,1,X,X,3,3],[4,4,5,5,X,X]]))
         assert_masked_equal(np.repeat(a, 2, axis=0),
                             MaskedArray([[1,X,3],[1,X,3],[4,5,X],[4,5,X]]))
@@ -4662,19 +4669,35 @@ class Test_API:
         a[0,:,-1,:] = X
         a[0,-1,:,:] = X
 
+        d = [[[[ X,  1,  2,  3],
+               [ 4,  5,  6,  7],
+               [ X,  X,  X,  X]],
+
+              [[ X,  X,  X,  X],
+               [ X,  X,  X,  X],
+               [ X,  X,  X,  X]]]]
+
         assert_masked_equal(np.squeeze(a), a[0])
+        assert_masked_equal(ma.squeeze(d), a[0])
         assert_masked_equal(np.swapaxes(a, 0, 1), a.reshape((2,1,3,4)))
+        assert_masked_equal(ma.swapaxes(d, 0, 1), a.reshape((2,1,3,4)))
         assert_masked_equal(np.transpose(a, (1,0,2,3)), a.reshape((2,1,3,4)))
+        assert_masked_equal(ma.transpose(d, (1,0,2,3)), a.reshape((2,1,3,4)))
 
         assert_masked_equal(np.roll(a, 1, axis=1), a[:,[1,0],:,:])
+        assert_masked_equal(ma.roll(d, 1, axis=1), a[:,[1,0],:,:])
         assert_masked_equal(np.rollaxis(a, 0, 2), a.reshape((2,1,3,4)))
+        assert_masked_equal(ma.rollaxis(d, 0, 2), a.reshape((2,1,3,4)))
         assert_masked_equal(np.moveaxis(a, 0, 1), a.reshape((2,1,3,4)))
-        assert_masked_equal(np.moveaxis(a, 0, 1), a.reshape((2,1,3,4)))
+        assert_masked_equal(ma.moveaxis(d, 0, 1), a.reshape((2,1,3,4)))
         assert_masked_equal(np.flip(a, 1), a[:,::-1,:,:])
+        assert_masked_equal(ma.flip(d, 1), a[:,::-1,:,:])
         assert_masked_equal(np.fliplr(a), a[:,::-1,:,:])
         assert_masked_equal(np.flipud(a), a[::-1,:,:,:])
         assert_masked_equal(np.rot90(a, k=1),  a[:,::-1,:,:].reshape((2,1,3,4)))
+        assert_masked_equal(ma.rot90(d, k=1),  a[:,::-1,:,:].reshape((2,1,3,4)))
         assert_masked_equal(np.expand_dims(a,1), a[:,None,:,:,:])
+        assert_masked_equal(ma.expand_dims(d,1), a[:,None,:,:,:])
 
     def test_concatenate(self):
         a = MaskedArray([1,2,X])
@@ -4812,10 +4835,40 @@ class Test_API:
         assert_masked_equal(ma.atleast_2d([1,2,X]), MaskedArray([[1,2,X]]))
         assert_masked_equal(np.atleast_3d(b),
                             MaskedArray([[[1],[2],[X]]]))
-        assert_masked_equal(ma.atleast_3d([1,2,X]), 
+        assert_masked_equal(ma.atleast_3d([1,2,X]),
                             MaskedArray([[[1],[2],[X]]]))
-        
+
         r1, r2, r3 = np.atleast_2d(X('f8'), b, [1,4,X])
         assert_masked_equal(r1, MaskedArray([[X('f8')]]))
         assert_masked_equal(r2, MaskedArray([[1,2,X]]))
         assert_masked_equal(r3, MaskedArray([[1,4,X]]))
+
+    def test_insert_append_delete_extract_place(self):
+        d = [[1,2,X],[X,X,1]]
+        a = MaskedArray([[1,2,X],[X,X,1]])
+
+        assert_masked_equal(np.delete(a.copy(), 2), MaskedArray([1,2,X,X,1]))
+        assert_masked_equal(np.delete(a.copy(), [2,3]), MaskedArray([1,2,X,1]))
+        assert_masked_equal(np.delete(a.copy(), 1, axis=0),
+                            MaskedArray([[1,2,X]]))
+        assert_masked_equal(ma.delete(d, 1, axis=0), MaskedArray([[1,2,X]]))
+
+        assert_masked_equal(np.insert(a.copy(), 1, X),
+                            MaskedArray([1,X,2,X,X,X,1]))
+        assert_masked_equal(np.insert(a.copy(), [1,3], [X,9]),
+                            MaskedArray([1,X,2,X,9,X,X,1]))
+        assert_masked_equal(ma.insert(d, [1,3], [X,9]),
+                            MaskedArray([1,X,2,X,9,X,X,1]))
+
+        assert_masked_equal(np.append(a, [X,5]), MaskedArray([1,2,X,X,X,1,X,5]))
+        assert_masked_equal(ma.append(d, [X,5]), MaskedArray([1,2,X,X,X,1,X,5]))
+        assert_masked_equal(np.append(a, [[X],[5]], axis=1),
+                            MaskedArray([[1,2,X,X],[X,X,1,5]]))
+        assert_masked_equal(ma.append(d, [[X],[5]], axis=1),
+                            MaskedArray([[1,2,X,X],[X,X,1,5]]))
+
+        assert_masked_equal(np.extract(a < 2, a), MaskedArray([1,1]))
+        assert_masked_equal(ma.extract(a < 2, d), MaskedArray([1,1]))
+
+        np.place(a, (a < 2).filled(), X)
+        assert_masked_equal(a, MaskedArray([[X,2,X],[X,X,X]]))

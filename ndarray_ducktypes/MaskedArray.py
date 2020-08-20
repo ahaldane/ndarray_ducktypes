@@ -2414,11 +2414,13 @@ def apply_over_axes(func, a, axes):
 
 @implements(np.ravel)
 def ravel(a, order='C'):
+    a = as_duck_cls(a, base=MaskedArray)
     return type(a)(np.ravel(a._data, order=order),
                    np.ravel(a._mask, order=order))
 
 @implements(np.repeat)
 def repeat(a, repeats, axis=None):
+    a = as_duck_cls(a, base=MaskedArray)
     return type(a)(np.repeat(a._data, repeats, axis),
                    np.repeat(a._mask, repeats, axis))
 
@@ -2430,6 +2432,7 @@ def reshape(a, shape, order='C'):
 
 @implements(np.resize)
 def resize(a, new_shape):
+    a = as_duck_cls(a, base=MaskedArray)
     return type(a)(np.resize(a._data, new_shape),
                    np.resize(a._mask, new_shape))
 
@@ -2462,41 +2465,50 @@ def fix(x, out=None):
 
 @implements(np.squeeze)
 def squeeze(a, axis=None):
+    a = as_duck_cls(a, base=MaskedArray)
     return type(a)(np.squeeze(a._data, axis),
                    np.squeeze(a._mask, axis))
 
 @implements(np.swapaxes)
 def swapaxes(a, axis1, axis2):
+    a = as_duck_cls(a, base=MaskedArray)
     return type(a)(np.swapaxes(a._data, axis1, axis2),
                    np.swapaxes(a._mask, axis1, axis2))
 
 @implements(np.transpose)
 def transpose(a, *axes):
+    a = as_duck_cls(a, base=MaskedArray)
     return type(a)(np.transpose(a._data, *axes),
                    np.transpose(a._mask, *axes))
 
 @implements(np.roll)
 def roll(a, shift, axis=None):
+    a = as_duck_cls(a, base=MaskedArray)
     return type(a)(np.roll(a._data, shift, axis),
                    np.roll(a._mask, shift, axis))
 
 @implements(np.rollaxis)
 def rollaxis(a, axis, start=0):
+    a = as_duck_cls(a, base=MaskedArray)
     return type(a)(np.rollaxis(a._data, axis, start),
                    np.rollaxis(a._mask, axis, start))
 
 @implements(np.moveaxis)
 def moveaxis(a, source, destination):
+    a = as_duck_cls(a, base=MaskedArray)
     return type(a)(np.moveaxis(a._data, source, destination),
                    np.moveaxis(a._mask, source, destination))
 
 @implements(np.flip)
 def flip(m, axis=None):
+    m = as_duck_cls(m, base=MaskedArray)
     return type(m)(np.flip(m._data, axis),
                    np.flip(m._mask, axis))
 
 @implements(np.rot90)
 def rot90(m, k=1, axes=(0,1)):
+    m = as_duck_cls(m, base=MaskedArray)
+
     axes = tuple(axes)
     if len(axes) != 2:
         raise ValueError("len(axes) must be 2.")
@@ -2528,18 +2540,21 @@ def rot90(m, k=1, axes=(0,1)):
 
 @implements(np.fliplr)
 def fliplr(m):
+    m = as_duck_cls(m, base=MaskedArray)
     if m.ndim < 2:
         raise ValueError("Input must be >= 2-d.")
     return m[:, ::-1]
 
 @implements(np.flipud)
 def flipud(m):
+    m = as_duck_cls(m, base=MaskedArray)
     if m.ndim < 1:
         raise ValueError("Input must be >= 1-d.")
     return m[::-1, ...]
 
 @implements(np.expand_dims)
 def expand_dims(a, axis):
+    a = as_duck_cls(a, base=MaskedArray)
     return type(a)(np.expand_dims(a._data, axis),
                    np.expand_dims(a._mask, axis))
 
@@ -2613,14 +2628,17 @@ def split(ary, indices_or_sections, axis=0):
 
 @implements(np.hsplit)
 def hsplit(ary, indices_or_sections):
+    # note: do not support list input
     return np.hsplit.__wrapped__(ary, indices_or_sections)
 
 @implements(np.vsplit)
 def vsplit(ary, indices_or_sections):
+    # note: do not support list input
     return np.vsplit.__wrapped__(ary, indices_or_sections)
 
 @implements(np.dsplit)
 def dsplit(ary, indices_or_sections):
+    # note: do not support list input
     return np.dsplit.__wrapped__(ary, indices_or_sections)
 
 @implements(np.tile)
@@ -2730,13 +2748,16 @@ def stack(arrays, axis=0, out=None):
 
 @implements(np.delete)
 def delete(arr, obj, axis=None):
+    arr = as_duck_cls(arr, base=MaskedArray)
     return type(arr)(np.delete(arr._data, obj, axis),
                      np.delete(arr._mask, obj, axis))
 
 @implements(np.insert)
 def insert(arr, obj, values, axis=None):
+    arr = as_duck_cls(arr, base=MaskedArray)
+    values, vmask, _ = replace_X(values, dtype=arr.dtype)
     return type(arr)(np.insert(arr._data, obj, values, axis),
-                     np.insert(arr._mask, obj, values, axis))
+                     np.insert(arr._mask, obj, vmask, axis))
 
 @implements(np.append)
 def append(arr, values, axis=None):
@@ -2747,11 +2768,15 @@ def append(arr, values, axis=None):
 
 @implements(np.extract)
 def extract(condition, arr):
+    arr = as_duck_cls(arr, base=MaskedArray)
     return np.extract.__wrapped__(condition, arr)
 
 @implements(np.place)
 def place(arr, mask, vals):
-    return np.insert(arr, mask, vals)
+    arr = as_duck_cls(arr, base=MaskedArray)
+    vals, vmask, _ = replace_X(vals, dtype=arr.dtype)
+    np.place(arr._data, mask, vals)
+    np.place(arr._mask, mask, vmask)
 
 #@implements(np.pad)
 #def pad(array, pad_width, mode, **kwargs):
