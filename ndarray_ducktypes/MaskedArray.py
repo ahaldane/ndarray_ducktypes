@@ -2879,6 +2879,7 @@ def choose(a, choices, out=None, mode='raise'):
 def piecewise(x, condlist, funclist, *args, **kw):
     # condlist may be boolean maskedarrays, mask is treated as False
     # masked elements in x stay masked in result.
+    x = as_duck_cls(x, base=MaskedArray)
 
     n2 = len(funclist)
 
@@ -2920,7 +2921,7 @@ def piecewise(x, condlist, funclist, *args, **kw):
 @implements(np.select, checked_args=lambda a,k,t,n: [type(x) for x in a[1]])
 def select(condlist, choicelist, default=0):
     # choicelist may contain maskedarrays. Condlist must be unmasked
-    # boolean  arrays.
+    # boolean  arrays. Note default is 0, not X!
 
     # Check the size of condlist and choicelist are the same, or abort.
     if len(condlist) != len(choicelist):
@@ -2931,13 +2932,13 @@ def select(condlist, choicelist, default=0):
     if len(condlist) == 0:
         raise ValueError("select with an empty condition list is "
                          "not possible")
+    
+    condlist = list(as_duck_cls(*condlist, base=MaskedArray, single=False))
+    condlist = [c.filled() for c in condlist]
 
-    for c in condlist:
-        if isinstance(c, (MaskedArray, MaskedScalar)):
-            raise TypeError("condlist arrays should not be masked")
+    choicelist = list(as_duck_cls(*choicelist, base=MaskedArray, single=False))
+    cls = type(choicelist[0])
 
-    cls = get_duck_cls(choicelist, base=MaskedArray)
-    choicelist = [cls(choice) for choice in choicelist]
     # need to get the result type before broadcasting for correct scalar
     # behaviour
     if default is X:

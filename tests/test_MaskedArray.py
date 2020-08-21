@@ -4915,3 +4915,42 @@ class Test_API:
 
         assert_masked_equal(np.argwhere(a), np.array([[1,2,3,6,7,8,9]]).T)
         assert_masked_equal(ma.argwhere(d), np.array([[1,2,3,6,7,8,9]]).T)
+
+    def test_choose(self):
+        choices = [[0, 1, 2, X], [10, 11, 12, 13],
+                   [20, 21, 22, 23], [X, X, X, X(int)]]
+        achoices = MaskedArray(choices)
+
+        assert_masked_equal(np.choose([2, 3, 1, 0], achoices), 
+                            MaskedArray([20, X, 12,  X]))
+        assert_masked_equal(ma.choose([2, 3, 1, 0], choices), 
+                            MaskedArray([20, X, 12,  X]))
+
+    def test_piecewise(self):
+        d = [-2.5, -1.5, X,  0.5,  1.5,  2.5]
+        x = MaskedArray(d)
+
+        assert_masked_equal(np.piecewise(x, [x < 0, x >= 0], [-1, 1]),
+                            MaskedArray([-1., -1., X,  1.,  1.,  1.]))
+        assert_masked_equal(ma.piecewise(d, [x < 0, x >= 0], [-1, 1]),
+                            MaskedArray([-1., -1., X,  1.,  1.,  1.]))
+        
+        # test non-conditionex values get masked
+        assert_masked_equal(np.piecewise(x, [x < 1, x < -1], [-1, 1]),
+                            MaskedArray([1., 1., X,  -1.,  X,  X]))
+    
+    def test_select(self):
+        x = MaskedArray([0, 1, X, X, 4, 5, 6, 7, 8, 9])
+        condlist = [x<3, x>5]
+        choicelist = [x, x**2]
+        assert_masked_equal(np.select(condlist, choicelist),
+                        MaskedArray([ 0,  1,  0,  0,  0,  0, 36, 49, 64, 81]))
+        assert_masked_equal(np.select(condlist, choicelist, default=X),
+                        MaskedArray([ 0,  1,  X,  X, X, X, 36, 49, 64, 81]))
+        assert_masked_equal(ma.select(
+            [[True,True,X,X,False,False,False,False,False,False],
+             [False,False,X,X,False,False,True,True,True,True]], 
+            [[0,1,X,X,4,5,6,7,8,9], [0,1,X,X,16,25,36,49,64,81]], default=X),
+            MaskedArray([ 0,  1,  X,  X, X, X, 36, 49, 64, 81]))
+        #def select(condlist, choicelist, default=0):
+
