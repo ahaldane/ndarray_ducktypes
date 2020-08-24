@@ -4903,9 +4903,9 @@ class Test_API:
     def test_where_argwhere(self):
         d = [0, 1, 2, 3, X, X, 6, 7, 8, 9]
         a = MaskedArray(d)
-        assert_masked_equal(np.where(a < 5, a, 10*a), 
+        assert_masked_equal(np.where(a < 5, a, 10*a),
                             MaskedArray([0,1,2,3,X,X,60,70,80,90]))
-        assert_masked_equal(np.where(a < 5, X, a), 
+        assert_masked_equal(np.where(a < 5, X, a),
                             MaskedArray([X,X,X,X,X,X,6,7,8,9]))
 
         assert_masked_equal(ma.where([[True, False], [True, True]],
@@ -4921,9 +4921,9 @@ class Test_API:
                    [20, 21, 22, 23], [X, X, X, X(int)]]
         achoices = MaskedArray(choices)
 
-        assert_masked_equal(np.choose([2, 3, 1, 0], achoices), 
+        assert_masked_equal(np.choose([2, 3, 1, 0], achoices),
                             MaskedArray([20, X, 12,  X]))
-        assert_masked_equal(ma.choose([2, 3, 1, 0], choices), 
+        assert_masked_equal(ma.choose([2, 3, 1, 0], choices),
                             MaskedArray([20, X, 12,  X]))
 
     def test_piecewise(self):
@@ -4934,11 +4934,11 @@ class Test_API:
                             MaskedArray([-1., -1., X,  1.,  1.,  1.]))
         assert_masked_equal(ma.piecewise(d, [x < 0, x >= 0], [-1, 1]),
                             MaskedArray([-1., -1., X,  1.,  1.,  1.]))
-        
+
         # test non-conditionex values get masked
         assert_masked_equal(np.piecewise(x, [x < 1, x < -1], [-1, 1]),
                             MaskedArray([1., 1., X,  -1.,  X,  X]))
-    
+
     def test_select(self):
         x = MaskedArray([0, 1, X, X, 4, 5, 6, 7, 8, 9])
         condlist = [x<3, x>5]
@@ -4949,7 +4949,7 @@ class Test_API:
                         MaskedArray([ 0,  1,  X,  X, X, X, 36, 49, 64, 81]))
         assert_masked_equal(ma.select(
             [[True,True,X,X,False,False,False,False,False,False],
-             [False,False,X,X,False,False,True,True,True,True]], 
+             [False,False,X,X,False,False,True,True,True,True]],
             [[0,1,X,X,4,5,6,7,8,9], [0,1,X,X,16,25,36,49,64,81]], default=X),
             MaskedArray([ 0,  1,  X,  X, X, X, 36, 49, 64, 81]))
 
@@ -4969,18 +4969,18 @@ class Test_API:
         # axis argument is not currently supported
         #d = [[1, 0, X, 0], [1, 0, X, 0], [2, 3, 4, X]]
         #a = MaskedArray(d)
-        #assert_masked_equal(np.unique(a, axis=0), 
+        #assert_masked_equal(np.unique(a, axis=0),
         #                    MaskedArray([[1, 0, X, 0], [2, 3, 4, X]]))
-        #assert_masked_equal(ma.unique(d, axis=0), 
+        #assert_masked_equal(ma.unique(d, axis=0),
         #                    MaskedArray([[1, 0, X, 0], [2, 3, 4, X]]))
 
-    
+
     def test_dtype_methods(self):
         s = X('i4')
         t = MaskedScalar(1)
         a = MaskedArray([X('i4')])
         b = MaskedArray([X('i8')])
-        
+
         assert_(np.can_cast(a, 'i8'))
         assert_equal(np.min_scalar_type(s), np.dtype('i4'))
         assert_equal(np.min_scalar_type(t), np.dtype('u1'))
@@ -4988,3 +4988,25 @@ class Test_API:
         assert_equal(np.result_type(a, b), np.dtype('i8'))
         assert_equal(np.common_type(a, b), np.float64)
 
+    def test_counting_methods(self):
+        d = [3,2,0,0,3,0,1,1,X,X]
+        a = MaskedArray(d)
+
+        assert_equal(np.bincount(a), [3,2,1,2])
+        assert_equal(ma.bincount(d), [3,2,1,2])
+        assert_equal(ma.bincount([X,X,X('i8')]), [])
+
+        assert_equal(np.count_nonzero(a), 5)
+        assert_equal(ma.count_nonzero(d), 5)
+
+        d2 = [[3,2,0,0],[3,0,1,X],[X,X,X,X]]
+        a2 = MaskedArray(d2)
+        assert_equal(np.count_nonzero(a2, axis=1), [2,2,0])
+        assert_equal(ma.count_nonzero(d2, axis=1), [2,2,0])
+
+        assert_equal(np.nonzero(a), ([0,1,4,6,7],))
+        assert_equal(ma.nonzero(d), ([0,1,4,6,7],))
+        assert_equal(np.nonzero(a2), ([0,0,1,1],[0,1,0,2],))
+        assert_equal(ma.nonzero(d2), ([0,0,1,1],[0,1,0,2],))
+        assert_equal(np.flatnonzero(a2), [0,1,4,6])
+        assert_equal(ma.flatnonzero(d2), [0,1,4,6])

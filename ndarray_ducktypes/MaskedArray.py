@@ -2932,7 +2932,7 @@ def select(condlist, choicelist, default=0):
     if len(condlist) == 0:
         raise ValueError("select with an empty condition list is "
                          "not possible")
-    
+
     condlist = list(as_duck_cls(*condlist, base=MaskedArray, single=False))
     condlist = [c.filled() for c in condlist]
 
@@ -3036,7 +3036,7 @@ def unique(ar, return_index=False, return_inverse=False,
     if axis is None:
         ret = _unique1d(ar, return_index, return_inverse, return_counts)
         return _unpack_tuple(ret)
-    
+
     # TODO: this might be implemented using lexsort
     raise NotImplementedError('axis argument to unique is not supported '
                               'for MaskedArray')
@@ -3072,18 +3072,22 @@ def common_type(*arrays_and_dtypes):
 
 @implements(np.bincount)
 def bincount(x, weights=None, minlength=0):
+    x = as_duck_cls(x, base=MaskedArray)
     return np.bincount(x._data[~x._mask], weights, minlength)
 
 @implements(np.count_nonzero)
 def count_nonzero(a, axis=None):
+    a = as_duck_cls(a, base=MaskedArray)
     return np.count_nonzero(a.filled(0, view=1), axis)
 
 @implements(np.nonzero)
 def nonzero(a):
+    a = as_duck_cls(a, base=MaskedArray)
     return np.nonzero(a.filled(0, view=1))
 
 @implements(np.flatnonzero)
 def flatnonzero(a):
+    a = as_duck_cls(a, base=MaskedArray)
     return np.nonzero(np.ravel(a))[0]
 
 @implements(np.histogram, checked_args=('a',))
