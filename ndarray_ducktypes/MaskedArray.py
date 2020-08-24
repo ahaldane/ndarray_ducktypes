@@ -2987,6 +2987,7 @@ def _unique1d(ar, return_index=False, return_inverse=False,
     """
     Find the unique elements of an array, ignoring shape.
     """
+    ar = as_duck_cls(ar, base=MaskedArray)
     ar = ar.flatten()
     optional_indices = return_index or return_inverse
 
@@ -3035,50 +3036,10 @@ def unique(ar, return_index=False, return_inverse=False,
     if axis is None:
         ret = _unique1d(ar, return_index, return_inverse, return_counts)
         return _unpack_tuple(ret)
-
-    # axis was specified and not None
-    try:
-        ar = np.moveaxis(ar, axis, 0)
-    except np.AxisError:
-        # this removes the "axis1" or "axis2" prefix from the error message
-        raise np.AxisError(axis, ar.ndim)
-
-    # Must reshape to a contiguous 2D array for this to work...
-    orig_shape, orig_dtype = ar.shape, ar.dtype
-    ar = ar.reshape(orig_shape[0], np.prod(orig_shape[1:], dtype=np.intp))
-    ar = np.ascontiguousarray(ar)
-    dtype = [('f{i}'.format(i=i), ar.dtype) for i in range(ar.shape[1])]
-
-    # At this point, `ar` has shape `(n, m)`, and `dtype` is a structured
-    # data type with `m` fields where each field has the data type of `ar`.
-    # In the following, we create the array `consolidated`, which has
-    # shape `(n,)` with data type `dtype`.
-    try:
-        if ar.shape[1] > 0:
-            consolidated = ar.view(dtype)
-        else:
-            # If ar.shape[1] == 0, dtype will be `np.dtype([])`, which is
-            # a data type w itemsize 0, and the call `ar.view(dtype)` will
-            # fail.  Instead, we'll use `np.empty` to explicitly create the
-            # array with shape `(len(ar),)`.  Since `dtype` in this case has
-            # itemsize 0, the total size of the result is still 0 bytes.
-            consolidated = np.empty(len(ar), dtype=dtype)
-    except TypeError:
-        # There's no good way to do this for object arrays, etc...
-        msg = 'The axis argument to unique is not supported for dtype {dt}'
-        raise TypeError(msg.format(dt=ar.dtype))
-
-    def reshape_uniq(uniq):
-        n = len(uniq)
-        uniq = uniq.view(orig_dtype)
-        uniq = uniq.reshape(n, *orig_shape[1:])
-        uniq = np.moveaxis(uniq, 0, axis)
-        return uniq
-
-    output = _unique1d(consolidated, return_index,
-                       return_inverse, return_counts)
-    output = (reshape_uniq(output[0]),) + output[1:]
-    return _unpack_tuple(output)
+    
+    # TODO: this might be implemented using lexsort
+    raise NotImplementedError('axis argument to unique is not supported '
+                              'for MaskedArray')
 
 @implements(np.can_cast, checked_args=())
 def can_cast(from_, to, casting='safe'):
@@ -3090,7 +3051,12 @@ def can_cast(from_, to, casting='safe'):
 
 @implements(np.min_scalar_type)
 def min_scalar_type(a):
-    return a.dtype
+    # for masked scalars, just return the dtype
+    if isinstance(a, MaskedScalar) and a.mask:
+        return a.dtype
+    if isinstance(a, (MaskedArray, MaskedScalar)):
+        a = a._data
+    return np.min_scalar_type(a)
 
 @implements(np.result_type, checked_args=())
 def result_type(*arrays_and_dtypes):

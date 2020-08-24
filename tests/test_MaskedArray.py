@@ -4952,5 +4952,39 @@ class Test_API:
              [False,False,X,X,False,False,True,True,True,True]], 
             [[0,1,X,X,4,5,6,7,8,9], [0,1,X,X,16,25,36,49,64,81]], default=X),
             MaskedArray([ 0,  1,  X,  X, X, X, 36, 49, 64, 81]))
-        #def select(condlist, choicelist, default=0):
+
+    def test_unique(self):
+        miv, mav = _minvals[np.dtype('int')], _maxvals[np.dtype('int')]
+
+        d = [[1, 1, X, 2, miv], [2, 3, 3, X, mav]]
+        a = MaskedArray(d)
+        assert_masked_equal(np.unique(a), MaskedArray([miv,1,2,3,mav,X]))
+        assert_masked_equal(ma.unique(d), MaskedArray([miv,1,2,3,mav,X]))
+        u, indices =  np.unique(a, return_index=True)
+        assert_masked_equal(a.ravel()[indices], u)
+        u, indices, c = np.unique(a, return_inverse=True, return_counts=True)
+        assert_masked_equal(u[indices], a.ravel())
+        assert_equal(c, [1,2,2,2,1,2])
+
+        # axis argument is not currently supported
+        #d = [[1, 0, X, 0], [1, 0, X, 0], [2, 3, 4, X]]
+        #a = MaskedArray(d)
+        #assert_masked_equal(np.unique(a, axis=0), 
+        #                    MaskedArray([[1, 0, X, 0], [2, 3, 4, X]]))
+        #assert_masked_equal(ma.unique(d, axis=0), 
+        #                    MaskedArray([[1, 0, X, 0], [2, 3, 4, X]]))
+
+    
+    def test_dtype_methods(self):
+        s = X('i4')
+        t = MaskedScalar(1)
+        a = MaskedArray([X('i4')])
+        b = MaskedArray([X('i8')])
+        
+        assert_(np.can_cast(a, 'i8'))
+        assert_equal(np.min_scalar_type(s), np.dtype('i4'))
+        assert_equal(np.min_scalar_type(t), np.dtype('u1'))
+        assert_equal(np.min_scalar_type(a), np.dtype('i4'))
+        assert_equal(np.result_type(a, b), np.dtype('i8'))
+        assert_equal(np.common_type(a, b), np.float64)
 

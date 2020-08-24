@@ -202,6 +202,8 @@ In sorting operations such as `np.sort`, `np.lexsort`, `np.argsort`, `np.partiti
 
 For `np.max`, `np.min`, `np.argmin`, and `np.argmax`, non-masked values are returned before any masked value. In other words, these will only return a masked value, or index of a masked value, if all input values were masked. The `arg*` methods will return `ndarrays` or `int` scalars, following the discussion of indexing-like operations above.
 
+The `axis` argument to `np.unique` is not currently supported for MaskedArray, since it requires sorting a structured dtype view.
+
 Views and Copies
 ----------------
 
