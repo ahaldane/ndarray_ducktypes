@@ -5010,3 +5010,39 @@ class Test_API:
         assert_equal(ma.nonzero(d2), ([0,0,1,1],[0,1,0,2],))
         assert_equal(np.flatnonzero(a2), [0,1,4,6])
         assert_equal(ma.flatnonzero(d2), [0,1,4,6])
+
+    def test_histogram(self):
+        d = [1, 2, 1, X]
+        assert_masked_equal(np.histogram(MaskedArray(d), bins=[0, 1, 2, 3]),
+                            (np.array([0, 2, 1]), np.array([0, 1, 2, 3])))
+        assert_masked_equal(ma.histogram(d, bins=[0, 1, 2, 3]),
+                            (np.array([0, 2, 1]), np.array([0, 1, 2, 3])))
+        assert_raises(ValueError, np.histogram,
+                                  MaskedArray(d), bins=MaskedArray([1,X,3]))
+        assert_masked_equal(
+            ma.histogram(d, bins=[0, 1, 2, 3], weights=[1.5, 0, X, 1]),
+            (np.array([0, 1.5, 0]), np.array([0, 1, 2, 3])))
+
+    def test_histogramdd(self):
+        d = [[0.1,0.1,1.0,0.2], [0.2,0.2,X,0.2], [0.3,0.4,X,0.2]]
+        a = MaskedArray(d).T
+        ret = [[[0., 0.], [1., 1.]], [[0., 0.], [1., 0.]]]
+
+        H, edges = ma.histogramdd(d, bins=(2, 2, 2))
+        assert_equal(H, ret)
+        H, edges = np.histogramdd(a, bins=(2, 2, 2))
+        assert_equal(H, ret)
+
+        H, xedges, yedges = np.histogram2d(a[:,0], a[:,1], bins=[2, 2])
+        assert_equal(H, [[0., 2.], [0., 1.]])
+
+        weights = [1., 2., 3, 4.]
+        H, edges = np.histogramdd(a, bins=(2, 2, 2), weights=weights)
+        assert_equal(H, [[[0., 0.], [1., 2.]], [[0., 0.], [4., 0.]]])
+
+        H, x, y= np.histogram2d(a[:,0], a[:,1], bins=[2, 2], weights=weights)
+        assert_equal(H, [[0., 3.], [0., 4.]])
+
+        arr = MaskedArray([0, 0, 0, 1, 2, 3, 3, 4, X, 5, X])
+        assert_equal(np.histogram_bin_edges(arr, bins='auto', range=(0, 1)),
+                     np.array([0.  , 0.25, 0.5 , 0.75, 1.  ]))

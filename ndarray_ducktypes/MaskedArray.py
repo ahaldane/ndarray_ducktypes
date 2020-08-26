@@ -3093,6 +3093,14 @@ def flatnonzero(a):
 @implements(np.histogram, checked_args=('a',))
 def histogram(a, bins=10, range=None, normed=None, weights=None,
               density=None):
+    a = as_duck_cls(a, base=MaskedArray)
+    if isinstance(bins, (MaskedArray, MaskedScalar)):
+        raise ValueError("bins must not be a MaskedArray")
+    if isinstance(weights, (list, tuple)):
+        weights = as_duck_cls(weights, base=MaskedArray)
+    if isinstance(weights, (MaskedArray, MaskedScalar)):
+        weights = weights.filled()
+
     a = a.ravel()
     keep = ~a._mask
     dat = a._data[keep]
@@ -3104,26 +3112,45 @@ def histogram(a, bins=10, range=None, normed=None, weights=None,
 @implements(np.histogram2d, checked_args=('x', 'y'))
 def histogram2d(x, y, bins=10, range=None, normed=None, weights=None,
                 density=None):
-    return np.histogram2d.__wrapped__(x, y, bins, range, normed, weights,
-                                      density)
+    try:
+        N = len(bins)
+    except TypeError:
+        N = 1
+
+    if N != 1 and N != 2:
+        xedges = yedges = np.asarray(bins)  # bins should become ndarray
+        bins = [xedges, yedges]
+    hist, edges = histogramdd([x, y], bins, range, normed, weights, density)
+    return hist, edges[0], edges[1]
 
 @implements(np.histogramdd)
 def histogramdd(sample, bins=10, range=None, normed=None, weights=None,
                 density=None):
+    if not np.isscalar(bins):
+        for b in bins:
+            if isinstance(b, (MaskedArray, MaskedScalar)):
+                raise ValueError("bins must not be a MaskedArray")
+    if isinstance(weights, (list, tuple)):
+        weights = as_duck_cls(weights, base=MaskedArray)
+    if isinstance(weights, (MaskedArray, MaskedScalar)):
+        weights = weights.filled()
+
     try:
         # Sample is an ND-array.
         N, D = sample.shape
     except (AttributeError, ValueError):
         # Sample is a sequence of 1D arrays.
-        sample = np.atleast_2d(sample).T
+        sample = atleast_2d(sample).T
         N, D = sample.shape
 
-    keep = ~np.any(sample._mask, axis=0)
-    sample = sample._data[...,keep]
+    # drop any samples containing a masked value
+    keep = ~np.any(sample._mask, axis=1)
+
+    sample = sample._data[keep,...]
     if weights is not None:
         weights = weights[keep]
 
-    return histogramdd(sample, bins, range, normed, weights, density)
+    return np.histogramdd(sample, bins, range, normed, weights, density)
 
 @implements(np.histogram_bin_edges)
 def histogram_bin_edges(a, bins=10, range=None, weights=None):
