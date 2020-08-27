@@ -3542,19 +3542,32 @@ def array2string(a, max_line_width=None, precision=None,
         suppress_small=None, separator=' ', prefix='', style=np._NoValue,
         formatter=None, threshold=None, edgeitems=None, sign=None,
         floatmode=None, suffix='', **kwarg):
-    return duck_array2string(a, max_line_width, precision, suppress_small,
-        separator, prefix, style, formatter, threshold, edgeitems, sign,
-        floatmode, suffix, **kwarg)
+    return duck_array2string(a, linewidth=max_line_width,
+                                precision=precision,
+                                suppress_small=suppress_small,
+                                separator=separator,
+                                prefix=prefix,
+                                style=style,
+                                formatter=formatter,
+                                threshold=threshold,
+                                edgeitems=edgeitems,
+                                sign=sign,
+                                floatmode=floatmode,
+                                suffix=suffix,
+                                **kwarg)
 
 @implements(np.array_repr)
 def array_repr(arr, max_line_width=None, precision=None,
                suppress_small=None):
-    return duck_repr(arr, max_line_width=None, precision=None,
-                     suppress_small=None)
+    return duck_repr(arr, linewidth=max_line_width,
+                          precision=precision,
+                          suppress_small=suppress_small)
 
 @implements(np.array_str)
 def array_str(a, max_line_width=None, precision=None, suppress_small=None):
-    return duck_str(a, max_line_width, precision, suppress_small)
+    return duck_str(a, linewidth=max_line_width,
+                       precision=precision,
+                       suppress_small=suppress_small)
 
 @implements(np.shape)
 def shape(a):

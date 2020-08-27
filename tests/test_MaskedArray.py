@@ -5096,3 +5096,32 @@ class Test_API:
             MaskedArray([[1. , 1.5, 2.5, 3. ],
                          [ X ,  X ,  X , 5. ],
                          [ X ,  X , 2. , 2. ]]))
+
+    def test_str_repr(self):
+        # this just does a basic check that the api methods work. Main
+        # test of MaskedArray printing correctness is elsewhere in this file.
+        a = MaskedArray([1, 2, X, 3, X, 5, 6, 7, 8])
+
+        assert_equal(np.array2string(a), '[1 2 X 3 X 5 6 7 8]')
+        # check args override format options
+        assert_equal(np.array2string(a, threshold=5), '[1 2 X ... 6 7 8]')
+
+        assert_equal(np.array_repr(a),
+                     'MaskedArray([1, 2, X, 3, X, 5, 6, 7, 8])')
+        assert_equal(np.array_repr(a, max_line_width=20),
+            textwrap.dedent('''\
+                 MaskedArray([1, 2,
+                              X, 3,
+                              X, 5,
+                              6, 7,
+                              8])'''))
+
+        assert_equal(np.array_str(a), '[1 2 X 3 X 5 6 7 8]')
+        assert_equal(np.array_str(a, max_line_width=5),
+            textwrap.dedent('''\
+                 [1 2
+                  X 3
+                  X 5
+                  6 7
+                  8]'''))
+

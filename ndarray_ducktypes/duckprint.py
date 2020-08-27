@@ -3,6 +3,7 @@ import functools
 import warnings
 import contextlib
 import os
+from types import MappingProxyType
 try:
     from _thread import get_ident
 except ImportError:
@@ -32,11 +33,19 @@ class FormatDispatcher(object):
     Class used to determine which formatter to use to print an array's
     elements. The main method is `get_format_func`, called on an array,
     which will return the best formatter to use to print that array's elements.
+
+    The algorithm queries each supplied formatter to see if it can handle the
+    type.  The first one to return True is used.
     """
-    def __init__(self, formatter_cls, options=None):
+    general_opts = ['threshold', 'edgeitems', 'linewidth']
+
+    def __init__(self, formatter_cls, options):
         self.formatters = [f() for f in formatter_cls]
-        self.options = options or {}
+        self.options = dict(options)
         self.check_options()
+        for g in self.general_opts:
+            if g not in self.options:
+                raise ValueError("Option {} required".format(g))
 
     def get_format_func(self, elem, **options):
         opt = self.options.copy()
@@ -52,14 +61,24 @@ class FormatDispatcher(object):
         raise Exception("No dispatcher found for this array")
 
     def check_options(self, **kwds):
+        """
+        check of whether user-supplied formatting options are valid.
+
+        Goes through each formetter, and queries it with the options, and the
+        formatter can raise an exception if there is a problem, and returns a
+        list of options it does not know about. Any options which were not
+        recognized by any formatter are returned.
+        """
         if not kwds:
-            kwds = self.options
+            kwd = self.options
 
         unset_opts = set(kwds.keys())
 
         for f in self.formatters:
             seen = f.check_options(**kwds)
             unset_opts = unset_opts.difference(set(seen))
+
+        unset_opts = unset_opts.difference(set(self.general_opts))
 
         # return unknown options
         return list(unset_opts)
@@ -405,8 +424,10 @@ class VoidFormatter(ElementFormatter):
     def get_format_func(self, elem, **options):
         return repr
 
-# don't modify this
 default_duckprint_options = {
+    'edgeitems': 3,  # repr N leading and trailing items of each dimension
+    'threshold': 1000,  # total items > triggers array summarization
+    'linewidth': 75,
     'floatmode': 'maxprec',
     'floatnotation': 'auto',
     'precision': 8,  # precision of floating point representations
@@ -415,6 +436,7 @@ default_duckprint_options = {
     'infstr': 'inf',
     'sign': '-',
     }
+default_duckprint_options = MappingProxyType(default_duckprint_options)
 
 # Note: Order matters. Timedelta must go before Integer because they have the
 # same underlying type.
@@ -501,8 +523,8 @@ def _array2string(a, dispatcher, options, separator, prefix, suffix, linewidth,
                        separator, edgeitems, summary_insert)
     return lst
 
-def duck_array2string(a, separator=' ', prefix="", suffix="", linewidth=75,
-                      threshold=1000, edgeitems=3, dispatcher=None, **options):
+def duck_array2string(a, separator=' ', prefix="", suffix="", linewidth=None,
+                    threshold=None, edgeitems=None, dispatcher=None, **options):
     """
     Return a string representation of an array.
 
@@ -575,6 +597,13 @@ def duck_array2string(a, separator=' ', prefix="", suffix="", linewidth=75,
     """
     if dispatcher is None:
         dispatcher = get_duckprint_dispatcher(a)
+
+    if threshold is None:
+        threshold = dispatcher.options['threshold']
+    if linewidth is None:
+        linewidth = dispatcher.options['linewidth']
+    if edgeitems is None:
+        edgeitems = dispatcher.options['edgeitems']
 
     # treat as a null array if any of shape elements == 0
     if a.size == 0:
@@ -726,7 +755,7 @@ def dtype_short_repr(dtype):
 
     return typename
 
-def duck_repr(arr, name=None, extra_args=None, **options):
+def duck_repr(arr, name=None, extra_args=None, dispatcher=None, **options):
     """
     Return the string representation of an array.
 
@@ -762,7 +791,10 @@ def duck_repr(arr, name=None, extra_args=None, **options):
     'array([ 0.000001,  0.      ,  2.      ,  3.      ])'
 
     """
-    linewidth = 75
+    if dispatcher is None:
+        dispatcher = get_duckprint_dispatcher(arr)
+
+    linewidth = options.get('linewidth', dispatcher.options['linewidth'])
 
     if name is not None:
         class_name = name
@@ -782,7 +814,7 @@ def duck_repr(arr, name=None, extra_args=None, **options):
 
     if arr.size > 0 or arr.shape == (0,):
         lst = duck_array2string(arr, separator=', ', prefix=prefix,
-                                suffix=',', **options)
+                                suffix=',', dispatcher=dispatcher,  **options)
     else:  # show zero-length shape unless it is (0,)
         lst = "[]"
         extra_args.insert(0, "shape=%s" % (repr(arr.shape),))
