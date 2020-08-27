@@ -5158,3 +5158,15 @@ class Test_API:
         aa = a.copy()
         np.putmask(aa, b < 5, b)
         assert_masked_equal(aa, ret)
+
+    def test_packbits(self):
+        a = MaskedArray([[2], [7], [23], [X]], dtype=np.uint8)
+        b = np.unpackbits(a, axis=1)
+        c = np.packbits(b, axis=-1)
+
+        assert_masked_equal(b,
+            MaskedArray([[0, 0, 0, 0, 0, 0, 1, 0],
+                         [0, 0, 0, 0, 0, 1, 1, 1],
+                         [0, 0, 0, 1, 0, 1, 1, 1],
+                         [X, X, X, X, X, X, X, X]], dtype=np.uint8))
+        assert_masked_equal(c, a)
