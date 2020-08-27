@@ -5046,3 +5046,53 @@ class Test_API:
         arr = MaskedArray([0, 0, 0, 1, 2, 3, 3, 4, X, 5, X])
         assert_equal(np.histogram_bin_edges(arr, bins='auto', range=(0, 1)),
                      np.array([0.  , 0.25, 0.5 , 0.75, 1.  ]))
+
+    def test_diff(self):
+        # diff, interp, ediff1d, gradient
+        d = [1, 2, X, 4, 7, 0, X]
+        a = MaskedArray(d)
+
+        assert_masked_equal(np.diff(a), MaskedArray([1, X, X, 3, -7, X]))
+        assert_masked_equal(ma.diff(d), MaskedArray([1, X, X, 3, -7, X]))
+        assert_masked_equal(np.ediff1d(a), MaskedArray([1, X, X, 3, -7, X]))
+        assert_masked_equal(ma.ediff1d(d), MaskedArray([1, X, X, 3, -7, X]))
+        assert_masked_equal(np.diff(a, n=2), MaskedArray([X, X, X, -10, X]))
+        assert_masked_equal(np.diff(a, prepend=0),
+                            MaskedArray([1, 1, X, X, 3, -7, X]))
+        assert_masked_equal(np.diff(a, append=X),
+                            MaskedArray([1, X, X, 3, -7, X, X]))
+        assert_masked_equal(np.ediff1d(a, to_end=X),
+                            MaskedArray([1, X, X, 3, -7, X, X]))
+
+        a = MaskedArray([[1,3,6,X,X],[0,5,6,8,X]])
+        assert_masked_equal(np.diff(a, axis=0), MaskedArray([[-1, 2, 0, X, X]]))
+
+    def test_interp(self):
+        xp = [1, 2, 3, 4, 5]
+        fp = [3, 2, X, 0, 1]
+        x = [X, 0.5, np.nan, 1.5, 2.5, 4.5, 5.5]
+        assert_masked_equal(ma.interp(x, xp, fp, right=X),
+                            MaskedArray([X, 3.0, np.nan, 2.5, X, 0.5, X]))
+        assert_masked_equal(np.interp(x, xp, MaskedArray(fp), right=X),
+                            MaskedArray([X, 3.0, np.nan, 2.5, X, 0.5, X]))
+        assert_raises(TypeError, np.interp, x, MaskedArray(xp), fp)
+
+    def test_gradient(self):
+        d = [1., 2, 4, 7, X, X, 11, 16, X, 18, 20]
+        a = MaskedArray(d)
+        ret = MaskedArray([1. , 1.5, 2.5, X, X, X, X, X, 1. , X, 2. ])
+
+        assert_masked_equal(np.gradient(a), ret)
+        assert_masked_equal(ma.gradient(d), ret)
+
+        x = np.arange(len(a), dtype='f8')
+        assert_masked_equal(np.gradient(a, x), ret)
+        assert_almost_masked_equal(np.gradient(a, x**2), MaskedArray(
+                    [1., 0.9166667, 0.6416667, X, X, X, X, X, X, X, 0.1052632]))
+
+        a = MaskedArray([[1., 2, 4, 7], [X, X, 11, 16], [X, 18, 20, 22]])
+        x = np.arange(a.shape[1], dtype='f8')
+        assert_masked_equal(np.gradient(a, x, axis=1),
+            MaskedArray([[1. , 1.5, 2.5, 3. ],
+                         [ X ,  X ,  X , 5. ],
+                         [ X ,  X , 2. , 2. ]]))

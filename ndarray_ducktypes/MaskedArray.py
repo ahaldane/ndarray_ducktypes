@@ -3169,17 +3169,20 @@ def diff(a, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
         raise ValueError(
             "order must be non-negative but got " + repr(n))
 
+    inputs = [a, prepend, append]
+    inputs = [i for i in inputs if is_ndtype(i)]
+    cls = get_duck_cls(*inputs, base=MaskedArray)
+    a = cls(a)
+
     nd = a.ndim
     if nd == 0:
         raise ValueError("diff requires input that is at least one "
                          "dimensional")
     axis = normalize_axis_index(axis, nd)
 
-    inputs = [a, prepend, append]
-    inputs = [i for i in inputs if is_ndtype(i)]
-    cls = get_duck_cls(*inputs, base=MaskedArray)
-
     combined = []
+    if prepend is X:
+        prepend = X(a.dtype)
     if prepend is not np._NoValue:
         prepend = cls(prepend)
         if prepend.ndim == 0:
@@ -3190,6 +3193,8 @@ def diff(a, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
 
     combined.append(a)
 
+    if append is X:
+        append = X(a.dtype)
     if append is not np._NoValue:
         append = cls(append)
         if append.ndim == 0:
@@ -3215,14 +3220,16 @@ def diff(a, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
     return a
 
 def _interp_checkarg(args, kwds, types, known_types):
-    if builtins.any(is_ndtype(x) and not isinstance(x, np.ndarray)
-                    for x in args[:2]):
+    if is_ndtype(args[1]) and not isinstance(args[1], np.ndarray):
         raise NotImplementedError
+    a = [type(args[i]) for i in [0,2]]
     kw = [type(kwds[n]) for n in ['left', 'right'] if n in kwds]
-    return [type(args[2])] + [k for k in kw if is_ndtype(k)]
+    return [x for x in a+kw if is_ndtype(x)]
 
 @implements(np.interp, checked_args=_interp_checkarg)
 def interp(x, xp, fp, left=None, right=None, period=None):
+    if isinstance(xp, (MaskedArray, MaskedScalar)):
+        raise ValueError("xp may not be masked")
 
     # convert appropriate args to common masked class
     objs = [fp]
@@ -3231,6 +3238,7 @@ def interp(x, xp, fp, left=None, right=None, period=None):
     if right is not None and right is not X:
         objs.append(right)
     cls = get_duck_cls(objs, base=MaskedArray)
+    x = cls(x)
     fp = cls(fp)
     if left is X:
         left = cls._scalartype(X, dtype=fp.dtype)
@@ -3255,7 +3263,7 @@ def interp(x, xp, fp, left=None, right=None, period=None):
         left = None
         right = None
 
-        x = np.asarray(x, dtype=np.float64)
+        x = get_duck_cls(x, base=MaskedArray)(x, dtype=np.float64)
         xp = np.asarray(xp, dtype=np.float64)
         fp = fp.astype(input_dtype)
 
@@ -3274,14 +3282,18 @@ def interp(x, xp, fp, left=None, right=None, period=None):
 
     leftd = None if left is None else left.filled(0)
     rightd = None if right is None else right.filled(0)
-    ret_data = interp_func(x, xp, fp.filled(0, view=True), leftd, rightd)
+    xd = x.filled() if isinstance(x, (MaskedArray, MaskedScalar)) else x
+    ret_data = interp_func(xd, xp, fp.filled(0, view=True), leftd, rightd)
 
     # we get interpolated mask using nan trick
     v = np.array([0, np.nan])
-    leftm = None if left is None else v[left.mask.astype(int)]
-    rightm = None if right is None else v[right.mask.astype(int)]
-    ret_nanmask = interp_func(x, xp, v[fp.mask.astype(int)], leftm, rightm)
+    leftm = None if left is None else v[left.mask.view('u1')]
+    rightm = None if right is None else v[right.mask.view('u1')]
+    xd[np.isnan(xd)] = 0
+    ret_nanmask = interp_func(xd, xp, v[fp.mask.view('u1')], leftm, rightm)
     ret_mask = np.isnan(ret_nanmask)
+    if isinstance(x, (MaskedArray, MaskedScalar)):
+        ret_mask |= x.mask
 
     return cls(ret_data, ret_mask)
 
@@ -3340,6 +3352,7 @@ def ediff1d(ary, to_end=None, to_begin=None):
 def gradient(f, *varargs, axis=None, edge_order=1):
     cls = get_duck_cls(*((f,) + varargs), base=MaskedArray)
     varargs = [cls(v) for v in varargs]
+    f = cls(f)
 
     N = f.ndim  # number of dimensions
 
@@ -3374,7 +3387,7 @@ def gradient(f, *varargs, axis=None, edge_order=1):
             diffx = np.diff(distances)
             # if distances are constant reduce to the scalar case
             # since it brings a consistent speedup
-            if (diffx == diffx[0]).filled(False).all() and f.count() == 0:
+            if (diffx == diffx[0]).filled(False).all():
                 diffx = diffx[0]
             dx[i] = diffx
     else:
@@ -3442,10 +3455,17 @@ def gradient(f, *varargs, axis=None, edge_order=1):
             shape = np.ones(N, dtype=int)
             shape[axis] = -1
             a.shape = b.shape = c.shape = shape
+
+            D1 = a * f[tuple(slice2)]
+            D2 = b * f[tuple(slice3)]
+            D3 = c * f[tuple(slice4)]
+            # if the middle prefactor is 0, we can ignore mask there.
+            # This is the main change in this MaskedArray impl, so that uniform
+            # scalar spacing gives same result as array of uniform spacing.
+            D2[b == 0] = 0
+
             # 1D equivalent -- out[1:-1] = a * f[:-2] + b * f[1:-1] + c * f[2:]
-            out[tuple(slice1)] = (a * f[tuple(slice2)] +
-                                  b * f[tuple(slice3)] +
-                                  c * f[tuple(slice4)])
+            out[tuple(slice1)] = (D1 + D2 + D3)
 
         # Numerical differentiation: 1st order edges
         if edge_order == 1:
