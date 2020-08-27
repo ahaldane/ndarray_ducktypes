@@ -3571,11 +3571,15 @@ def array_str(a, max_line_width=None, precision=None, suppress_small=None):
 
 @implements(np.shape)
 def shape(a):
+    a = as_duck_cls(a, base=MaskedArray)
     return a.shape
 
 @implements(np.alen)
 def alen(a):
-    return len(get_duck_cls(a)(a, ndmin=1), base=MaskedArray)
+    try:
+        return len(a)
+    except TypeError:
+        return len(get_duck_cls(a, base=MaskedArray)(a, ndmin=1))
 
 @implements(np.ndim)
 def ndim(a):
@@ -3584,19 +3588,24 @@ def ndim(a):
 
 @implements(np.size)
 def size(a):
+    a = as_duck_cls(a, base=MaskedArray)
     return a.size
 
 @implements(np.copyto, checked_args=('dst',))
 def copyto(dst, src, casting='same_kind', where=True):
-    if isinstance(src, (MaskedArray, MaskedScalar)):
-        np.copyto(dst._data, src._data, casting, where)
-        np.copyto(dst._mask, src._mask, casting, where)
-    else:
-        np.copyto(dst._data, src, casting, where)
-        np.copyto(dst._mask, False, casting, where)
+    if not is_ndtype(dst):
+        raise TypeError('copyto() argument 1 must be ndarray, not list')
+    dst, src = as_duck_cls(dst, src, base=MaskedArray, single=False)
+    if isinstance(where, (MaskedArray, MaskedScalar)):
+        where = where.filled(False)
+    np.copyto(dst._data, src._data, casting, where)
+    np.copyto(dst._mask, src._mask, casting, where)
 
 @implements(np.putmask)
 def putmask(a, mask, values):
+    if not is_ndtype(a):
+        raise TypeError('putmask() argument 1 must be ndarray, not list')
+    a, values = as_duck_cls(a, values, base=MaskedArray, single=False)
     if isinstance(mask, MaskedArray):
         mask = mask.filled(False)
     np.putmask(a._data, mask, values._data)
@@ -3604,12 +3613,14 @@ def putmask(a, mask, values):
 
 @implements(np.packbits)
 def packbits(myarray, axis=None):
+    myarray = as_duck_cls(myarray, base=MaskedArray)
     result_data = np.packbits(myarray._data, axis)
     result_mask = np.packbits(myarray._mask, axis) != 0
     return maskedarray_or_scalar(result_data, result_mask,cls=type(myarray))
 
 @implements(np.unpackbits)
 def unpackbits(myarray, axis=None):
+    myarray = as_duck_cls(myarray, base=MaskedArray)
     result_data = np.unpackbits(myarray._data, axis)
     result_mask = np.unpackbits(myarray._mask*np.uint8(255), axis)
     return maskedarray_or_scalar(result_data, result_mask,cls=type(myarray))

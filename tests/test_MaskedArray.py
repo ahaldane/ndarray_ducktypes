@@ -5125,3 +5125,36 @@ class Test_API:
                   6 7
                   8]'''))
 
+    def test_api_attr_methods(self):
+        # shape alen ndim size
+
+        d = [[1,2,3], [4,X,X]]
+        a = MaskedArray(d)
+
+        assert_equal(np.shape(a), (2,3))
+        assert_equal(ma.shape(d), (2,3))
+
+        assert_equal(np.alen(a), 2)
+        assert_equal(ma.alen(d), 2)
+
+        assert_equal(np.ndim(a), 2)
+        assert_equal(ma.ndim(d), 2)
+
+        assert_equal(np.size(a), 6)
+        assert_equal(ma.size(d), 6)
+
+    def test_copyto_putmask(self):
+        a = MaskedArray([[1,2,X],[4,X,X]])
+        b = MaskedArray([[X,8,9],[0,X,2]])
+
+        aa = a.copy()
+        np.copyto(aa, b)
+        assert_masked_equal(aa, b)
+        aa = a.copy()
+        np.copyto(aa, b, where=b < 5)
+        ret = MaskedArray([[1,2,X],[0,X,2]])
+        assert_masked_equal(aa, ret)
+
+        aa = a.copy()
+        np.putmask(aa, b < 5, b)
+        assert_masked_equal(aa, ret)
