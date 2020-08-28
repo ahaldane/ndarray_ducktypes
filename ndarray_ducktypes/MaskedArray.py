@@ -112,7 +112,7 @@ class MaskedOperatorMixin(NDArrayOperatorsMixin):
 
 def duck_require(data, dtype=None, ndmin=0, copy=True, order='K'):
     """
-    Return an ducktyped ndarray that satisfies requirements.
+    Return an ndarray-like that satisfies requirements.
 
     Returns a view if possible.
 
@@ -130,11 +130,12 @@ def duck_require(data, dtype=None, ndmin=0, copy=True, order='K'):
         Same as 'order' argument of np.array
     """
 
-    # we must use only propertie that work for ndarray ducktypes.
+    # we must use only properties that work for ndarray ducktypes.
     # This rules out using np.require
 
-    if copy or (dtype is not None and dtype != data.dtype):
-        data = data.astype(dtype, order=order)
+    newdtype = dtype if dtype is not None else data.dtype
+    if copy or (newdtype != data.dtype):
+        data = data.astype(newdtype, order=order)
 
     if order != 'K' and order is not None:
         warnings.warn('order parameter of MaskedArray is ignored')
@@ -175,7 +176,7 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
             to all `False`. See Notes below.
         dtype : data-type, optional
             The desired data-type for the array. See `np.array` argument.
-        copy : cool, optional
+        copy : bool, optional
             If false (default), the MaskedArray will view the data and mask
             if they are ndarrays with the right properties. Otherwise
             a they will be copied.
@@ -229,13 +230,13 @@ class MaskedArray(MaskedOperatorMixin, NDArrayAPIMixin):
 
             if mask is not None:
                 self._data = duck_require(data._data, copy=True, order=order,
-                                                  ndmin=ndmin)
+                                          ndmin=ndmin)
                 mask = np.array(mask, dtype=bool, copy=False)
                 self._mask |= np.broadcast_to(mask, self._data.shape)
 
             else:
                 self._data = duck_require(data._data, copy=copy, order=order,
-                                                  ndmin=ndmin)
+                                          ndmin=ndmin)
             return
         elif data is X and mask is None:
             # 0d masked array
@@ -3700,17 +3701,28 @@ def allclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False):
     return all(isclose(a, b, rtol, atol, equal_nan))
 
 @implements(np.array_equal)
-def array_equal(a1, a2):
-    return all(a1 == a2)
+def array_equal(a1, a2, equal_nan=False):
+    # interpret equal_nan to mean to also count masks as equal, so
+    # np.array_equal(a,a) returns true no matter masks/nan. Otherwise
+    # return False if there are masks (like with nan)
+    a1, a2 = as_duck_cls(a1, a2, base=MaskedArray, single=False)
+    if a1.shape != a2.shape:
+        return False
+    if equal_nan:
+        ret = np.array_equal(a1.filled(view=1),
+                             a2.filled(view=1), equal_nan=equal_nan)
+        return ret and np.all(a1.mask == a2.mask)
+    else:
+        return np.all((a1 == a2).filled(False))
 
 @implements(np.array_equiv)
-def array_equal(a1, a2):
+def array_equiv(a1, a2):
+    a1, a2 = as_duck_cls(a1, a2, base=MaskedArray, single=False)
     try:
-        broadcast(a1, a2)
+        np.broadcast(a1._data, a2._data)
     except:
-        return MaskedScalar(np.bool_(False), False)
-    return all(a1 == a2)
-    # Note: unlike original func, this doesn't return a bool
+        return False
+    return np.all((a1 == a2).filled(False))
 
 @implements(np.sometrue)
 def sometrue(*args, **kwargs):
@@ -3722,6 +3734,7 @@ def alltrue(*args, **kwargs):
 
 @implements(np.angle)
 def angle(z, deg=False):
+    z = as_duck_cls(z, base=MaskedArray)
     if issubclass(z.dtype.type, np.complexfloating):
         zimag = z.imag
         zreal = z.real
@@ -3736,25 +3749,28 @@ def angle(z, deg=False):
 
 @implements(np.sinc)
 def sinc(x):
+    x = as_duck_cls(x, base=MaskedArray)
     y = np.pi * np.where((x == 0).filled(False, view=1), 1.0e-20, x)
     return np.sin(y)/y
 
 @implements(np.unwrap)
 def unwrap(p, discont=np.pi, axis=-1):
-    cls = get_duck_cls(p, base=MaskedArray)
-    p = cls(p)
+    p = as_duck_cls(p, base=MaskedArray)
     pi = np.pi
     nd = p.ndim
-    dd = np.diff(p, axis=axis)
+
+    dd = diff(p, axis=axis)
+    ddmod = np.mod(dd + pi, 2*pi) - pi
+    copyto(ddmod, pi, where=(ddmod == -pi) & (dd > 0))
+    ph_correct = ddmod - dd
+    copyto(ph_correct, 0, where=abs(dd) < discont)
+    up = type(p)(p, copy=True, dtype='d')
+
     slice1 = [slice(None, None)]*nd     # full slices
     slice1[axis] = slice(1, None)
     slice1 = tuple(slice1)
-    ddmod = mod(dd + pi, 2*pi) - pi
-    np.copyto(ddmod, pi, where=(ddmod == -pi) & (dd > 0))
-    ph_correct = ddmod - dd
-    np.copyto(ph_correct, 0, where=abs(dd) < discont)
-    up = cls(p, copy=True, dtype='d')
     up[slice1] = p[slice1] + ph_correct.cumsum(axis)
+
     return up
 
 

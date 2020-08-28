@@ -3984,6 +3984,7 @@ class Test_API:
     def test_all(self):
         # test some masked
         # test all masked
+        assert_masked_equal(ma.all([True, X, True]), True)
         assert_masked_equal(np.all(MaskedArray([True, X, True])), True)
         assert_masked_equal(np.all(MaskedArray([True, X, False])), False)
         assert_masked_equal(np.all(MaskedArray([X, X, X], dtype='?')), True)
@@ -3993,6 +3994,7 @@ class Test_API:
                 [True, X, False],
                 [X, X, X]]
         assert_equal(np.all(MaskedArray(data), axis=1), ret)
+        assert_equal(np.alltrue(MaskedArray(data), axis=1), ret)
 
         # test out argument
         out = np.array([True, True, True])
@@ -4018,7 +4020,9 @@ class Test_API:
         assert_equal(np.all(X(np.float64)), True)
 
     def test_any(self):
+        assert_masked_equal(ma.any([False, X, False]), False)
         assert_masked_equal(np.any(MaskedArray([False, X, False])), False)
+        assert_masked_equal(np.sometrue(MaskedArray([False, X, False])), False)
         assert_masked_equal(np.any(MaskedArray([True, X, False])), True)
         assert_masked_equal(np.any(MaskedArray([X, X, X], dtype='?')), False)
         assert_masked_equal(np.any(MaskedArray([X, X, False])), False)
@@ -5170,7 +5174,7 @@ class Test_API:
                          [0, 0, 0, 1, 0, 1, 1, 1],
                          [X, X, X, X, X, X, X, X]], dtype=np.uint8))
         assert_masked_equal(c, a)
-    
+
     def test_is_float_methods(self):
         d = [1,2,np.nan, np.inf, -np.inf, X]
         a = MaskedArray(d)
@@ -5192,7 +5196,7 @@ class Test_API:
         oo = np.isneginf(a, out=out)
         assert_masked_equal(oo, ret)
         assert_(oo is out)
-        
+
         lrg, sml = np.nan_to_num(np.inf), np.nan_to_num(-np.inf)
         ret = MaskedArray([1,2,0, lrg, sml, X])
         assert_masked_equal(np.nan_to_num(a), ret)
@@ -5220,14 +5224,14 @@ class Test_API:
         assert_masked_equal(ma.iscomplex(c), MaskedArray([True, False, X]))
         assert_masked_equal(np.isreal(ra), MaskedArray([True, X]))
         assert_masked_equal(ma.isreal(r), MaskedArray([True, X]))
-    
+
     def test_close(self):
        cd = [2.1 + 4e-14j, 5.2 + 3e-15j, X]
        ca = MaskedArray(cd)
 
-       assert_masked_equal(np.real_if_close(ca, tol=1000), 
+       assert_masked_equal(np.real_if_close(ca, tol=1000),
                            MaskedArray([2.1, 5.2, X]))
-       assert_masked_equal(ma.real_if_close(cd, tol=1000), 
+       assert_masked_equal(ma.real_if_close(cd, tol=1000),
                            MaskedArray([2.1, 5.2, X]))
 
        d1, d2 = [1e10,1e-7,X,X], [1.00001e10,1e-8,1.,X]
@@ -5241,3 +5245,44 @@ class Test_API:
        assert_masked_equal(np.allclose(a1, a2), True)
        assert_masked_equal(ma.allclose(d1, d2), True)
        assert_masked_equal(ma.allclose([X('f8')], [X('f8')]), True)
+
+    def test_array_equal_equiv(self):
+        d1 = [1,2,X,np.nan]
+        d2 = [1,2,3,np.nan]
+        a1 = MaskedArray(d1)
+        a2 = MaskedArray(d2)
+
+        assert_equal(np.array_equal(a1, a1), False)
+        assert_equal(ma.array_equal(d1, d1), False)
+        assert_equal(np.array_equal(a1, a1, equal_nan=True), True)
+        assert_equal(np.array_equal(a1[:-1], a1[:-1], equal_nan=True), True)
+        assert_equal(ma.array_equal(d1[:-1], d1[:-1], equal_nan=True), True)
+        assert_equal(np.array_equal(a1, a2, equal_nan=True), False)
+        assert_equal(np.array_equal(a1, a1.reshape((1,4)), equal_nan=True),
+                     False)
+
+        assert_equal(np.array_equiv(a1, a1), False)
+        assert_equal(ma.array_equiv(d1, d1), False)
+        assert_equal(np.array_equiv(a1[:2], a1[:2]), True)
+        assert_equal(np.array_equiv(a1[:2], a1[:2].reshape((1,2))), True)
+
+    def test_angle_methods(self):
+        d = [1.0, 1.0j, 1+1j, X]
+        a = MaskedArray(d)
+
+        ret = MaskedArray([ 0.,  1.57079633,  0.78539816, X])
+        assert_almost_masked_equal(np.angle(a), ret)
+        assert_almost_masked_equal(ma.angle(d), ret)
+
+        d = [0.1, 0.2, 0.3, X]
+        a = MaskedArray(d)
+        ret = MaskedArray([0.9836316, 0.9354893, 0.8583937, X])
+        assert_almost_masked_equal(np.sinc(a), ret)
+        assert_almost_masked_equal(ma.sinc(d), ret)
+
+        d = [1., 2., 4., 8., X]
+        a = MaskedArray(d)
+        ret = MaskedArray([1., 2., 4., 1.7168147, X])
+        assert_almost_masked_equal(np.unwrap(a), ret)
+        assert_almost_masked_equal(ma.unwrap(d), ret)
+
