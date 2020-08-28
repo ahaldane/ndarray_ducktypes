@@ -3623,40 +3623,69 @@ def unpackbits(myarray, axis=None):
     myarray = as_duck_cls(myarray, base=MaskedArray)
     result_data = np.unpackbits(myarray._data, axis)
     result_mask = np.unpackbits(myarray._mask*np.uint8(255), axis)
-    return maskedarray_or_scalar(result_data, result_mask,cls=type(myarray))
+    return maskedarray_or_scalar(result_data, result_mask, cls=type(myarray))
 
 @implements(np.isposinf)
 def isposinf(x, out=None):
-    return type(x)(np.isposinf(x._data), x._mask.copy())
+    x = as_duck_cls(x, base=MaskedArray)
+    outdata, outmask = get_maskedout(out)
+    result_data = np.isposinf(x._data, out=outdata)
+    if outmask is None:
+        outmask = x._mask.copy()
+    else:
+        outmask[...] = x._mask
+    return maskedarray_or_scalar(result_data, outmask, out=out, cls=type(x))
 
 @implements(np.isneginf)
 def isneginf(x, out=None):
-    return type(x)(np.isneginf(x._data), x._mask.copy())
+    x = as_duck_cls(x, base=MaskedArray)
+    outdata, outmask = get_maskedout(out)
+    result_data = np.isneginf(x._data, out=outdata)
+    if outmask is None:
+        outmask = x._mask.copy()
+    else:
+        outmask[...] = x._mask
+    return maskedarray_or_scalar(result_data, outmask, out=out, cls=type(x))
 
 @implements(np.iscomplex)
 def iscomplex(x):
-    return type(x)(np.iscomplex(x._data), x._mask.copy())
+    if isinstance(x, (MaskedArray, MaskedScalar)):
+        return type(x)(np.iscomplex(x._data), x._mask.copy())
+    x = as_duck_cls(x, base=MaskedArray)
+    return type(x)(np.iscomplex(x._data), x._mask)
 
 @implements(np.isreal)
 def isreal(x):
+    if isinstance(x, (MaskedArray, MaskedScalar)):
+        return type(x)(np.isreal(x._data), x._mask.copy())
+    x = as_duck_cls(x, base=MaskedArray)
     return type(x)(np.isreal(x._data), x._mask.copy())
 
 @implements(np.iscomplexobj)
 def iscomplexobj(x):
+    x = as_duck_cls(x, base=MaskedArray)
     return np.iscomplexobj(x._data)
 
 @implements(np.isrealobj)
 def isrealobj(x):
+    x = as_duck_cls(x, base=MaskedArray)
     return np.isrealobj(x._data)
 
 @implements(np.nan_to_num)
 def nan_to_num(x, copy=True):
-    return type(x)(np.nan_to_num(x._data, copy),
-                       x._mask.copy() if copy else x._mask)
+    if isinstance(x, (MaskedArray, MaskedScalar)):
+        mask = x._mask.copy() if copy else x._mask
+    else:
+        x = as_duck_cls(x, base=MaskedArray)
+        mask = x._mask
+    return type(x)(np.nan_to_num(x._data, copy), mask)
 
 @implements(np.real_if_close)
 def real_if_close(a, tol=100):
-    return type(a)(np.real_if_close(x._data, tol), x._mask.copy())
+    if isinstance(a, (MaskedArray, MaskedScalar)):
+        return type(a)(np.real_if_close(a._data, tol), a._mask.copy())
+    a = as_duck_cls(a, base=MaskedArray)
+    return type(a)(np.real_if_close(a._data, tol), a._mask)
 
 @implements(np.isclose)
 def isclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False):
@@ -3668,28 +3697,28 @@ def isclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False):
 
 @implements(np.allclose)
 def allclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False):
-    return np.all(np.isclose(a, b, rtol, atol, equal_nan))
+    return all(isclose(a, b, rtol, atol, equal_nan))
 
 @implements(np.array_equal)
 def array_equal(a1, a2):
-    return np.all(a1 == a2)
+    return all(a1 == a2)
 
 @implements(np.array_equiv)
 def array_equal(a1, a2):
     try:
-        np.broadcast(a1, a2)
+        broadcast(a1, a2)
     except:
         return MaskedScalar(np.bool_(False), False)
-    return np.all(a1 == a2)
+    return all(a1 == a2)
     # Note: unlike original func, this doesn't return a bool
 
 @implements(np.sometrue)
 def sometrue(*args, **kwargs):
-    return np.any(*args, **kwargs)
+    return any(*args, **kwargs)
 
 @implements(np.alltrue)
 def alltrue(*args, **kwargs):
-    return np.all(*args, **kwargs)
+    return all(*args, **kwargs)
 
 @implements(np.angle)
 def angle(z, deg=False):

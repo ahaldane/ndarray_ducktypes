@@ -5170,3 +5170,74 @@ class Test_API:
                          [0, 0, 0, 1, 0, 1, 1, 1],
                          [X, X, X, X, X, X, X, X]], dtype=np.uint8))
         assert_masked_equal(c, a)
+    
+    def test_is_float_methods(self):
+        d = [1,2,np.nan, np.inf, -np.inf, X]
+        a = MaskedArray(d)
+        b = np.array([1,2,np.nan, np.inf, -np.inf])
+        out = MaskedArray(np.arange(6))
+
+        ret = MaskedArray([False, False, False, True, False, X])
+        assert_masked_equal(np.isposinf(a), ret)
+        assert_masked_equal(ma.isposinf(d), ret)
+        assert_masked_equal(ma.isposinf(X('f8')), X('f8'))
+        oo = np.isposinf(a, out=out)
+        assert_masked_equal(oo, ret)
+        assert_(oo is out)
+
+        ret = MaskedArray([False, False, False, False, True, X])
+        assert_masked_equal(np.isneginf(a), ret)
+        assert_masked_equal(ma.isneginf(d), ret)
+        assert_masked_equal(ma.isneginf(X('f8')), X('f8'))
+        oo = np.isneginf(a, out=out)
+        assert_masked_equal(oo, ret)
+        assert_(oo is out)
+        
+        lrg, sml = np.nan_to_num(np.inf), np.nan_to_num(-np.inf)
+        ret = MaskedArray([1,2,0, lrg, sml, X])
+        assert_masked_equal(np.nan_to_num(a), ret)
+        assert_masked_equal(ma.nan_to_num(d), ret)
+        assert_masked_equal(ma.nan_to_num(X('f8')), X('f8'))
+        aa = a.copy()
+        oo = np.nan_to_num(aa, copy=False)
+        assert_masked_equal(oo, ret)
+        assert_(aa._data is oo._data)
+        assert_(aa._mask is oo._mask)
+
+        c = [1+1j, 1+0j, X]
+        r = [1., X]
+        ca = MaskedArray(c)
+        ra = MaskedArray(r)
+        assert_(np.iscomplexobj(ca) is True)
+        assert_(ma.iscomplexobj(c) is True)
+        assert_(np.iscomplexobj(ra) is False)
+        assert_(ma.iscomplexobj(r) is False)
+        assert_(np.iscomplexobj(ca) is True)
+        assert_(ma.iscomplexobj(c) is True)
+        assert_(np.iscomplexobj(ra) is False)
+        assert_(ma.iscomplexobj(r) is False)
+        assert_masked_equal(np.iscomplex(ca), MaskedArray([True, False, X]))
+        assert_masked_equal(ma.iscomplex(c), MaskedArray([True, False, X]))
+        assert_masked_equal(np.isreal(ra), MaskedArray([True, X]))
+        assert_masked_equal(ma.isreal(r), MaskedArray([True, X]))
+    
+    def test_close(self):
+       cd = [2.1 + 4e-14j, 5.2 + 3e-15j, X]
+       ca = MaskedArray(cd)
+
+       assert_masked_equal(np.real_if_close(ca, tol=1000), 
+                           MaskedArray([2.1, 5.2, X]))
+       assert_masked_equal(ma.real_if_close(cd, tol=1000), 
+                           MaskedArray([2.1, 5.2, X]))
+
+       d1, d2 = [1e10,1e-7,X,X], [1.00001e10,1e-8,1.,X]
+       a1, a2 = MaskedArray(d1), MaskedArray(d2)
+       assert_masked_equal(np.isclose(a1, a2), MaskedArray([True, False,X,X]))
+       assert_masked_equal(ma.isclose(d1, d2), MaskedArray([True, False,X,X]))
+       assert_masked_equal(np.allclose(a1, a2), False)
+       assert_masked_equal(ma.allclose(d1, d2), False)
+       d1, d2 = [1e10,X,X], [1.00001e10,1.,X]
+       a1, a2 = MaskedArray(d1), MaskedArray(d2)
+       assert_masked_equal(np.allclose(a1, a2), True)
+       assert_masked_equal(ma.allclose(d1, d2), True)
+       assert_masked_equal(ma.allclose([X('f8')], [X('f8')]), True)
