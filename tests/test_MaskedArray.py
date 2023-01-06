@@ -5130,16 +5130,13 @@ class Test_API:
                   8]'''))
 
     def test_api_attr_methods(self):
-        # shape alen ndim size
+        # shape ndim size
 
         d = [[1,2,3], [4,X,X]]
         a = MaskedArray(d)
 
         assert_equal(np.shape(a), (2,3))
         assert_equal(ma.shape(d), (2,3))
-
-        assert_equal(np.alen(a), 2)
-        assert_equal(ma.alen(d), 2)
 
         assert_equal(np.ndim(a), 2)
         assert_equal(ma.ndim(d), 2)

@@ -67,7 +67,7 @@ def test_coverage():
     'np.argmax', 'np.argmin', 'np.searchsorted', 'np.resize', 'np.squeeze',
     'np.diagonal', 'np.trace', 'np.ravel', 'np.nonzero', 'np.shape',
     'np.compress', 'np.clip', 'np.sum', 'np.any', 'np.all', 'np.cumsum',
-    'np.ptp', 'np.amax', 'np.amin', 'np.alen', 'np.prod', 'np.cumprod',
+    'np.ptp', 'np.amax', 'np.amin', 'np.prod', 'np.cumprod',
     'np.ndim', 'np.size', 'np.around', 'np.mean', 'np.std', 'np.var',
     'np.round_', 'np.product', 'np.cumproduct', 'np.sometrue', 'np.alltrue',
     'np.rank', 'np.array2string', 'np.array_repr', 'np.array_str',

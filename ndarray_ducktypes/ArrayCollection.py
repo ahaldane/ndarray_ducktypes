@@ -744,10 +744,6 @@ def setup_ducktype():
     def shape(a):
         return a.shape
 
-    @implements(np.alen)
-    def alen(a):
-        return len(a)
-
     @implements(np.ndim)
     def ndim(a):
         return a.ndim

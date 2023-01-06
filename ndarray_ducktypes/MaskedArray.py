@@ -3575,13 +3575,6 @@ def shape(a):
     a = as_duck_cls(a, base=MaskedArray)
     return a.shape
 
-@implements(np.alen)
-def alen(a):
-    try:
-        return len(a)
-    except TypeError:
-        return len(get_duck_cls(a, base=MaskedArray)(a, ndmin=1))
-
 @implements(np.ndim)
 def ndim(a):
     a = as_duck_cls(a, base=MaskedArray)
