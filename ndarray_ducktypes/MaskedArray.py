@@ -1759,29 +1759,29 @@ def _move_reduction_axis_last(a, axis=None):
 def median(a, axis=None, out=None, overwrite_input=False, keepdims=False):
     return np.quantile(a, 0.5, axis=axis, out=out,
                         overwrite_input=overwrite_input,
-                        interpolation='midpoint', keepdims=keepdims)
+                        method='midpoint', keepdims=keepdims)
 
 @implements(np.percentile)
 def percentile(a, q, axis=None, out=None, overwrite_input=False,
-               interpolation='linear', keepdims=False):
+               method='linear', keepdims=False):
     q = np.true_divide(q, 100)
     q = np.asanyarray(q)  # undo any decay the ufunc performed (gh-13105)
     if not _quantile_is_valid(q):
         raise ValueError("Percentiles must be in the range [0, 100]")
     return _quantile_unchecked(
-        a, q, axis, out, overwrite_input, interpolation, keepdims)
+        a, q, axis, out, overwrite_input, method, keepdims)
 
 @implements(np.quantile)
 def quantile(a, q, axis=None, out=None, overwrite_input=False,
-             interpolation='linear', keepdims=False):
+             method='linear', keepdims=False):
     q = np.asanyarray(q)
     if not _quantile_is_valid(q):
         raise ValueError("Quantiles must be in the range [0, 1]")
     return _quantile_unchecked(
-        a, q, axis, out, overwrite_input, interpolation, keepdims)
+        a, q, axis, out, overwrite_input, method, keepdims)
 
 def _quantile_unchecked(a, q, axis=None, out=None, overwrite_input=False,
-                        interpolation='linear', keepdims=False):
+                        method='linear', keepdims=False):
     """Assumes that q is in [0, 1], and is an ndarray"""
 
     a = as_duck_cls(a, base=MaskedArray)
@@ -1812,7 +1812,7 @@ def _quantile_unchecked(a, q, axis=None, out=None, overwrite_input=False,
         if dat.size == 0:
             outarr[oind] = X
         else:
-            outarr[oind] = np.quantile(dat, q, interpolation=interpolation)
+            outarr[oind] = np.quantile(dat, q, method=method)
 
     if out is not None:
         return out

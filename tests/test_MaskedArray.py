@@ -4255,8 +4255,8 @@ class Test_API:
         # median, percentile implemented in terms of quantile
         a = MaskedArray([2,1,4,X,3])
         assert_masked_equal(np.quantile(a, 0.5), 2.5)
-        assert_masked_equal(np.quantile(a, 0.5, interpolation='lower'), 2)
-        assert_masked_equal(np.quantile(a, 0.5, interpolation='higher'), 3)
+        assert_masked_equal(np.quantile(a, 0.5, method='lower'), 2)
+        assert_masked_equal(np.quantile(a, 0.5, method='higher'), 3)
         assert_masked_equal(np.percentile(a, 50), 2.5)
         assert_masked_equal(np.median(a), 2.5)
         assert_masked_equal(np.quantile(MaskedArray([X,X('f8')]), 0.5), X('f8'))
