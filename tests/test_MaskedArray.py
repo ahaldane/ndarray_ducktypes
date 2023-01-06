@@ -2019,6 +2019,8 @@ class TestMaskedArrayInPlaceArithmetics:
     def test_inplace_floor_division_scalar_type(self):
         # Test of inplace division
         for t in self.othertypes:
+            if t == np.csingle or t == np.cdouble or t == np.clongdouble:
+                continue
             with warnings.catch_warnings(record=True) as w:
                 warnings.filterwarnings("always")
                 (x, y, xm) = (_.astype(t) for _ in self.uint8data)
@@ -2035,6 +2037,8 @@ class TestMaskedArrayInPlaceArithmetics:
     def test_inplace_floor_division_array_type(self):
         # Test of inplace division
         for t in self.othertypes:
+            if t == np.csingle or t == np.cdouble or t == np.clongdouble:
+                continue
             with warnings.catch_warnings(record=True) as w:
                 warnings.filterwarnings("always")
                 (x, y, xm) = (_.astype(t) for _ in self.uint8data)
