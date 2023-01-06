@@ -2500,9 +2500,9 @@ class TestMaskedArrayMethods:
 
     def test_mask_sorting(self):
         # -1 gets converted to unsigned max val
-        a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]], dtype='u4')
+        a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]]).astype('u4')
         b = np.take_along_axis(a, np.argsort(a, axis=1), axis=1)
-        ctrl = MaskedArray([[1, 3, X], [-1, X, X], [1, -1, X]], dtype='u4')
+        ctrl = MaskedArray([[1, 3, X], [-1, X, X], [1, -1, X]]).astype('u4')
         assert_masked_equal(b, ctrl)
         c = a.copy()
         c.sort(axis=1)
