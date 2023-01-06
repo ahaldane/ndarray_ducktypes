@@ -3092,8 +3092,7 @@ def flatnonzero(a):
     return np.nonzero(np.ravel(a))[0]
 
 @implements(np.histogram, checked_args=('a',))
-def histogram(a, bins=10, range=None, normed=None, weights=None,
-              density=None):
+def histogram(a, bins=10, range=None, density=None, weights=None):
     a = as_duck_cls(a, base=MaskedArray)
     if isinstance(bins, (MaskedArray, MaskedScalar)):
         raise ValueError("bins must not be a MaskedArray")
@@ -3108,10 +3107,10 @@ def histogram(a, bins=10, range=None, normed=None, weights=None,
     if weights is not None:
         weights = weights.ravel()[keep]
 
-    return np.histogram(dat, bins, range, normed, weights, density)
+    return np.histogram(dat, bins, range, density, weights)
 
 @implements(np.histogram2d, checked_args=('x', 'y'))
-def histogram2d(x, y, bins=10, range=None, normed=None, weights=None,
+def histogram2d(x, y, bins=10, range=None, weights=None,
                 density=None):
     try:
         N = len(bins)
@@ -3121,12 +3120,11 @@ def histogram2d(x, y, bins=10, range=None, normed=None, weights=None,
     if N != 1 and N != 2:
         xedges = yedges = np.asarray(bins)  # bins should become ndarray
         bins = [xedges, yedges]
-    hist, edges = histogramdd([x, y], bins, range, normed, weights, density)
+    hist, edges = histogramdd([x, y], bins, range, density, weights)
     return hist, edges[0], edges[1]
 
 @implements(np.histogramdd)
-def histogramdd(sample, bins=10, range=None, normed=None, weights=None,
-                density=None):
+def histogramdd(sample, bins=10, range=None, density=None, weights=None):
     if not np.isscalar(bins):
         for b in bins:
             if isinstance(b, (MaskedArray, MaskedScalar)):
@@ -3151,7 +3149,7 @@ def histogramdd(sample, bins=10, range=None, normed=None, weights=None,
     if weights is not None:
         weights = weights[keep]
 
-    return np.histogramdd(sample, bins, range, normed, weights, density)
+    return np.histogramdd(sample, bins, range, density, weights)
 
 @implements(np.histogram_bin_edges)
 def histogram_bin_edges(a, bins=10, range=None, weights=None):
