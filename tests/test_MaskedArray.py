@@ -108,7 +108,7 @@ def assert_almost_masked_equal(actual, desired, err_msg='', anymask=False):
 class TestMaskedArray:
     # Base test class for MaskedArrays.
 
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         x = np.array([1., 1., 1., -2., pi/2.0, 4., 5., -10., 10., 1., 2., 3.])
         y = np.array([5., 0., 3., 2., -1., -4., 0., -10., 10., 1., 0., 3.])
@@ -770,7 +770,7 @@ class TestMaskedArray:
 class TestMaskedArrayArithmetic:
     # Base test class for MaskedArrays.
 
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         x = np.array([1., 1., 1., -2., pi/2.0, 4., 5., -10., 10., 1., 2., 3.])
         y = np.array([5., 0., 3., 2., -1., -4., 0., -10., 10., 1., 0., 3.])
@@ -786,7 +786,7 @@ class TestMaskedArrayArithmetic:
         self.err_status = np.geterr()
         np.seterr(divide='ignore', invalid='ignore')
 
-    def teardown(self):
+    def teardown_method(self):
         np.seterr(**self.err_status)
 
     def test_basic_arithmetic(self):
@@ -1526,14 +1526,14 @@ class TestFillingValues:
 class TestUfuncs:
     # Test class for the application of ufuncs on MaskedArrays.
 
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         self.d = (MaskedArray([1.0, 0, -1, pi / 2] * 2, mask=[0, 1] + [0] * 6),
                   MaskedArray([1.0, 0, -1, pi / 2] * 2, mask=[1, 0] + [0] * 6),)
         self.err_status = np.geterr()
         np.seterr(divide='ignore', invalid='ignore')
 
-    def teardown(self):
+    def teardown_method(self):
         np.seterr(**self.err_status)
 
     def test_testUfuncRegression(self):
@@ -1625,7 +1625,7 @@ class TestUfuncs:
 class TestMaskedArrayInPlaceArithmetics:
     # Test MaskedArray Arithmetics
 
-    def setup(self):
+    def setup_method(self):
         x = MaskedArray(np.arange(10))
         y = MaskedArray(np.arange(10))
         xm = MaskedArray(np.arange(10))
@@ -2141,7 +2141,7 @@ class TestMaskedArrayInPlaceArithmetics:
 
 class TestMaskedArrayMethods:
     # Test class for miscellaneous MaskedArrays methods.
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         x = np.array([8.375, 7.545, 8.828, 8.5, 1.757, 5.928,
                       8.43, 7.78, 9.865, 5.878, 8.979, 4.732,
@@ -2684,7 +2684,7 @@ class TestMaskedArrayMethods:
 
 class TestMaskedArrayMathMethods:
 
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         x = np.array([8.375, 7.545, 8.828, 8.5, 1.757, 5.928,
                       8.43, 7.78, 9.865, 5.878, 8.979, 4.732,
@@ -2958,7 +2958,7 @@ class TestMaskedArrayMathMethods:
 
 class TestMaskedArrayMathMethodsComplex:
     # Test class for miscellaneous MaskedArrays methods.
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         x = np.array([8.375j, 7.545j, 8.828j, 8.5j, 1.757j, 5.928,
                       8.43, 7.78, 9.865, 5.878, 8.979, 4.732,
@@ -3012,7 +3012,7 @@ class TestMaskedArrayMathMethodsComplex:
 class TestMaskedArrayFunctions:
     # Test class for miscellaneous functions.
 
-    def setup(self):
+    def setup_method(self):
         x = np.array([1., 1., 1., -2., pi/2.0, 4., 5., -10., 10., 1., 2., 3.])
         y = np.array([5., 0., 3., 2., -1., -4., 0., -10., 10., 1., 0., 3.])
         m1 = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
@@ -3471,7 +3471,7 @@ class TestMaskedObjectArray:
 
 #class TestMaskedView:
 
-#    def setup(self):
+#    def setup_method(self):
 #        iterator = list(zip(np.arange(10), np.random.rand(10)))
 #        data = np.array(iterator)
 #        a = MaskedArray(iterator, dtype=[('a', float), ('b', float)])
