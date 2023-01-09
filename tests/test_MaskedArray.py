@@ -108,7 +108,7 @@ def assert_almost_masked_equal(actual, desired, err_msg='', anymask=False):
 class TestMaskedArray:
     # Base test class for MaskedArrays.
 
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         x = np.array([1., 1., 1., -2., pi/2.0, 4., 5., -10., 10., 1., 2., 3.])
         y = np.array([5., 0., 3., 2., -1., -4., 0., -10., 10., 1., 0., 3.])
@@ -770,7 +770,7 @@ class TestMaskedArray:
 class TestMaskedArrayArithmetic:
     # Base test class for MaskedArrays.
 
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         x = np.array([1., 1., 1., -2., pi/2.0, 4., 5., -10., 10., 1., 2., 3.])
         y = np.array([5., 0., 3., 2., -1., -4., 0., -10., 10., 1., 0., 3.])
@@ -786,7 +786,7 @@ class TestMaskedArrayArithmetic:
         self.err_status = np.geterr()
         np.seterr(divide='ignore', invalid='ignore')
 
-    def teardown(self):
+    def teardown_method(self):
         np.seterr(**self.err_status)
 
     def test_basic_arithmetic(self):
@@ -1526,14 +1526,14 @@ class TestFillingValues:
 class TestUfuncs:
     # Test class for the application of ufuncs on MaskedArrays.
 
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         self.d = (MaskedArray([1.0, 0, -1, pi / 2] * 2, mask=[0, 1] + [0] * 6),
                   MaskedArray([1.0, 0, -1, pi / 2] * 2, mask=[1, 0] + [0] * 6),)
         self.err_status = np.geterr()
         np.seterr(divide='ignore', invalid='ignore')
 
-    def teardown(self):
+    def teardown_method(self):
         np.seterr(**self.err_status)
 
     def test_testUfuncRegression(self):
@@ -1625,7 +1625,7 @@ class TestUfuncs:
 class TestMaskedArrayInPlaceArithmetics:
     # Test MaskedArray Arithmetics
 
-    def setup(self):
+    def setup_method(self):
         x = MaskedArray(np.arange(10))
         y = MaskedArray(np.arange(10))
         xm = MaskedArray(np.arange(10))
@@ -2019,6 +2019,8 @@ class TestMaskedArrayInPlaceArithmetics:
     def test_inplace_floor_division_scalar_type(self):
         # Test of inplace division
         for t in self.othertypes:
+            if t == np.csingle or t == np.cdouble or t == np.clongdouble:
+                continue
             with warnings.catch_warnings(record=True) as w:
                 warnings.filterwarnings("always")
                 (x, y, xm) = (_.astype(t) for _ in self.uint8data)
@@ -2035,6 +2037,8 @@ class TestMaskedArrayInPlaceArithmetics:
     def test_inplace_floor_division_array_type(self):
         # Test of inplace division
         for t in self.othertypes:
+            if t == np.csingle or t == np.cdouble or t == np.clongdouble:
+                continue
             with warnings.catch_warnings(record=True) as w:
                 warnings.filterwarnings("always")
                 (x, y, xm) = (_.astype(t) for _ in self.uint8data)
@@ -2141,7 +2145,7 @@ class TestMaskedArrayInPlaceArithmetics:
 
 class TestMaskedArrayMethods:
     # Test class for miscellaneous MaskedArrays methods.
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         x = np.array([8.375, 7.545, 8.828, 8.5, 1.757, 5.928,
                       8.43, 7.78, 9.865, 5.878, 8.979, 4.732,
@@ -2496,9 +2500,9 @@ class TestMaskedArrayMethods:
 
     def test_mask_sorting(self):
         # -1 gets converted to unsigned max val
-        a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]], dtype='u4')
+        a = MaskedArray([[1,X,3], [X,-1,X], [1,X,-1]]).astype('u4')
         b = np.take_along_axis(a, np.argsort(a, axis=1), axis=1)
-        ctrl = MaskedArray([[1, 3, X], [-1, X, X], [1, -1, X]], dtype='u4')
+        ctrl = MaskedArray([[1, 3, X], [-1, X, X], [1, -1, X]]).astype('u4')
         assert_masked_equal(b, ctrl)
         c = a.copy()
         c.sort(axis=1)
@@ -2684,7 +2688,7 @@ class TestMaskedArrayMethods:
 
 class TestMaskedArrayMathMethods:
 
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         x = np.array([8.375, 7.545, 8.828, 8.5, 1.757, 5.928,
                       8.43, 7.78, 9.865, 5.878, 8.979, 4.732,
@@ -2958,7 +2962,7 @@ class TestMaskedArrayMathMethods:
 
 class TestMaskedArrayMathMethodsComplex:
     # Test class for miscellaneous MaskedArrays methods.
-    def setup(self):
+    def setup_method(self):
         # Base data definition.
         x = np.array([8.375j, 7.545j, 8.828j, 8.5j, 1.757j, 5.928,
                       8.43, 7.78, 9.865, 5.878, 8.979, 4.732,
@@ -3012,7 +3016,7 @@ class TestMaskedArrayMathMethodsComplex:
 class TestMaskedArrayFunctions:
     # Test class for miscellaneous functions.
 
-    def setup(self):
+    def setup_method(self):
         x = np.array([1., 1., 1., -2., pi/2.0, 4., 5., -10., 10., 1., 2., 3.])
         y = np.array([5., 0., 3., 2., -1., -4., 0., -10., 10., 1., 0., 3.])
         m1 = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
@@ -3471,7 +3475,7 @@ class TestMaskedObjectArray:
 
 #class TestMaskedView:
 
-#    def setup(self):
+#    def setup_method(self):
 #        iterator = list(zip(np.arange(10), np.random.rand(10)))
 #        data = np.array(iterator)
 #        a = MaskedArray(iterator, dtype=[('a', float), ('b', float)])
@@ -4255,8 +4259,8 @@ class Test_API:
         # median, percentile implemented in terms of quantile
         a = MaskedArray([2,1,4,X,3])
         assert_masked_equal(np.quantile(a, 0.5), 2.5)
-        assert_masked_equal(np.quantile(a, 0.5, interpolation='lower'), 2)
-        assert_masked_equal(np.quantile(a, 0.5, interpolation='higher'), 3)
+        assert_masked_equal(np.quantile(a, 0.5, method='lower'), 2)
+        assert_masked_equal(np.quantile(a, 0.5, method='higher'), 3)
         assert_masked_equal(np.percentile(a, 50), 2.5)
         assert_masked_equal(np.median(a), 2.5)
         assert_masked_equal(np.quantile(MaskedArray([X,X('f8')]), 0.5), X('f8'))
@@ -5130,16 +5134,13 @@ class Test_API:
                   8]'''))
 
     def test_api_attr_methods(self):
-        # shape alen ndim size
+        # shape ndim size
 
         d = [[1,2,3], [4,X,X]]
         a = MaskedArray(d)
 
         assert_equal(np.shape(a), (2,3))
         assert_equal(ma.shape(d), (2,3))
-
-        assert_equal(np.alen(a), 2)
-        assert_equal(ma.alen(d), 2)
 
         assert_equal(np.ndim(a), 2)
         assert_equal(ma.ndim(d), 2)

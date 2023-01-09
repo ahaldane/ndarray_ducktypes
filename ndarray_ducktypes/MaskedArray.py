@@ -1759,29 +1759,29 @@ def _move_reduction_axis_last(a, axis=None):
 def median(a, axis=None, out=None, overwrite_input=False, keepdims=False):
     return np.quantile(a, 0.5, axis=axis, out=out,
                         overwrite_input=overwrite_input,
-                        interpolation='midpoint', keepdims=keepdims)
+                        method='midpoint', keepdims=keepdims)
 
 @implements(np.percentile)
 def percentile(a, q, axis=None, out=None, overwrite_input=False,
-               interpolation='linear', keepdims=False):
+               method='linear', keepdims=False):
     q = np.true_divide(q, 100)
     q = np.asanyarray(q)  # undo any decay the ufunc performed (gh-13105)
     if not _quantile_is_valid(q):
         raise ValueError("Percentiles must be in the range [0, 100]")
     return _quantile_unchecked(
-        a, q, axis, out, overwrite_input, interpolation, keepdims)
+        a, q, axis, out, overwrite_input, method, keepdims)
 
 @implements(np.quantile)
 def quantile(a, q, axis=None, out=None, overwrite_input=False,
-             interpolation='linear', keepdims=False):
+             method='linear', keepdims=False):
     q = np.asanyarray(q)
     if not _quantile_is_valid(q):
         raise ValueError("Quantiles must be in the range [0, 1]")
     return _quantile_unchecked(
-        a, q, axis, out, overwrite_input, interpolation, keepdims)
+        a, q, axis, out, overwrite_input, method, keepdims)
 
 def _quantile_unchecked(a, q, axis=None, out=None, overwrite_input=False,
-                        interpolation='linear', keepdims=False):
+                        method='linear', keepdims=False):
     """Assumes that q is in [0, 1], and is an ndarray"""
 
     a = as_duck_cls(a, base=MaskedArray)
@@ -1812,7 +1812,7 @@ def _quantile_unchecked(a, q, axis=None, out=None, overwrite_input=False,
         if dat.size == 0:
             outarr[oind] = X
         else:
-            outarr[oind] = np.quantile(dat, q, interpolation=interpolation)
+            outarr[oind] = np.quantile(dat, q, method=method)
 
     if out is not None:
         return out
@@ -3092,8 +3092,7 @@ def flatnonzero(a):
     return np.nonzero(np.ravel(a))[0]
 
 @implements(np.histogram, checked_args=('a',))
-def histogram(a, bins=10, range=None, normed=None, weights=None,
-              density=None):
+def histogram(a, bins=10, range=None, density=None, weights=None):
     a = as_duck_cls(a, base=MaskedArray)
     if isinstance(bins, (MaskedArray, MaskedScalar)):
         raise ValueError("bins must not be a MaskedArray")
@@ -3108,10 +3107,10 @@ def histogram(a, bins=10, range=None, normed=None, weights=None,
     if weights is not None:
         weights = weights.ravel()[keep]
 
-    return np.histogram(dat, bins, range, normed, weights, density)
+    return np.histogram(dat, bins, range, density, weights)
 
 @implements(np.histogram2d, checked_args=('x', 'y'))
-def histogram2d(x, y, bins=10, range=None, normed=None, weights=None,
+def histogram2d(x, y, bins=10, range=None, weights=None,
                 density=None):
     try:
         N = len(bins)
@@ -3121,12 +3120,11 @@ def histogram2d(x, y, bins=10, range=None, normed=None, weights=None,
     if N != 1 and N != 2:
         xedges = yedges = np.asarray(bins)  # bins should become ndarray
         bins = [xedges, yedges]
-    hist, edges = histogramdd([x, y], bins, range, normed, weights, density)
+    hist, edges = histogramdd([x, y], bins, range, density, weights)
     return hist, edges[0], edges[1]
 
 @implements(np.histogramdd)
-def histogramdd(sample, bins=10, range=None, normed=None, weights=None,
-                density=None):
+def histogramdd(sample, bins=10, range=None, density=None, weights=None):
     if not np.isscalar(bins):
         for b in bins:
             if isinstance(b, (MaskedArray, MaskedScalar)):
@@ -3151,7 +3149,7 @@ def histogramdd(sample, bins=10, range=None, normed=None, weights=None,
     if weights is not None:
         weights = weights[keep]
 
-    return np.histogramdd(sample, bins, range, normed, weights, density)
+    return np.histogramdd(sample, bins, range, density, weights)
 
 @implements(np.histogram_bin_edges)
 def histogram_bin_edges(a, bins=10, range=None, weights=None):
@@ -3574,13 +3572,6 @@ def array_str(a, max_line_width=None, precision=None, suppress_small=None):
 def shape(a):
     a = as_duck_cls(a, base=MaskedArray)
     return a.shape
-
-@implements(np.alen)
-def alen(a):
-    try:
-        return len(a)
-    except TypeError:
-        return len(get_duck_cls(a, base=MaskedArray)(a, ndmin=1))
 
 @implements(np.ndim)
 def ndim(a):
