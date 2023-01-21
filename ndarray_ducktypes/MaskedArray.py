@@ -1200,7 +1200,12 @@ for ufunc in [umath.exp, umath.conjugate, umath.sin, umath.cos, umath.tan,
               umath.floor, umath.ceil, umath.logical_not, umath.isfinite,
               umath.isinf, umath.isnan, umath.invert, umath.sqrt, umath.log,
               umath.log2, umath.log10, umath.tan, umath.arcsin,
-              umath.arccos, umath.arccosh, umath.arctanh]:
+              umath.arccos, umath.arccosh, umath.arctanh,
+              umath.expm1, umath.exp2, umath._ones_like, umath.cbrt,
+              umath.square, umath.clip, umath.deg2rad, umath.rad2deg,
+              umath.degrees, umath.radians, umath.sign, umath.signbit,
+              umath.isnat, umath.log1p, umath.positive, umath.reciprocal,
+              umath.rint, umath.spacing, umath.trunc]:
     _add_ufunc(ufunc, uni=True)
 
 # binary ufuncs
@@ -1210,12 +1215,17 @@ for ufunc in [umath.add, umath.subtract, umath.multiply,
               umath.greater, umath.logical_and, umath.logical_or,
               umath.logical_xor, umath.bitwise_and, umath.bitwise_or,
               umath.bitwise_xor, umath.true_divide, umath.floor_divide,
-              umath.remainder, umath.fmod, umath.mod, umath.power]:
+              umath.remainder, umath.fmod, umath.mod, umath.power,
+              umath.copysign, umath.float_power, umath.gcd, umath.heaviside,
+              umath.lcm, umath.ldexp, umath.left_shift, umath.right_shift,
+              umath.logaddexp, umath.logaddexp2, umath.nextafter]:
     _add_ufunc(ufunc)
 
 # fill value depends on dtype
 _add_ufunc(umath.maximum, reduce_fill=lambda dt: _minvals[dt])
 _add_ufunc(umath.minimum, reduce_fill=lambda dt: _maxvals[dt])
+_add_ufunc(umath.fmax, reduce_fill=lambda dt: _minvals[dt])
+_add_ufunc(umath.fmin, reduce_fill=lambda dt: _maxvals[dt])
 
 
 ################################################################################
